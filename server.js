@@ -134,7 +134,7 @@ const ghlApi = axios.create({
   headers: {
     'Authorization': `Bearer ${GHL_TOKEN}`,
     'Content-Type': 'application/json',
-    'Version': '2021-04-15',
+    'Version': '2021-07-28',
   },
 });
 
@@ -142,38 +142,46 @@ async function syncGHLContacts() {
   try {
     console.log('[GHL] Syncing contacts...');
     let allContacts = [];
-    let offset = 0;
     const limit = 100;
+    let startAfter = null;
+    let startAfterId = null;
+    let page = 0;
     
     while (true) {
-      const res = await ghlApi.get('/contacts/', {
-        params: { locationId: GHL_LOCATION_ID, limit, startAfterIndex: offset },
-      });
-      
-      // GHL v2 zwraca contacts pod kluczem contacts lub w data.contacts
-      const contacts = res.data.contacts || (res.data.data && res.data.data.contacts) || [];
+      const params = { locationId: GHL_LOCATION_ID, limit };
+      if (startAfter)   params.startAfter   = startAfter;
+      if (startAfterId) params.startAfterId = startAfterId;
+
+      const res = await ghlApi.get('/contacts/', { params });
+      const contacts = res.data.contacts || [];
+
       allContacts = allContacts.concat(contacts.map(c => ({
         id: c.id,
-        name: `${c.firstName || ''} ${c.lastName || ''}`.trim(),
+        name: (c.contactName || `${c.firstName || ''} ${c.lastName || ''}`).trim(),
         firstName: c.firstName || '',
-        lastName: c.lastName || '',
-        phone: c.phone || '',
-        email: c.email || '',
-        tags: c.tags || [],
+        lastName:  c.lastName  || '',
+        phone:     c.phone     || '',
+        email:     c.email     || '',
+        tags:      c.tags      || [],
       })));
-      
-      if (contacts.length < limit) break;
-      offset += limit;
-      
-      // Safety: max 5000 kontaktów
-      if (offset > 5000) break;
+
+      // GHL v2 paginacja przez startAfter/startAfterId z meta
+      const meta = res.data.meta || {};
+      if (!meta.nextPage || contacts.length < limit) break;
+      // Pobierz startAfter z ostatniego kontaktu
+      const last = contacts[contacts.length - 1];
+      startAfter   = last.startAfter   ? last.startAfter[0]   : null;
+      startAfterId = last.startAfter   ? last.startAfter[1]   : null;
+
+      page++;
+      if (page > 50) break; // Safety: max 5000 kontaktów
     }
     
     ghlContactsCache = allContacts;
     ghlContactsLastSync = Date.now();
     console.log(`[GHL] Synced ${allContacts.length} contacts`);
   } catch (err) {
-    console.error('[GHL] Sync contacts error:', err.message);
+    console.error('[GHL] Sync contacts error:', err.response?.data || err.message);
   }
 }
 
@@ -317,24 +325,28 @@ async function getNewLeadsFromGHL() {
 
     const leads = [];
     for (const opp of opportunities) {
-      // Dane kontaktu mogą być zagnieżdżone lub płaskie
+      // GHL v2: dane kontaktu są w opp.contact lub opp.relations[0]
       const contact = opp.contact || {};
-      let contactName = contact.name ||
-        `${contact.firstName || ''} ${contact.lastName || ''}`.trim() ||
-        opp.name || '';
-      let contactPhone = contact.phone || opp.phone || '';
-      let contactEmail = contact.email || opp.email || '';
-      const contactId = opp.contactId || opp.contact_id || contact.id || '';
+      const relation = (opp.relations && opp.relations[0]) || {};
 
-      // Pobierz pełne dane kontaktu jeśli brak telefonu lub imienia
-      if (contactId && (!contactPhone || !contactName)) {
+      const contactId = opp.contactId || contact.id || relation.recordId || '';
+
+      // Imię: z contact.name, relation.fullName lub opp.name
+      let contactName = contact.name || relation.fullName || relation.contactName || opp.name || '';
+
+      // Telefon: z relation lub contact
+      let contactPhone = relation.phone || contact.phone || '';
+      let contactEmail = relation.email || contact.email || '';
+
+      // Jeśli brak telefonu — pobierz pełne dane kontaktu z API
+      if (contactId && !contactPhone) {
         try {
           const contactRes = await ghlApi.get(`/contacts/${contactId}`);
-          const c = contactRes.data.contact || contactRes.data;
-          const fn = c.firstName || c.first_name || '';
-          const ln = c.lastName  || c.last_name  || '';
-          contactName  = `${fn} ${ln}`.trim() || contactName || 'Brak imienia';
-          contactPhone = c.phone || contactPhone;
+          const c = contactRes.data;
+          const fn = c.firstName || '';
+          const ln = c.lastName  || '';
+          if (!contactName) contactName = (c.contactName || `${fn} ${ln}`).trim();
+          contactPhone = c.phone || '';
           contactEmail = c.email || contactEmail;
           console.log(`[GHL] Pobrano kontakt ${contactId}: ${contactName} / ${contactPhone}`);
         } catch (e) {
@@ -346,10 +358,11 @@ async function getNewLeadsFromGHL() {
         id:        opp.id,
         contactId: contactId,
         name:      contactName || 'Brak imienia',
-        phone:     contactPhone,
-        email:     contactEmail,
-        createdAt: opp.createdAt || opp.created_at || new Date().toISOString(),
+        phone:     contactPhone || '',
+        email:     contactEmail || '',
+        createdAt: opp.createdAt || new Date().toISOString(),
         source:    opp.source || '',
+        oppName:   opp.name   || '',
       });
     }
 
