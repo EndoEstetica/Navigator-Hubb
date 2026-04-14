@@ -18,8 +18,8 @@ app.use(express.urlencoded({ extended: true }));
 
 // ─── Konfiguracja ────────────────────────────────────────────────────────────
 
-const GHL_TOKEN = process.env.GHL_TOKEN || 'pit-c118110f-ce3c-4ff6-9b05-cb614ae1da5d';
-const GHL_LOCATION_ID = process.env.GHL_LOCATION_ID || '';
+const GHL_TOKEN = process.env.GHL_TOKEN || 'pit-7faaf428-8f3f-4f9b-82c1-a5fb63979645';
+const GHL_LOCATION_ID = process.env.GHL_LOCATION_ID || 'A0NcokQ5ZPxUcHawpRJJ';
 const ZADARMA_KEY = process.env.ZADARMA_KEY || '';
 const ZADARMA_SECRET = process.env.ZADARMA_SECRET || '';
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
@@ -130,10 +130,11 @@ const supabase = {
 // ─── GHL API Helper ──────────────────────────────────────────────────────────
 
 const ghlApi = axios.create({
-  baseURL: 'https://rest.gohighlevel.com/v1',
+  baseURL: 'https://services.leadconnectorhq.com',
   headers: {
     'Authorization': `Bearer ${GHL_TOKEN}`,
     'Content-Type': 'application/json',
+    'Version': '2021-04-15',
   },
 });
 
@@ -149,7 +150,8 @@ async function syncGHLContacts() {
         params: { locationId: GHL_LOCATION_ID, limit, startAfterIndex: offset },
       });
       
-      const contacts = res.data.contacts || [];
+      // GHL v2 zwraca contacts pod kluczem contacts lub w data.contacts
+      const contacts = res.data.contacts || (res.data.data && res.data.data.contacts) || [];
       allContacts = allContacts.concat(contacts.map(c => ({
         id: c.id,
         name: `${c.firstName || ''} ${c.lastName || ''}`.trim(),
@@ -192,8 +194,9 @@ async function getGHLContactByPhone(phone) {
     const res = await ghlApi.get('/contacts/search', {
       params: { locationId: GHL_LOCATION_ID, q: phone },
     });
-    if (res.data.contacts && res.data.contacts.length > 0) {
-      const c = res.data.contacts[0];
+    const searchContacts = res.data.contacts || (res.data.data && res.data.data.contacts) || [];
+    if (searchContacts.length > 0) {
+      const c = searchContacts[0];
       return {
         id: c.id,
         name: `${c.firstName || ''} ${c.lastName || ''}`.trim(),
@@ -225,7 +228,7 @@ async function createOpportunityForContact(contactId, stageId, name, treatment, 
     if (source) body.source = source;
     const res = await ghlApi.post('/opportunities/', body);
     console.log(`[GHL] Created opportunity for contact ${contactId} at stage ${stageId}`);
-    return res.data;
+    return res.data.opportunity || res.data;
   } catch (err) {
     console.error('[GHL] Create opportunity error:', err.response?.data || err.message);
     return null;
@@ -234,13 +237,14 @@ async function createOpportunityForContact(contactId, stageId, name, treatment, 
 
 async function moveOpportunityToStage(contactId, stageId) {
   try {
-    // Szukaj opportunity dla kontaktu
-    const res = await ghlApi.get('/opportunities/', {
-      params: { locationId: GHL_LOCATION_ID, contactId, pipelineId: PIPELINE_ID },
+    // Szukaj opportunity dla kontaktu — GHL v2
+    const res = await ghlApi.get('/opportunities/search', {
+      params: { location_id: GHL_LOCATION_ID, contact_id: contactId, pipeline_id: PIPELINE_ID, limit: 10 },
     });
     
-    if (res.data.opportunities && res.data.opportunities.length > 0) {
-      const oppId = res.data.opportunities[0].id;
+    const opps = res.data.opportunities || (res.data.data && res.data.data.opportunities) || [];
+    if (opps.length > 0) {
+      const oppId = opps[0].id;
       await ghlApi.put(`/opportunities/${oppId}`, {
         stageId,
         pipelineId: PIPELINE_ID,
@@ -282,36 +286,32 @@ async function addNoteToContact(contactId, note) {
 
 async function getNewLeadsFromGHL() {
   try {
-    console.log(`[GHL] Pobieranie leadów z Etapu 1 | pipeline=${PIPELINE_ID} | stage=${STAGES.NOWE_ZGLOSZENIE}`);
+    console.log(`[GHL] Pobieranie leadów z Etapu 1 | pipeline=${PIPELINE_ID} | stage=${STAGES.NOWE_ZGLOSZENIE} | location=${GHL_LOCATION_ID}`);
 
-    // GHL API v1 — opportunities z konkretnego etapu
-    const oppsRes = await ghlApi.get('/opportunities/search', {
-      params: {
-        location_id: GHL_LOCATION_ID,
-        pipeline_id: PIPELINE_ID,
-        pipeline_stage_id: STAGES.NOWE_ZGLOSZENIE,
-        limit: 50,
-      },
-    }).catch(async () => {
-      // Fallback: spróbuj inny format parametrów
-      return await ghlApi.get('/opportunities/', {
+    // GHL API v1 — próba 1: /opportunities/search
+    let opportunities = [];
+    let lastError = null;
+
+    // GHL API v2 — /opportunities/search z filtrem po stage
+    try {
+      const res = await ghlApi.get('/opportunities/search', {
         params: {
-          locationId: GHL_LOCATION_ID,
-          pipelineId: PIPELINE_ID,
-          stageId: STAGES.NOWE_ZGLOSZENIE,
+          location_id: GHL_LOCATION_ID,
+          pipeline_id: PIPELINE_ID,
+          pipeline_stage_id: STAGES.NOWE_ZGLOSZENIE,
           limit: 50,
         },
       });
-    });
+      console.log('[GHL] Odpowiedź:', JSON.stringify(res.data).slice(0, 200));
+      opportunities = res.data.opportunities || [];
+    } catch(e) {
+      lastError = e;
+      console.error('[GHL] Błąd pobierania szans:', e.response?.data || e.message);
+    }
 
-    console.log('[GHL] Odpowiedź opportunities:', JSON.stringify(oppsRes.data).slice(0, 500));
-
-    // GHL może zwracać dane pod różnymi kluczami
-    const opportunities =
-      oppsRes.data.opportunities ||
-      oppsRes.data.data ||
-      oppsRes.data.results ||
-      [];
+    if (lastError && opportunities.length === 0) {
+      console.error('[GHL] Nie udało się pobrać szans sprzedaży:', lastError.message);
+    }
 
     console.log(`[GHL] Znaleziono ${opportunities.length} szans sprzedaży w Etapie 1`);
 
