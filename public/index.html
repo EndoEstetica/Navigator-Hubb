@@ -113,6 +113,46 @@ body{font-family:'Montserrat',sans-serif;background:#f0f2f8;color:#1a1a2e;min-he
   50%{box-shadow:0 0 0 14px rgba(255,191,0,0);}
 }
 
+/* Stan po-rozmowie: przyciski aktywne ale bez pulsowania */
+.type-btn.post-call{
+  opacity:1;
+  pointer-events:auto;
+  filter:none;
+  border-style:dashed;
+  border-width:2px;
+}
+
+/* Panel po-rozmowie: powiększony baner */
+.post-call-bar{
+  display:none;
+  background:linear-gradient(90deg,#fff8e1,#fff3cd);
+  border:2px solid #FFBF00;
+  border-radius:14px;
+  padding:18px 24px;
+  margin-bottom:20px;
+  align-items:center;
+  gap:16px;
+  box-shadow:0 4px 20px rgba(255,191,0,.25);
+}
+.post-call-bar.visible{display:flex;}
+.pcb-icon{font-size:36px;}
+.pcb-info{flex:1;}
+.pcb-title{font-size:15px;font-weight:800;color:#183C63;}
+.pcb-sub{font-size:12px;color:#7a6000;margin-top:3px;}
+.pcb-btn{
+  background:#183C63;
+  color:#FFBF00;
+  border:none;
+  border-radius:10px;
+  padding:12px 22px;
+  font-size:14px;
+  font-weight:800;
+  cursor:pointer;
+  transition:background .2s;
+  white-space:nowrap;
+}
+.pcb-btn:hover{background:#1e4d7a;}
+
 /* ── PASEK AKTYWNEGO POŁĄCZENIA ─────────────────────────── */
 .active-call-bar{
   display:none;
@@ -394,6 +434,16 @@ textarea.form-input{resize:vertical;}
         <div class="stat-label">Nieodebrane</div>
         <div class="stat-value" id="s-missed">—</div>
       </div>
+    </div>
+
+    <!-- Pasek po-rozmowie (brak raportu) -->
+    <div class="post-call-bar" id="post-call-bar">
+      <div class="pcb-icon">⏸️</div>
+      <div class="pcb-info">
+        <div class="pcb-title" id="pcb-title">Rozmowa zakończona — uzupełnij raport</div>
+        <div class="pcb-sub" id="pcb-sub">Przejdź do zakładki „W obsłudze” i kliknij Raport przy tej rozmowie</div>
+      </div>
+      <button class="pcb-btn" onclick="goToObsludze()">Uzupełnij raport →</button>
     </div>
 
     <!-- Pasek aktywnego połączenia -->
@@ -831,12 +881,22 @@ function handleWS(msg) {
       unlockButtons();
       break;
 
-    case 'CALL_ENDED':
+    case 'CALL_ENDED': {
       updateCallField(msg.callId, 'status', msg.status);
       updateCallField(msg.callId, 'duration_seconds', msg.duration);
       renderOpenCalls(); renderRecentCalls(); updateBadges();
-      // Przyciski ZOSTAJĄ aktywne — recepcja musi wypełnić raport
+      clearCallTimer();
+      // Przejdź do STANU 2: po-rozmowie bez raportu
+      const endedCall = openCalls.find(c => c.call_id === msg.callId);
+      if (activeCallId === msg.callId) {
+        // Ukryj świecący pasek, pokaż powiększony panel po-rozmowie
+        document.getElementById('active-call-bar').classList.remove('visible');
+        showPostCallBar(endedCall);
+        // Przyciski aktywne ale bez pulsowania
+        unlockButtonsPostCall();
+      }
       break;
+    }
 
     case 'CALL_RECORDING_READY':
       updateCallField(msg.callId, 'recording_url', msg.recordingUrl);
@@ -845,8 +905,16 @@ function handleWS(msg) {
 
     case 'CALL_TOPIC_CLOSED':
       openCalls = openCalls.filter(c => c.call_id !== msg.callId);
+      // STAN 3: zakończono temat — ukryj wszystko
       if (activeCallId === msg.callId) {
-        activeCallId = null; lockButtons(); hideActiveBar(); clearCallTimer();
+        activeCallId = null;
+        lockButtons();
+        hideActiveBar(); // ukrywa oba paski
+        clearCallTimer();
+      } else {
+        // Może był w stanie post-call — sprawdź czy nie ma innych otwartych
+        const stillPending = openCalls.find(c => !c.call_effect && !c.topic_closed);
+        if (!stillPending) { lockButtons(); hideActiveBar(); }
       }
       renderOpenCalls(); renderRecentCalls(); updateBadges(); loadClosedCalls();
       break;
@@ -855,6 +923,11 @@ function handleWS(msg) {
       updateCallField(msg.callId, 'call_effect', msg.callEffect);
       updateCallField(msg.callId, 'contact_type', msg.contactType);
       renderOpenCalls(); renderRecentCalls(); loadDailyStats();
+      // Raport zapisany — jeśli to był aktywny temat, ukryj panel post-call
+      if (activeCallId === msg.callId || document.getElementById('post-call-bar').classList.contains('visible')) {
+        const stillPending = openCalls.find(c => !c.call_effect && !c.topic_closed && c.call_id !== msg.callId);
+        if (!stillPending) { lockButtons(); hideActiveBar(); activeCallId = null; }
+      }
       break;
 
     case 'CONTACT_UPSERTED':
@@ -870,7 +943,9 @@ function updateCallField(callId, field, value) {
 }
 
 // ─── ACTIVE CALL BAR ─────────────────────────────────────────────────────────
+// STAN 1: Aktywne połączenie — świeci, pulsuje
 function showActiveBar(call, status) {
+  document.getElementById('post-call-bar').classList.remove('visible');
   const bar = document.getElementById('active-call-bar');
   document.getElementById('acb-name').textContent = call.patient_name || call.caller_phone || 'Nieznany numer';
   document.getElementById('acb-meta').textContent =
@@ -880,10 +955,30 @@ function showActiveBar(call, status) {
     '✅ Połączenie aktywne — wybierz typ rozmowy po zakończeniu';
 }
 
+// STAN 2: Po-rozmowie bez raportu — powiększony panel, brak pulsowania
+function showPostCallBar(call) {
+  document.getElementById('active-call-bar').classList.remove('visible');
+  const name = call ? (call.patient_name || call.caller_phone || 'Nieznany numer') : 'Nieznany numer';
+  const phone = call ? (call.caller_phone || '') : '';
+  document.getElementById('pcb-title').textContent = `Rozmowa z ${name} zakończona — uzupełnij raport`;
+  document.getElementById('pcb-sub').textContent = `${phone ? phone + ' · ' : ''}Przejdź do zakładki „W obsłudze” i kliknij Raport`;
+  document.getElementById('post-call-bar').classList.add('visible');
+  document.getElementById('cockpit-hint').textContent =
+    '⏸️ Rozmowa zakończona — raport można uzupełnić z zakładki W obsłudze';
+}
+
+// STAN 3: Brak aktywnej rozmowy — wszystko ukryte
 function hideActiveBar() {
   document.getElementById('active-call-bar').classList.remove('visible');
+  document.getElementById('post-call-bar').classList.remove('visible');
   document.getElementById('cockpit-hint').textContent =
     'Przyciski aktywują się automatycznie gdy odbierasz połączenie';
+}
+
+// Przejśdź do zakładki W obsłudze
+function goToObsludze() {
+  const tab = document.querySelector('.tab[onclick*="open"]');
+  if (tab) { tab.click(); }
 }
 
 function startCallTimer() {
@@ -901,34 +996,54 @@ function clearCallTimer() {
   if (callTimerInterval) { clearInterval(callTimerInterval); callTimerInterval = null; }
 }
 
-// ─── BUTTONS LOCK / UNLOCK ───────────────────────────────────────────────────
+// ─── BUTTONS LOCK / UNLOCK ────────────────────────────────────────────────────────────────────────────────
+// Odblokuj z pulsowaniem (aktywne połączenie)
 function unlockButtons() {
   ['btn-nowy','btn-staly','btn-wizyta','btn-nie'].forEach(id => {
     const el = document.getElementById(id);
-    el.classList.remove('locked');
+    el.classList.remove('locked', 'post-call');
     el.classList.add('ringing-pulse');
   });
 }
 
+// Odblokuj bez pulsowania (po-rozmowie, oczekuje na raport)
+function unlockButtonsPostCall() {
+  ['btn-nowy','btn-staly','btn-wizyta','btn-nie'].forEach(id => {
+    const el = document.getElementById(id);
+    el.classList.remove('locked', 'ringing-pulse');
+    el.classList.add('post-call');
+  });
+}
+
+// Zablokuj (brak rozmowy)
 function lockButtons() {
   ['btn-nowy','btn-staly','btn-wizyta','btn-nie'].forEach(id => {
     const el = document.getElementById(id);
     el.classList.add('locked');
-    el.classList.remove('ringing-pulse');
+    el.classList.remove('ringing-pulse', 'post-call');
   });
 }
 
 function checkActiveCall() {
-  // Sprawdź czy jest połączenie bez raportu — jeśli tak, odblokuj przyciski
-  const active = openCalls.find(c =>
-    c.status === 'ringing' || c.status === 'answered' ||
-    (!c.call_effect && !c.topic_closed)
-  );
-  if (active) {
-    activeCallId = active.call_id;
-    unlockButtons();
-    showActiveBar(active, active.status);
+  // STAN 1: aktywne połączenie (dzwoni lub odebrane)
+  const ringing = openCalls.find(c => c.status === 'ringing' || c.status === 'answered');
+  if (ringing) {
+    activeCallId = ringing.call_id;
+    unlockButtons(); // z pulsowaniem
+    showActiveBar(ringing, ringing.status);
+    return;
   }
+  // STAN 2: zakończona rozmowa bez raportu
+  const pending = openCalls.find(c => !c.call_effect && !c.topic_closed && c.status !== 'ringing');
+  if (pending) {
+    activeCallId = pending.call_id;
+    unlockButtonsPostCall(); // bez pulsowania
+    showPostCallBar(pending);
+    return;
+  }
+  // STAN 3: brak aktywnej rozmowy
+  lockButtons();
+  hideActiveBar();
 }
 
 // ─── TABS ────────────────────────────────────────────────────────────────────
