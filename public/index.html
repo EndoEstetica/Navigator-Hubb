@@ -6,280 +6,189 @@
   <title>Navigator Call v6</title>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Montserrat', sans-serif; background: #0A1628; color: white; min-height: 100vh; }
     
-    body {
-      font-family: 'Montserrat', sans-serif;
-      background: #0A1628;
-      color: white;
-    }
-    
-    .container {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 20px;
-    }
-    
-    .header {
-      background: rgba(13,31,74,0.95);
-      padding: 16px 20px;
-      border-bottom: 1px solid rgba(255,191,0,0.15);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 20px;
-      border-radius: 8px;
-    }
-    
-    .logo {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    
-    .logo-text {
-      font-size: 14px;
-      font-weight: 700;
-      color: #FFBF00;
-      letter-spacing: 0.5px;
-    }
-    
+    /* ─── Login ─── */
     .login-screen {
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
       background: linear-gradient(135deg, #0D1F4A 0%, #183C63 50%, #0D1F4A 100%);
     }
-    
     .login-box {
-      background: rgba(255,255,255,0.05);
-      backdrop-filter: blur(20px);
-      border: 1px solid rgba(255,191,0,0.2);
-      border-radius: 20px;
-      padding: 40px;
-      width: 100%;
-      max-width: 480px;
+      background: rgba(255,255,255,0.05); backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,191,0,0.2); border-radius: 20px;
+      padding: 40px; width: 100%; max-width: 480px;
       box-shadow: 0 20px 60px rgba(0,0,0,0.4);
     }
-    
-    .login-header {
-      text-align: center;
-      margin-bottom: 32px;
-    }
-    
-    .login-title {
-      color: #FFBF00;
-      font-size: 22px;
-      font-weight: 700;
-      margin-bottom: 4px;
-      letter-spacing: 1px;
-    }
-    
-    .login-subtitle {
-      color: rgba(255,255,255,0.5);
-      font-size: 12px;
-      letter-spacing: 2px;
-    }
-    
-    .user-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-      margin-bottom: 20px;
-    }
-    
+    .login-title { color: #FFBF00; font-size: 22px; font-weight: 700; letter-spacing: 1px; text-align: center; margin-bottom: 4px; }
+    .login-subtitle { color: rgba(255,255,255,0.4); font-size: 11px; letter-spacing: 2px; text-align: center; margin-bottom: 32px; }
+    .section-label { color: rgba(255,191,0,0.7); font-size: 11px; letter-spacing: 1px; margin-bottom: 8px; text-transform: uppercase; }
+    .user-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 20px; }
     .user-btn {
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 10px;
-      padding: 12px 8px;
-      color: white;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 500;
-      font-family: 'Montserrat', sans-serif;
-      transition: all 0.2s;
+      background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 10px; padding: 12px 8px; color: white; cursor: pointer;
+      font-size: 13px; font-weight: 500; font-family: 'Montserrat', sans-serif; transition: all 0.2s;
     }
-    
-    .user-btn:hover {
-      background: rgba(255,191,0,0.15);
-      border-color: rgba(255,191,0,0.4);
-    }
-    
-    .pin-display {
-      display: flex;
-      justify-content: center;
-      gap: 12px;
-      margin-bottom: 24px;
-    }
-    
-    .pin-dot {
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: rgba(255,255,255,0.2);
-      border: 2px solid rgba(255,255,255,0.3);
-    }
-    
-    .pin-dot.filled {
-      background: #FFBF00;
-      border-color: #FFBF00;
-    }
-    
-    .keypad {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-    }
-    
+    .user-btn:hover { background: rgba(255,191,0,0.15); border-color: rgba(255,191,0,0.4); }
+    .pin-display { display: flex; justify-content: center; gap: 12px; margin-bottom: 24px; }
+    .pin-dot { width: 14px; height: 14px; border-radius: 50%; background: rgba(255,255,255,0.2); border: 2px solid rgba(255,255,255,0.3); }
+    .pin-dot.filled { background: #FFBF00; border-color: #FFBF00; }
+    .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
     .key-btn {
-      height: 56px;
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 12px;
-      color: white;
-      font-size: 20px;
-      font-weight: 600;
-      cursor: pointer;
-      font-family: 'Montserrat', sans-serif;
-      transition: all 0.15s;
+      height: 56px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 12px; color: white; font-size: 20px; font-weight: 600;
+      cursor: pointer; font-family: 'Montserrat', sans-serif; transition: all 0.15s;
     }
+    .key-btn:hover { background: rgba(255,191,0,0.15); }
     
-    .key-btn:hover {
-      background: rgba(255,191,0,0.15);
+    /* ─── Dashboard ─── */
+    .dashboard { display: none; }
+    .dashboard.active { display: block; }
+    .header {
+      background: rgba(13,31,74,0.95); padding: 14px 20px;
+      border-bottom: 1px solid rgba(255,191,0,0.15);
+      display: flex; align-items: center; justify-content: space-between;
     }
+    .logo-text { font-size: 14px; font-weight: 700; color: #FFBF00; letter-spacing: 0.5px; }
+    .header-user { color: rgba(255,255,255,0.5); font-size: 12px; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
     
-    .dashboard {
-      display: none;
+    /* ─── Tabs ─── */
+    .tabs { display: flex; gap: 4px; margin-bottom: 20px; background: rgba(255,255,255,0.03); border-radius: 12px; padding: 4px; }
+    .tab-btn {
+      background: none; border: none; color: rgba(255,255,255,0.4); cursor: pointer;
+      padding: 10px 16px; font-family: 'Montserrat', sans-serif; font-weight: 600;
+      font-size: 12px; border-radius: 8px; transition: all 0.2s; white-space: nowrap;
     }
-    
-    .dashboard.active {
-      display: block;
+    .tab-btn.active { color: #FFBF00; background: rgba(255,191,0,0.1); }
+    .tab-btn .badge {
+      background: #EF4444; color: white; font-size: 10px; padding: 1px 6px;
+      border-radius: 10px; margin-left: 6px; font-weight: 700;
     }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
     
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 12px;
-      margin-bottom: 24px;
-    }
+    /* ─── Stats ─── */
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 20px; }
+    .stat-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 14px 16px; }
+    .stat-label { font-size: 10px; color: rgba(255,255,255,0.4); margin-bottom: 4px; letter-spacing: 0.5px; text-transform: uppercase; }
+    .stat-value { font-size: 22px; font-weight: 700; color: #FFBF00; }
     
-    .stat-card {
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 12px;
-      padding: 14px 16px;
-    }
-    
-    .stat-label {
-      font-size: 11px;
-      color: rgba(255,255,255,0.4);
-      margin-bottom: 6px;
-      letter-spacing: 0.5px;
-    }
-    
-    .stat-value {
-      font-size: 24px;
-      font-weight: 700;
-      color: #FFBF00;
-    }
-    
-    .calls-list {
-      background: rgba(255,255,255,0.03);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 16px;
-      overflow: hidden;
-    }
-    
+    /* ─── Call list ─── */
+    .call-list { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; overflow: hidden; }
     .call-item {
-      padding: 14px 20px;
-      border-bottom: 1px solid rgba(255,255,255,0.04);
-      display: flex;
-      align-items: center;
-      gap: 12px;
+      padding: 14px 20px; border-bottom: 1px solid rgba(255,255,255,0.04);
+      display: flex; align-items: center; gap: 12px; transition: background 0.2s;
     }
+    .call-item:hover { background: rgba(255,191,0,0.04); }
+    .call-item.ringing { background: rgba(34,197,94,0.08); animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
+    .call-item.reminder { animation: blink 1s infinite; }
+    @keyframes blink { 0%,100% { background: rgba(239,68,68,0.05); } 50% { background: rgba(239,68,68,0.15); } }
     
-    .call-status {
-      background: rgba(34,197,94,0.1);
-      border: 1px solid rgba(34,197,94,0.3);
-      border-radius: 6px;
-      padding: 3px 8px;
-      font-size: 11px;
-      color: #22C55E;
-      font-weight: 600;
-      min-width: 90px;
-      text-align: center;
+    .call-badge {
+      border-radius: 6px; padding: 3px 8px; font-size: 10px; font-weight: 700;
+      min-width: 90px; text-align: center; letter-spacing: 0.3px;
     }
+    .badge-ringing { background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.3); color: #22C55E; }
+    .badge-answered { background: rgba(59,130,246,0.15); border: 1px solid rgba(59,130,246,0.3); color: #3B82F6; }
+    .badge-missed { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: #EF4444; }
+    .badge-new { background: rgba(168,85,247,0.15); border: 1px solid rgba(168,85,247,0.3); color: #A855F7; }
+    .badge-closed { background: rgba(107,114,128,0.15); border: 1px solid rgba(107,114,128,0.3); color: #9CA3AF; }
     
-    .call-info {
-      flex: 1;
-    }
+    .call-info { flex: 1; }
+    .call-name { font-size: 14px; font-weight: 600; color: white; margin-bottom: 2px; }
+    .call-phone { font-size: 12px; color: rgba(255,255,255,0.4); }
+    .call-meta { text-align: right; min-width: 80px; }
+    .call-time { font-size: 11px; color: rgba(255,255,255,0.4); }
+    .call-duration { font-size: 11px; color: rgba(255,255,255,0.3); }
     
-    .call-name {
-      font-size: 14px;
-      font-weight: 600;
-      color: white;
-      margin-bottom: 2px;
+    .call-actions { display: flex; gap: 6px; }
+    .action-btn {
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px; padding: 6px 12px; color: rgba(255,255,255,0.6);
+      cursor: pointer; font-size: 11px; font-family: 'Montserrat', sans-serif; transition: all 0.2s;
     }
+    .action-btn:hover { background: rgba(255,191,0,0.15); color: #FFBF00; border-color: rgba(255,191,0,0.3); }
+    .action-btn.danger:hover { background: rgba(239,68,68,0.15); color: #EF4444; border-color: rgba(239,68,68,0.3); }
+    .action-btn.primary { background: rgba(255,191,0,0.15); color: #FFBF00; border-color: rgba(255,191,0,0.3); }
     
-    .call-phone {
-      font-size: 12px;
-      color: rgba(255,255,255,0.4);
-    }
+    .empty-state { padding: 48px; text-align: center; color: rgba(255,255,255,0.25); font-size: 13px; }
     
-    .call-time {
-      text-align: center;
-      min-width: 50px;
-    }
+    /* ─── Audio player ─── */
+    .audio-player { margin-top: 6px; }
+    .audio-player audio { width: 100%; height: 32px; }
     
-    .call-time-val {
-      font-size: 12px;
-      color: rgba(255,255,255,0.5);
+    /* ─── Modal ─── */
+    .modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
+    .modal.active { display: flex; }
+    .modal-content {
+      background: #0D1F4A; border: 1px solid rgba(255,191,0,0.2); border-radius: 16px;
+      padding: 32px; width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto;
     }
+    .modal-title { color: #FFBF00; font-size: 18px; font-weight: 700; margin-bottom: 24px; }
+    .form-group { margin-bottom: 14px; }
+    .form-label { display: block; color: rgba(255,255,255,0.5); font-size: 11px; margin-bottom: 5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .form-input, .form-select, .form-textarea {
+      width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 8px; padding: 10px 12px; color: white; font-family: 'Montserrat', sans-serif; font-size: 13px;
+    }
+    .form-input:focus, .form-select:focus, .form-textarea:focus { outline: none; border-color: rgba(255,191,0,0.4); }
+    .form-textarea { resize: vertical; min-height: 70px; }
+    .form-input::placeholder, .form-textarea::placeholder { color: rgba(255,255,255,0.2); }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .modal-buttons { display: flex; gap: 12px; margin-top: 24px; }
+    .modal-buttons button { flex: 1; }
     
     .btn-primary {
-      background: linear-gradient(135deg, #FFBF00, #E6A800);
-      border: none;
-      border-radius: 10px;
-      padding: 12px 20px;
-      color: #0D1F4A;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 700;
-      font-family: 'Montserrat', sans-serif;
+      background: linear-gradient(135deg, #FFBF00, #E6A800); border: none; border-radius: 10px;
+      padding: 12px 20px; color: #0D1F4A; cursor: pointer; font-size: 13px; font-weight: 700; font-family: 'Montserrat', sans-serif;
+    }
+    .btn-secondary {
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 10px;
+      padding: 12px 20px; color: rgba(255,255,255,0.6); cursor: pointer; font-size: 13px; font-family: 'Montserrat', sans-serif;
     }
     
-    .btn-secondary {
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 10px;
-      padding: 12px 20px;
-      color: rgba(255,255,255,0.6);
-      cursor: pointer;
-      font-size: 13px;
-      font-family: 'Montserrat', sans-serif;
+    /* ─── Contacts search ─── */
+    .search-box {
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 12px; padding: 12px 16px; color: white; width: 100%;
+      font-family: 'Montserrat', sans-serif; font-size: 14px; margin-bottom: 16px;
     }
+    .search-box:focus { outline: none; border-color: rgba(255,191,0,0.4); }
+    .search-box::placeholder { color: rgba(255,255,255,0.25); }
+    
+    .contact-item {
+      padding: 12px 20px; border-bottom: 1px solid rgba(255,255,255,0.04);
+      display: flex; align-items: center; gap: 12px;
+    }
+    .contact-avatar {
+      width: 40px; height: 40px; border-radius: 50%; background: rgba(255,191,0,0.15);
+      display: flex; align-items: center; justify-content: center; font-weight: 700; color: #FFBF00; font-size: 14px;
+    }
+    .contact-info { flex: 1; }
+    .contact-name { font-size: 14px; font-weight: 600; }
+    .contact-phone { font-size: 12px; color: rgba(255,255,255,0.4); }
+    
+    /* ─── Stats table ─── */
+    .stats-table { width: 100%; border-collapse: collapse; }
+    .stats-table th { text-align: left; padding: 10px 16px; color: rgba(255,255,255,0.4); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+    .stats-table td { padding: 10px 16px; font-size: 13px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+    .stats-table tr:hover td { background: rgba(255,191,0,0.03); }
   </style>
 </head>
 <body>
 
+<!-- ═══════════════════ LOGIN ═══════════════════ -->
 <div id="login-screen" class="login-screen">
   <div class="login-box">
-    <div class="login-header">
-      <div class="login-title">NAVIGATOR CALL</div>
-      <div class="login-subtitle">ENDOESTETICA</div>
-    </div>
+    <div class="login-title">NAVIGATOR CALL</div>
+    <div class="login-subtitle">ENDOESTETICA</div>
     
     <div id="user-select">
-      <p style="color: rgba(255,255,255,0.7); text-align: center; margin-bottom: 20px; font-size: 14px;">Wybierz swoje konto</p>
-      
+      <p style="color: rgba(255,255,255,0.6); text-align: center; margin-bottom: 20px; font-size: 13px;">Wybierz swoje konto</p>
       <div style="margin-bottom: 16px;">
-        <p style="color: rgba(255,191,0,0.7); font-size: 11px; letter-spacing: 1px; margin-bottom: 8px; text-transform: uppercase;">Recepcja</p>
+        <p class="section-label">Recepcja</p>
         <div class="user-grid">
           <button class="user-btn" onclick="selectUser('asia')">Asia</button>
           <button class="user-btn" onclick="selectUser('kasia')">Kasia</button>
@@ -288,9 +197,8 @@
           <button class="user-btn" onclick="selectUser('agata')">Agata</button>
         </div>
       </div>
-      
       <div>
-        <p style="color: rgba(255,191,0,0.7); font-size: 11px; letter-spacing: 1px; margin-bottom: 8px; text-transform: uppercase;">Zarządzanie</p>
+        <p class="section-label">Zarządzanie</p>
         <div class="user-grid">
           <button class="user-btn" onclick="selectUser('bartosz')">Bartosz</button>
           <button class="user-btn" onclick="selectUser('sandra')">Sandra</button>
@@ -303,12 +211,10 @@
     <div id="pin-input" style="display: none;">
       <div style="text-align: center; margin-bottom: 24px;">
         <div style="width: 56px; height: 56px; border-radius: 50%; background: rgba(255,191,0,0.2); border: 2px solid rgba(255,191,0,0.4); display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; font-size: 22px; font-weight: 700; color: #FFBF00;" id="user-avatar"></div>
-        <p style="color: white; font-weight: 600; font-size: 16px; margin: 0 0 4px;" id="user-name"></p>
-        <button onclick="backToUsers()" style="background: none; border: none; color: rgba(255,255,255,0.4); cursor: pointer; font-size: 12px; font-family: 'Montserrat', sans-serif;">← Zmień osobę</button>
+        <p style="color: white; font-weight: 600; font-size: 16px;" id="user-name-display"></p>
+        <button onclick="backToUsers()" style="background: none; border: none; color: rgba(255,255,255,0.4); cursor: pointer; font-size: 12px; font-family: 'Montserrat', sans-serif; margin-top: 4px;">← Zmień osobę</button>
       </div>
-      
       <div class="pin-display" id="pin-display"></div>
-      
       <div class="keypad">
         <button class="key-btn" onclick="addPin('1')">1</button>
         <button class="key-btn" onclick="addPin('2')">2</button>
@@ -319,7 +225,7 @@
         <button class="key-btn" onclick="addPin('7')">7</button>
         <button class="key-btn" onclick="addPin('8')">8</button>
         <button class="key-btn" onclick="addPin('9')">9</button>
-        <button class="key-btn" style="background: transparent; border: none;"></button>
+        <button class="key-btn" style="background:transparent;border:none;"></button>
         <button class="key-btn" onclick="addPin('0')">0</button>
         <button class="key-btn" onclick="backspace()">⌫</button>
       </div>
@@ -327,111 +233,225 @@
   </div>
 </div>
 
+<!-- ═══════════════════ DASHBOARD ═══════════════════ -->
 <div id="dashboard" class="dashboard">
   <div class="header">
-    <div class="logo">
-      <div class="logo-text">NAVIGATOR CALL</div>
+    <div class="logo-text">NAVIGATOR CALL</div>
+    <div style="display: flex; align-items: center; gap: 16px;">
+      <span class="header-user" id="header-user"></span>
+      <button class="btn-secondary" style="padding: 8px 16px; font-size: 12px;" onclick="logout()">Wyloguj</button>
     </div>
-    <button class="btn-secondary" onclick="logout()">Wyloguj</button>
   </div>
   
   <div class="container">
-    <h2 style="margin-bottom: 20px;">📞 Live Feed</h2>
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('new-leads')">📋 Nowe zgłoszenia <span class="badge" id="badge-new" style="display:none">0</span></button>
+      <button class="tab-btn" onclick="switchTab('in-progress')">📞 W obsłudze <span class="badge" id="badge-open" style="display:none">0</span></button>
+      <button class="tab-btn" onclick="switchTab('closed')">📁 Zamknięte</button>
+      <button class="tab-btn" onclick="switchTab('stats')">📊 Statystyki</button>
+      <button class="tab-btn" onclick="switchTab('contacts')">🔍 Kontakty</button>
+    </div>
     
-    <div class="stats-grid" id="stats-grid"></div>
+    <!-- ═══ Nowe zgłoszenia (GHL Etap 1) ═══ -->
+    <div id="new-leads" class="tab-content active">
+      <div class="stats-grid" id="daily-stats"></div>
+      <h3 style="font-size: 14px; color: rgba(255,255,255,0.5); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">Do kontaktu — Nowe zgłoszenia</h3>
+      <div class="call-list" id="new-leads-list">
+        <div class="empty-state">Ładowanie...</div>
+      </div>
+    </div>
     
-    <div class="calls-list" id="calls-list">
-      <div style="padding: 48px; text-align: center; color: rgba(255,255,255,0.3); font-size: 14px;">
-        Brak połączeń dzisiaj
+    <!-- ═══ W obsłudze ═══ -->
+    <div id="in-progress" class="tab-content">
+      <h3 style="font-size: 14px; color: rgba(255,255,255,0.5); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">W obsłudze</h3>
+      <div class="call-list" id="open-calls-list">
+        <div class="empty-state">Brak otwartych tematów</div>
+      </div>
+    </div>
+    
+    <!-- ═══ Zamknięte ═══ -->
+    <div id="closed" class="tab-content">
+      <h3 style="font-size: 14px; color: rgba(255,255,255,0.5); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">Zamknięte — Archiwum</h3>
+      <div class="call-list" id="closed-calls-list">
+        <div class="empty-state">Brak zamkniętych tematów</div>
+      </div>
+    </div>
+    
+    <!-- ═══ Statystyki ═══ -->
+    <div id="stats" class="tab-content">
+      <div class="stats-grid" id="total-stats"></div>
+      <div class="call-list" style="overflow-x: auto;">
+        <table class="stats-table" id="stats-table">
+          <thead>
+            <tr>
+              <th>Osoba</th>
+              <th>Wszystkie</th>
+              <th>Odebrane</th>
+              <th>Nieodebrane</th>
+              <th>Umówieni</th>
+            </tr>
+          </thead>
+          <tbody id="stats-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+    
+    <!-- ═══ Kontakty ═══ -->
+    <div id="contacts" class="tab-content">
+      <input type="text" class="search-box" id="contact-search" placeholder="Szukaj po nazwisku lub numerze telefonu..." oninput="searchContacts()">
+      <div class="call-list" id="contacts-list">
+        <div class="empty-state">Wpisz minimum 2 znaki aby wyszukać</div>
       </div>
     </div>
   </div>
 </div>
 
+<!-- ═══════════════════ MODAL: WYNIK ROZMOWY ═══════════════════ -->
+<div id="outcome-modal" class="modal">
+  <div class="modal-content">
+    <div class="modal-title">📋 Raport z rozmowy</div>
+    <div id="outcome-call-info" style="background: rgba(255,255,255,0.04); border-radius: 8px; padding: 12px; margin-bottom: 20px; font-size: 12px; color: rgba(255,255,255,0.5);"></div>
+    
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Imię i nazwisko</label>
+        <input type="text" class="form-input" id="f-name" placeholder="np. Jan Kowalski">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Telefon</label>
+        <input type="text" class="form-input" id="f-phone" readonly>
+      </div>
+    </div>
+    
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Płeć</label>
+        <select class="form-select" id="f-gender">
+          <option value="">Wybierz</option>
+          <option value="M">Mężczyzna</option>
+          <option value="K">Kobieta</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Data urodzenia</label>
+        <input type="date" class="form-input" id="f-birthdate">
+      </div>
+    </div>
+    
+    <div class="form-group">
+      <label class="form-label">Efekt rozmowy</label>
+      <select class="form-select" id="f-effect">
+        <option value="">Wybierz</option>
+        <option value="umowiony_w0">✅ Umówił się na W0</option>
+        <option value="rozwaza">🤔 Rozważa, oddzwoni</option>
+        <option value="nie_kwalifikuje_sie">❌ Nie kwalifikuje się</option>
+        <option value="rezygnacja">🚫 Rezygnacja</option>
+      </select>
+    </div>
+    
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Temperatura (1-10)</label>
+        <input type="number" class="form-input" id="f-temp" min="1" max="10" placeholder="8">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Źródło</label>
+        <select class="form-select" id="f-source">
+          <option value="">Wybierz</option>
+          <option value="google">Google</option>
+          <option value="facebook">Facebook</option>
+          <option value="instagram">Instagram</option>
+          <option value="polecenie">Polecenie</option>
+          <option value="strona">Strona www</option>
+          <option value="inne">Inne</option>
+        </select>
+      </div>
+    </div>
+    
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Program leczenia</label>
+        <select class="form-select" id="f-treatment">
+          <option value="">Wybierz</option>
+          <option value="implanty">Implanty</option>
+          <option value="endodoncja">Endodoncja</option>
+          <option value="dsd">DSD</option>
+          <option value="ortodoncja">Ortodoncja</option>
+          <option value="protetyka">Protetyka</option>
+          <option value="chirurgia">Chirurgia</option>
+          <option value="inne">Inne</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Polecony przez</label>
+        <input type="text" class="form-input" id="f-referred" placeholder="imię pacjenta / lekarza">
+      </div>
+    </div>
+    
+    <div class="form-group">
+      <label class="form-label">Notatki</label>
+      <textarea class="form-textarea" id="f-notes" placeholder="Dodatkowe informacje..."></textarea>
+    </div>
+    
+    <div class="modal-buttons">
+      <button class="btn-secondary" onclick="closeOutcomeModal()">Anuluj</button>
+      <button class="btn-primary" onclick="saveOutcome()">Zapisz raport</button>
+    </div>
+  </div>
+</div>
+
 <script>
+// ═══════════════════ STATE ═══════════════════
 let currentUser = null;
 let currentPin = '';
 let ws = null;
-let calls = [];
-let stats = {};
+let openCalls = [];
+let closedCalls = [];
+let newLeads = [];
+let currentOutcomeCall = null;
 
-// ─── Logowanie ────────────────────────────────────────────────────────────
+const names = {
+  asia:'Asia', kasia:'Kasia', agnieszka:'Agnieszka', aneta:'Aneta', agata:'Agata',
+  bartosz:'Bartosz', sandra:'Sandra', aneta_m:'Aneta (M)', sonia:'Sonia'
+};
 
+// ═══════════════════ LOGIN ═══════════════════
 function selectUser(userId) {
   currentUser = userId;
   currentPin = '';
   document.getElementById('user-select').style.display = 'none';
   document.getElementById('pin-input').style.display = 'block';
-  
-  const names = {
-    asia: 'Asia', kasia: 'Kasia', agnieszka: 'Agnieszka', aneta: 'Aneta', agata: 'Agata',
-    bartosz: 'Bartosz', sandra: 'Sandra', aneta_m: 'Aneta (M)', sonia: 'Sonia'
-  };
-  
   document.getElementById('user-avatar').textContent = names[userId][0];
-  document.getElementById('user-name').textContent = names[userId];
+  document.getElementById('user-name-display').textContent = names[userId];
   updatePinDisplay();
 }
 
 function backToUsers() {
-  currentUser = null;
-  currentPin = '';
+  currentUser = null; currentPin = '';
   document.getElementById('user-select').style.display = 'block';
   document.getElementById('pin-input').style.display = 'none';
 }
 
-function addPin(digit) {
-  if (currentPin.length < 4) {
-    currentPin += digit;
-    updatePinDisplay();
-    if (currentPin.length === 4) {
-      login();
-    }
-  }
-}
-
-function backspace() {
-  currentPin = currentPin.slice(0, -1);
-  updatePinDisplay();
-}
+function addPin(d) { if (currentPin.length < 4) { currentPin += d; updatePinDisplay(); if (currentPin.length === 4) login(); } }
+function backspace() { currentPin = currentPin.slice(0,-1); updatePinDisplay(); }
 
 function updatePinDisplay() {
-  const display = document.getElementById('pin-display');
-  display.innerHTML = '';
-  for (let i = 0; i < 4; i++) {
-    const dot = document.createElement('div');
-    dot.className = 'pin-dot' + (i < currentPin.length ? ' filled' : '');
-    display.appendChild(dot);
-  }
+  const el = document.getElementById('pin-display');
+  el.innerHTML = '';
+  for (let i = 0; i < 4; i++) { const d = document.createElement('div'); d.className = 'pin-dot' + (i < currentPin.length ? ' filled' : ''); el.appendChild(d); }
 }
 
 async function login() {
-  try {
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: currentUser, pin: currentPin })
-    });
-    
-    const data = await res.json();
-    if (data.success) {
-      sessionStorage.setItem('user', JSON.stringify(data.user));
-      showDashboard(data.user);
-      connectWebSocket();
-    } else {
-      alert('Nieprawidłowy PIN');
-      currentPin = '';
-      updatePinDisplay();
-    }
-  } catch (err) {
-    alert('Błąd logowania');
-  }
+  const res = await fetch('/api/auth/login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ userId: currentUser, pin: currentPin }) });
+  const data = await res.json();
+  if (data.success) {
+    sessionStorage.setItem('user', JSON.stringify(data.user));
+    showDashboard(data.user);
+  } else { alert('Nieprawidłowy PIN'); currentPin = ''; updatePinDisplay(); }
 }
 
 function logout() {
-  sessionStorage.removeItem('user');
-  currentUser = null;
-  currentPin = '';
+  sessionStorage.removeItem('user'); currentUser = null; currentPin = '';
   if (ws) ws.close();
   document.getElementById('dashboard').classList.remove('active');
   document.getElementById('login-screen').style.display = 'flex';
@@ -439,13 +459,31 @@ function logout() {
   document.getElementById('pin-input').style.display = 'none';
 }
 
-// ─── Dashboard ─────────────────────────────────────────────────────────────
-
+// ═══════════════════ DASHBOARD ═══════════════════
 function showDashboard(user) {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('dashboard').classList.add('active');
+  document.getElementById('header-user').textContent = user.name;
+  connectWebSocket();
+  loadNewLeads();
+  loadOpenCalls();
+  // Odświeżaj nowe zgłoszenia co 60s
+  setInterval(loadNewLeads, 60000);
 }
 
+function switchTab(tab) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById(tab).classList.add('active');
+  event.target.closest('.tab-btn').classList.add('active');
+  
+  if (tab === 'closed') loadClosedCalls();
+  if (tab === 'stats') loadStats();
+  if (tab === 'in-progress') loadOpenCalls();
+  if (tab === 'new-leads') loadNewLeads();
+}
+
+// ═══════════════════ WEBSOCKET ═══════════════════
 function connectWebSocket() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${protocol}//${window.location.host}`);
@@ -454,73 +492,328 @@ function connectWebSocket() {
     const msg = JSON.parse(event.data);
     
     if (msg.type === 'INIT') {
-      calls = msg.calls;
-      stats = msg.stats;
-      updateUI();
+      openCalls = msg.calls || [];
+      renderOpenCalls();
     } else if (msg.type === 'CALL_RINGING') {
-      const newCall = {
-        id: msg.callId,
-        caller_phone: msg.callerPhone,
-        called_phone: msg.calledPhone,
-        status: 'ringing',
-        created_at: new Date().toISOString(),
-        duration_seconds: 0,
-        ghl_logged: false
-      };
-      calls.unshift(newCall);
-      updateUI();
+      openCalls.unshift(msg.call);
+      renderOpenCalls();
+      // Przełącz na zakładkę W obsłudze
+      switchTabSilent('in-progress');
+    } else if (msg.type === 'CALL_ANSWERED') {
+      const c = openCalls.find(x => x.call_id === msg.callId);
+      if (c) c.status = 'answered';
+      renderOpenCalls();
     } else if (msg.type === 'CALL_ENDED') {
-      const call = calls.find(c => c.id === msg.callId);
-      if (call) {
-        call.status = msg.status;
-        call.duration_seconds = msg.duration;
-      }
-      if (msg.stats) stats = msg.stats;
-      updateUI();
+      const c = openCalls.find(x => x.call_id === msg.callId);
+      if (c) { c.status = msg.status; c.duration_seconds = msg.duration; }
+      renderOpenCalls();
+    } else if (msg.type === 'CALL_TOPIC_CLOSED') {
+      openCalls = openCalls.filter(x => x.call_id !== msg.callId);
+      renderOpenCalls();
+    } else if (msg.type === 'CALL_TOPIC_REOPENED') {
+      loadOpenCalls();
+    } else if (msg.type === 'CALL_RECORDING_READY') {
+      const c = openCalls.find(x => x.call_id === msg.callId);
+      if (c) c.recording_url = msg.recordingUrl;
+      renderOpenCalls();
+    } else if (msg.type === 'CALL_OUTCOME_SAVED') {
+      const c = openCalls.find(x => x.call_id === msg.callId);
+      if (c) c.call_effect = msg.callEffect;
+      renderOpenCalls();
     }
   };
+  
+  ws.onclose = () => { setTimeout(connectWebSocket, 3000); };
 }
 
-function updateUI() {
-  // Statystyki
-  const statsHtml = `
-    <div class="stat-card"><div class="stat-label">📞 Wszystkie</div><div class="stat-value">${stats.total || 0}</div></div>
-    <div class="stat-card"><div class="stat-label">✅ Odebrane</div><div class="stat-value">${stats.answered || 0}</div></div>
-    <div class="stat-card"><div class="stat-label">📵 Nieodebrane</div><div class="stat-value">${stats.missed || 0}</div></div>
-    <div class="stat-card"><div class="stat-label">🗓️ Umówieni</div><div class="stat-value">${stats.booked || 0}</div></div>
-  `;
-  document.getElementById('stats-grid').innerHTML = statsHtml;
+function switchTabSilent(tab) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById(tab).classList.add('active');
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    if (btn.textContent.includes(tab === 'in-progress' ? 'W obsłudze' : tab === 'new-leads' ? 'Nowe' : '')) btn.classList.add('active');
+  });
+}
+
+// ═══════════════════ NOWE ZGŁOSZENIA ═══════════════════
+async function loadNewLeads() {
+  try {
+    const res = await fetch('/api/leads/new');
+    const data = await res.json();
+    newLeads = data.leads || [];
+    renderNewLeads();
+    
+    // Badge
+    const badge = document.getElementById('badge-new');
+    if (newLeads.length > 0) { badge.style.display = 'inline'; badge.textContent = newLeads.length; }
+    else { badge.style.display = 'none'; }
+  } catch (err) { console.error(err); }
+}
+
+function renderNewLeads() {
+  const el = document.getElementById('new-leads-list');
+  if (newLeads.length === 0) { el.innerHTML = '<div class="empty-state">Brak nowych zgłoszeń</div>'; return; }
   
-  // Połączenia
-  if (calls.length === 0) {
-    document.getElementById('calls-list').innerHTML = '<div style="padding: 48px; text-align: center; color: rgba(255,255,255,0.3); font-size: 14px;">Brak połączeń dzisiaj</div>';
-  } else {
-    const callsHtml = calls.map(call => `
-      <div class="call-item">
-        <div class="call-status">${call.status === 'answered' ? '✅ Odebrane' : call.status === 'ringing' ? '📞 Dzwoni' : '📵 Nieodebrane'}</div>
+  const now = Date.now();
+  el.innerHTML = newLeads.map(lead => {
+    const age = now - new Date(lead.createdAt).getTime();
+    const isReminder = age > 2 * 60 * 60 * 1000; // 2 godziny
+    return `
+      <div class="call-item ${isReminder ? 'reminder' : ''}">
+        <div class="call-badge badge-new">NOWE</div>
         <div class="call-info">
-          <div class="call-name">${call.caller_phone || 'Nieznany'}</div>
-          <div class="call-phone">${call.duration_seconds}s</div>
+          <div class="call-name">${lead.name || 'Brak imienia'}</div>
+          <div class="call-phone">${lead.phone || 'Brak numeru'} ${isReminder ? '⚠️ Przypomnienie!' : ''}</div>
         </div>
-        <div class="call-time">
-          <div class="call-time-val">${new Date(call.created_at).toLocaleTimeString('pl-PL', {hour: '2-digit', minute: '2-digit'})}</div>
+        <div class="call-actions">
+          <button class="action-btn primary" onclick="dialNumber('${lead.phone}')">📞 Zadzwoń</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ═══════════════════ W OBSŁUDZE ═══════════════════
+async function loadOpenCalls() {
+  try {
+    const res = await fetch('/api/calls/open');
+    const data = await res.json();
+    openCalls = data.calls || [];
+    renderOpenCalls();
+    
+    const badge = document.getElementById('badge-open');
+    if (openCalls.length > 0) { badge.style.display = 'inline'; badge.textContent = openCalls.length; }
+    else { badge.style.display = 'none'; }
+  } catch (err) { console.error(err); }
+}
+
+function renderOpenCalls() {
+  const el = document.getElementById('open-calls-list');
+  if (openCalls.length === 0) { el.innerHTML = '<div class="empty-state">Brak otwartych tematów</div>'; return; }
+  
+  el.innerHTML = openCalls.map(call => {
+    const isRinging = call.status === 'ringing';
+    const isAnswered = call.status === 'answered';
+    const isMissed = call.status === 'no-answer';
+    const badgeClass = isRinging ? 'badge-ringing' : isAnswered ? 'badge-answered' : 'badge-missed';
+    const badgeText = isRinging ? '📞 DZWONI' : isAnswered ? '✅ Odebrane' : '📵 Nieodebrane';
+    const effectText = call.call_effect ? effectLabel(call.call_effect) : '';
+    
+    let recordingHtml = '';
+    if (call.recording_url) {
+      recordingHtml = `<div class="audio-player"><audio controls preload="none" src="${call.recording_url}"></audio></div>`;
+    }
+    
+    return `
+      <div class="call-item ${isRinging ? 'ringing' : ''}">
+        <div class="call-badge ${badgeClass}">${badgeText}</div>
+        <div class="call-info">
+          <div class="call-name">${call.patient_name || call.caller_phone || 'Nieznany'}</div>
+          <div class="call-phone">${call.caller_phone || ''} ${call.duration_seconds ? '· ' + call.duration_seconds + 's' : ''} ${effectText}</div>
+          ${recordingHtml}
+        </div>
+        <div class="call-meta">
+          <div class="call-time">${new Date(call.created_at).toLocaleTimeString('pl-PL', {hour:'2-digit',minute:'2-digit'})}</div>
+        </div>
+        <div class="call-actions">
+          ${!isRinging ? `<button class="action-btn primary" onclick="openOutcomeModal('${call.call_id}', '${call.ghl_contact_id || ''}', '${call.caller_phone || ''}', '${(call.patient_name || '').replace(/'/g, '')}')">📋 Raport</button>` : ''}
+          <button class="action-btn danger" onclick="closeTopic('${call.call_id}')">✕ Zamknij</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function effectLabel(e) {
+  const map = { umowiony_w0: '✅ W0', rozwaza: '🤔 Rozważa', nie_kwalifikuje_sie: '❌ NK', rezygnacja: '🚫 Rez.' };
+  return map[e] ? `<span style="background:rgba(255,191,0,0.1);padding:2px 6px;border-radius:4px;font-size:10px;color:#FFBF00;">${map[e]}</span>` : '';
+}
+
+// ═══════════════════ ZAMKNIĘTE ═══════════════════
+async function loadClosedCalls() {
+  try {
+    const res = await fetch('/api/calls/closed');
+    const data = await res.json();
+    closedCalls = data.calls || [];
+    renderClosedCalls();
+  } catch (err) { console.error(err); }
+}
+
+function renderClosedCalls() {
+  const el = document.getElementById('closed-calls-list');
+  if (closedCalls.length === 0) { el.innerHTML = '<div class="empty-state">Brak zamkniętych tematów</div>'; return; }
+  
+  el.innerHTML = closedCalls.map(call => `
+    <div class="call-item">
+      <div class="call-badge badge-closed">ZAMKNIĘTE</div>
+      <div class="call-info">
+        <div class="call-name">${call.patient_name || call.caller_phone || 'Nieznany'}</div>
+        <div class="call-phone">${call.caller_phone || ''} · ${call.duration_seconds || 0}s ${call.call_effect ? '· ' + effectLabel(call.call_effect) : ''}</div>
+      </div>
+      <div class="call-meta">
+        <div class="call-time">${new Date(call.created_at).toLocaleTimeString('pl-PL', {hour:'2-digit',minute:'2-digit'})}</div>
+      </div>
+      <div class="call-actions">
+        <button class="action-btn" onclick="reopenTopic('${call.call_id}')">↩ Otwórz ponownie</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ═══════════════════ STATYSTYKI ═══════════════════
+async function loadStats() {
+  try {
+    const res = await fetch('/api/stats');
+    const data = await res.json();
+    
+    document.getElementById('total-stats').innerHTML = `
+      <div class="stat-card"><div class="stat-label">Wszystkie</div><div class="stat-value">${data.totals.total}</div></div>
+      <div class="stat-card"><div class="stat-label">Odebrane</div><div class="stat-value">${data.totals.answered}</div></div>
+      <div class="stat-card"><div class="stat-label">Nieodebrane</div><div class="stat-value">${data.totals.missed}</div></div>
+      <div class="stat-card"><div class="stat-label">Umówieni</div><div class="stat-value">${data.totals.booked}</div></div>
+    `;
+    
+    const tbody = document.getElementById('stats-tbody');
+    tbody.innerHTML = Object.entries(data.perUser)
+      .filter(([k,v]) => v.total > 0)
+      .map(([k,v]) => `<tr><td style="font-weight:600;">${v.name}</td><td>${v.total}</td><td>${v.answered}</td><td>${v.missed}</td><td style="color:#FFBF00;font-weight:700;">${v.booked}</td></tr>`)
+      .join('');
+  } catch (err) { console.error(err); }
+}
+
+// ═══════════════════ KONTAKTY ═══════════════════
+let searchTimeout;
+function searchContacts() {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(async () => {
+    const q = document.getElementById('contact-search').value;
+    if (q.length < 2) { document.getElementById('contacts-list').innerHTML = '<div class="empty-state">Wpisz minimum 2 znaki aby wyszukać</div>'; return; }
+    
+    const res = await fetch(`/api/contacts?q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    
+    const el = document.getElementById('contacts-list');
+    if (data.contacts.length === 0) { el.innerHTML = '<div class="empty-state">Brak wyników</div>'; return; }
+    
+    el.innerHTML = data.contacts.map(c => `
+      <div class="contact-item">
+        <div class="contact-avatar">${(c.name || '?')[0].toUpperCase()}</div>
+        <div class="contact-info">
+          <div class="contact-name">${c.name || 'Brak imienia'}</div>
+          <div class="contact-phone">${c.phone || 'Brak numeru'}</div>
+        </div>
+        <div class="call-actions">
+          ${c.phone ? `<button class="action-btn primary" onclick="dialNumber('${c.phone}')">📞 Zadzwoń</button>` : ''}
         </div>
       </div>
     `).join('');
-    document.getElementById('calls-list').innerHTML = callsHtml;
-  }
+  }, 300);
 }
 
-// ─── Init ──────────────────────────────────────────────────────────────────
+// ═══════════════════ CLICK-TO-CALL ═══════════════════
+async function dialNumber(phone) {
+  if (!phone) { alert('Brak numeru telefonu'); return; }
+  if (!confirm(`Zadzwonić do ${phone}?`)) return;
+  
+  try {
+    const res = await fetch('/api/call/dial', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ toNumber: phone, fromExt: '103' })
+    });
+    const data = await res.json();
+    if (data.status === 'success') {
+      alert('Łączenie... Zadarma zadzwoni na Twój telefon, a potem połączy z pacjentem.');
+    } else {
+      alert('Błąd: ' + (data.message || 'Nieznany błąd'));
+    }
+  } catch (err) { alert('Błąd połączenia'); }
+}
 
+// ═══════════════════ OUTCOME MODAL ═══════════════════
+function openOutcomeModal(callId, contactId, phone, patientName) {
+  currentOutcomeCall = { callId, contactId, phone };
+  document.getElementById('outcome-call-info').textContent = `Połączenie: ${phone} ${patientName ? '(' + patientName + ')' : ''}`;
+  document.getElementById('f-phone').value = phone;
+  document.getElementById('f-name').value = patientName || '';
+  document.getElementById('outcome-modal').classList.add('active');
+}
+
+function closeOutcomeModal() {
+  document.getElementById('outcome-modal').classList.remove('active');
+  currentOutcomeCall = null;
+}
+
+async function saveOutcome() {
+  if (!currentOutcomeCall) return;
+  const user = JSON.parse(sessionStorage.getItem('user'));
+  const effect = document.getElementById('f-effect').value;
+  
+  if (!effect) { alert('Wybierz efekt rozmowy'); return; }
+  
+  const body = {
+    callId: currentOutcomeCall.callId,
+    ghlContactId: currentOutcomeCall.contactId,
+    callEffect: effect,
+    temperature: parseInt(document.getElementById('f-temp').value) || null,
+    userId: user.id,
+    patientName: document.getElementById('f-name').value,
+    notes: document.getElementById('f-notes').value,
+    source: document.getElementById('f-source').value,
+    treatment: document.getElementById('f-treatment').value,
+    referredBy: document.getElementById('f-referred').value,
+    gender: document.getElementById('f-gender').value,
+    birthDate: document.getElementById('f-birthdate').value,
+    bookedVisit: effect === 'umowiony_w0',
+  };
+  
+  try {
+    const res = await fetch('/api/call/outcome', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    if (res.ok) {
+      closeOutcomeModal();
+      // Reset form
+      ['f-name','f-phone','f-gender','f-birthdate','f-effect','f-temp','f-source','f-treatment','f-referred','f-notes'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el.tagName === 'SELECT') el.selectedIndex = 0;
+        else el.value = '';
+      });
+    }
+  } catch (err) { alert('Błąd zapisu'); }
+}
+
+// ═══════════════════ CLOSE / REOPEN ═══════════════════
+async function closeTopic(callId) {
+  if (!confirm('Zamknąć ten temat?')) return;
+  await fetch('/api/call/close', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ callId }) });
+}
+
+async function reopenTopic(callId) {
+  await fetch('/api/call/reopen', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ callId }) });
+  loadClosedCalls();
+  loadOpenCalls();
+}
+
+// ═══════════════════ DAILY STATS ═══════════════════
+async function loadDailyStats() {
+  try {
+    const res = await fetch('/api/stats');
+    const data = await res.json();
+    document.getElementById('daily-stats').innerHTML = `
+      <div class="stat-card"><div class="stat-label">Dzisiaj</div><div class="stat-value">${data.totals.total}</div></div>
+      <div class="stat-card"><div class="stat-label">Odebrane</div><div class="stat-value">${data.totals.answered}</div></div>
+      <div class="stat-card"><div class="stat-label">Nieodebrane</div><div class="stat-value">${data.totals.missed}</div></div>
+      <div class="stat-card"><div class="stat-label">Umówieni W0</div><div class="stat-value">${data.totals.booked}</div></div>
+    `;
+  } catch (err) {}
+}
+
+// ═══════════════════ INIT ═══════════════════
 window.addEventListener('load', () => {
   const user = sessionStorage.getItem('user');
-  if (user) {
-    showDashboard(JSON.parse(user));
-    connectWebSocket();
-  }
+  if (user) showDashboard(JSON.parse(user));
+  loadDailyStats();
+  setInterval(loadDailyStats, 30000);
 });
 </script>
-
 </body>
 </html>

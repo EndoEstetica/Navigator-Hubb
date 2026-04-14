@@ -1,7 +1,7 @@
 {
-  "name": "navigator-call-v6-lite",
-  "version": "6.0.0-lite",
-  "description": "Navigator Call v6-lite — simplified backend",
+  "name": "navigator-call-v6-final",
+  "version": "6.0.0",
+  "description": "Navigator Call v6 — Full version with Zadarma, GHL, Supabase",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
