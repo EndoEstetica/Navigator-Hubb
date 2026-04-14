@@ -213,6 +213,27 @@ async function getGHLContactByPhone(phone) {
   return null;
 }
 
+async function createOpportunityForContact(contactId, stageId, name, treatment, source) {
+  try {
+    const oppName = name ? `${name} — rozmowa` : 'Nowa szansa sprzedaży';
+    const body = {
+      pipelineId: PIPELINE_ID,
+      locationId: GHL_LOCATION_ID,
+      name: oppName,
+      stageId,
+      status: 'open',
+      contactId,
+    };
+    if (source) body.source = source;
+    const res = await ghlApi.post('/opportunities/', body);
+    console.log(`[GHL] Created opportunity for contact ${contactId} at stage ${stageId}`);
+    return res.data;
+  } catch (err) {
+    console.error('[GHL] Create opportunity error:', err.response?.data || err.message);
+    return null;
+  }
+}
+
 async function moveOpportunityToStage(contactId, stageId) {
   try {
     // Szukaj opportunity dla kontaktu
@@ -461,8 +482,11 @@ app.post('/api/call/outcome', async (req, res) => {
   const {
     callId,
     ghlContactId,
+    contactType,
     callEffect,
+    callReason,
     temperature,
+    objections,
     userId,
     patientName,
     notes,
@@ -473,55 +497,103 @@ app.post('/api/call/outcome', async (req, res) => {
     birthDate,
     bookedVisit,
   } = req.body;
-  
-  // Update w Supabase
+
+  // ─── Mapowanie callEffect → GHL stage ───────────────────────────────────
+  // Etap 7 (PO_ROZMOWIE)  = po rozmowie, bez umówionej wizyty
+  // Etap 8 (UMOWIONY_W0)  = wizyta umówiona
+  // Etap 2 (PO_PIERWSZEJ_PROBIE) = nieodebrane
+  // Etap 6 (BEZ_KONTAKTU) = nie kwalifikuje się / rezygnacja
+  const EFFECT_TO_STAGE = {
+    umowiony_w0:       STAGES.UMOWIONY_W0,         // Etap 8
+    followup:          STAGES.PO_ROZMOWIE,          // Etap 7
+    brak_decyzji:      STAGES.PO_ROZMOWIE,          // Etap 7
+    rozwaza:           STAGES.PO_ROZMOWIE,          // Etap 7 (legacy)
+    nie_odebral:       STAGES.PO_PIERWSZEJ_PROBIE,  // Etap 2
+    nie_kwalifikuje_sie: STAGES.BEZ_KONTAKTU,       // Etap 6
+    rezygnacja:        STAGES.BEZ_KONTAKTU,         // Etap 6
+    nie_pacjent:       null,                        // Bez zmiany etapu
+  };
+
+  const EFFECT_TO_TAGS = {
+    umowiony_w0:       ['umowiony_w0', 'etap_8'],
+    followup:          ['followup', 'etap_7'],
+    brak_decyzji:      ['brak_decyzji', 'etap_7'],
+    nie_odebral:       ['nie_odebral', 'etap_2'],
+    nie_kwalifikuje_sie: ['nie_kwalifikuje_sie', 'etap_6'],
+    rezygnacja:        ['rezygnacja', 'etap_6'],
+    nie_pacjent:       ['nie_pacjent'],
+  };
+
+  const isBooked = callEffect === 'umowiony_w0' || bookedVisit === true;
+
+  // ─── Update w Supabase ───────────────────────────────────────────────────
   await supabase.updateCall(callId, {
-    call_effect: callEffect,
-    temperature: temperature || null,
-    user_id: userId,
-    patient_name: patientName || null,
-    notes: notes || null,
-    source: source || null,
-    treatment: treatment || null,
-    referred_by: referredBy || null,
-    gender: gender || null,
-    birth_date: birthDate || null,
-    ghl_logged: true,
+    contact_type:  contactType  || null,
+    call_effect:   callEffect,
+    call_reason:   callReason   || null,
+    temperature:   temperature  || null,
+    objections:    objections   || null,
+    user_id:       userId,
+    patient_name:  patientName  || null,
+    notes:         notes        || null,
+    source:        source       || null,
+    treatment:     treatment    || null,
+    referred_by:   referredBy   || null,
+    gender:        gender       || null,
+    birth_date:    birthDate    || null,
+    booked_visit:  isBooked,
+    ghl_logged:    true,
   });
-  
-  // Logika GHL — przesunięcie na etap
-  if (ghlContactId) {
-    let targetStage = null;
-    let tags = [];
-    
-    if (callEffect === 'umowiony_w0' || bookedVisit === true) {
-      targetStage = STAGES.UMOWIONY_W0;
-      tags.push('umowiony_w0');
-    } else if (callEffect === 'rozwaza') {
-      targetStage = STAGES.PO_ROZMOWIE;
-      tags.push('rozwaza_w0');
-    } else if (callEffect === 'nie_kwalifikuje_sie') {
-      targetStage = STAGES.BEZ_KONTAKTU;
-      tags.push('nie_kwalifikuje_sie');
-    } else if (callEffect === 'rezygnacja') {
-      targetStage = STAGES.BEZ_KONTAKTU;
-      tags.push('rezygnacja');
-    }
-    
-    if (targetStage) {
-      await moveOpportunityToStage(ghlContactId, targetStage);
-    }
-    
-    for (const tag of tags) {
-      await addTagToContact(ghlContactId, tag);
-    }
-    
-    if (notes) {
-      await addNoteToContact(ghlContactId, `[${userId}] ${notes}`);
+
+  // ─── Logika GHL ──────────────────────────────────────────────────────────
+  // Ustal contactId: albo przekazany z frontu, albo pobierz z Supabase
+  let resolvedContactId = ghlContactId;
+  if (!resolvedContactId) {
+    const callRows = await supabase.query(`calls?call_id=eq.${callId}`, 'GET');
+    if (callRows && callRows.length > 0) {
+      resolvedContactId = callRows[0].ghl_contact_id || null;
     }
   }
-  
-  broadcast({ type: 'CALL_OUTCOME_SAVED', callId, callEffect });
+
+  if (resolvedContactId) {
+    const targetStage = EFFECT_TO_STAGE[callEffect] ?? null;
+    const tags = EFFECT_TO_TAGS[callEffect] || [];
+
+    // Dodaj tagi leczenia i źródła
+    if (treatment) tags.push(`leczenie_${treatment}`);
+    if (source)    tags.push(`zrodlo_${source}`);
+
+    // Przesuń opportunity lub utwórz nową
+    if (targetStage) {
+      const moved = await moveOpportunityToStage(resolvedContactId, targetStage);
+      if (!moved) {
+        // Brak opportunity — utwórz nową i od razu przesuń
+        await createOpportunityForContact(resolvedContactId, targetStage, patientName, treatment, source);
+      }
+    }
+
+    // Tagi
+    for (const tag of tags) {
+      await addTagToContact(resolvedContactId, tag);
+    }
+
+    // Notatka z raportu
+    const noteLines = [];
+    if (contactType) noteLines.push(`Typ: ${contactType}`);
+    if (callReason)  noteLines.push(`Powód: ${callReason}`);
+    if (temperature) noteLines.push(`Temperatura: ${temperature}`);
+    if (objections)  noteLines.push(`Obiekcje: ${objections}`);
+    if (notes)       noteLines.push(`Notatki: ${notes}`);
+    if (referredBy)  noteLines.push(`Polecony przez: ${referredBy}`);
+    if (noteLines.length > 0) {
+      await addNoteToContact(
+        resolvedContactId,
+        `[Navigator Call | ${userId}]\n${noteLines.join('\n')}`
+      );
+    }
+  }
+
+  broadcast({ type: 'CALL_OUTCOME_SAVED', callId, callEffect, contactType });
   res.json({ success: true });
 });
 
@@ -549,6 +621,61 @@ app.get('/api/contacts', (req, res) => {
   ).slice(0, 50);
   
   res.json({ contacts: results });
+});
+
+// ─── API: Dodaj kontakt do GHL ───────────────────────────────────────
+
+app.post('/api/contacts/add', async (req, res) => {
+  const { firstName, lastName, phone, email, source, treatment, notes } = req.body;
+  
+  if (!phone) {
+    return res.status(400).json({ success: false, error: 'Numer telefonu jest wymagany' });
+  }
+  
+  try {
+    const contactData = {
+      firstName: firstName || '',
+      lastName: lastName || '',
+      phone,
+      locationId: GHL_LOCATION_ID,
+    };
+    if (email) contactData.email = email;
+    if (source) contactData.source = source;
+    
+    const result = await ghlApi.post('/contacts/', contactData);
+    const contact = result.data.contact || result.data;
+    
+    console.log(`[GHL] Contact created: ${contact.id} - ${firstName} ${lastName} (${phone})`);
+    
+    // Dodaj tagi
+    const tags = ['lead_manual'];
+    if (treatment) tags.push(`leczenie_${treatment}`);
+    if (source) tags.push(`zrodlo_${source}`);
+    
+    try {
+      await ghlApi.post(`/contacts/${contact.id}/tags`, { tags });
+    } catch (e) { /* ignore tag error */ }
+    
+    // Dodaj notatkę
+    if (notes) {
+      try {
+        await ghlApi.post(`/contacts/${contact.id}/notes`, { body: notes });
+      } catch (e) { /* ignore */ }
+    }
+    
+    // Dodaj do cache
+    ghlContactsCache.push({
+      id: contact.id,
+      name: `${firstName} ${lastName}`.trim(),
+      phone,
+      email: email || '',
+    });
+    
+    res.json({ success: true, contactId: contact.id });
+  } catch (err) {
+    console.error('[GHL] Add contact error:', err.response?.data || err.message);
+    res.status(500).json({ success: false, error: err.response?.data?.message || err.message });
+  }
 });
 
 // ─── API: Click-to-Call ─────────────────────────────────────────────────────
@@ -599,14 +726,21 @@ app.get('/api/stats', async (req, res) => {
     perUser[uid].effects[eff] = (perUser[uid].effects[eff] || 0) + 1;
   });
   
+  const typeCounts = { nowy:0, staly:0, wizyta:0, nie_pacjent:0 };
+  allCalls.forEach(c => {
+    const t = c.contact_type;
+    if (t && typeCounts[t] !== undefined) typeCounts[t]++;
+  });
+
   const totals = {
     total: allCalls.length,
     answered: allCalls.filter(c => c.status === 'answered').length,
     missed: allCalls.filter(c => c.status === 'no-answer').length,
     booked: allCalls.filter(c => c.call_effect === 'umowiony_w0').length,
+    followup: allCalls.filter(c => c.call_effect === 'followup' || c.call_effect === 'brak_decyzji').length,
   };
-  
-  res.json({ totals, perUser });
+
+  res.json({ totals, perUser, typeCounts });
 });
 
 // ─── API: Health check ──────────────────────────────────────────────────────

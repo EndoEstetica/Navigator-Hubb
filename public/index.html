@@ -1,818 +1,1360 @@
 <!DOCTYPE html>
 <html lang="pl">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Navigator Call v6</title>
-  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Montserrat', sans-serif; background: #0A1628; color: white; min-height: 100vh; }
-    
-    /* ─── Login ─── */
-    .login-screen {
-      min-height: 100vh; display: flex; align-items: center; justify-content: center;
-      background: linear-gradient(135deg, #0D1F4A 0%, #183C63 50%, #0D1F4A 100%);
-    }
-    .login-box {
-      background: rgba(255,255,255,0.05); backdrop-filter: blur(20px);
-      border: 1px solid rgba(255,191,0,0.2); border-radius: 20px;
-      padding: 40px; width: 100%; max-width: 480px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
-    }
-    .login-title { color: #FFBF00; font-size: 22px; font-weight: 700; letter-spacing: 1px; text-align: center; margin-bottom: 4px; }
-    .login-subtitle { color: rgba(255,255,255,0.4); font-size: 11px; letter-spacing: 2px; text-align: center; margin-bottom: 32px; }
-    .section-label { color: rgba(255,191,0,0.7); font-size: 11px; letter-spacing: 1px; margin-bottom: 8px; text-transform: uppercase; }
-    .user-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 20px; }
-    .user-btn {
-      background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 10px; padding: 12px 8px; color: white; cursor: pointer;
-      font-size: 13px; font-weight: 500; font-family: 'Montserrat', sans-serif; transition: all 0.2s;
-    }
-    .user-btn:hover { background: rgba(255,191,0,0.15); border-color: rgba(255,191,0,0.4); }
-    .pin-display { display: flex; justify-content: center; gap: 12px; margin-bottom: 24px; }
-    .pin-dot { width: 14px; height: 14px; border-radius: 50%; background: rgba(255,255,255,0.2); border: 2px solid rgba(255,255,255,0.3); }
-    .pin-dot.filled { background: #FFBF00; border-color: #FFBF00; }
-    .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-    .key-btn {
-      height: 56px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 12px; color: white; font-size: 20px; font-weight: 600;
-      cursor: pointer; font-family: 'Montserrat', sans-serif; transition: all 0.15s;
-    }
-    .key-btn:hover { background: rgba(255,191,0,0.15); }
-    
-    /* ─── Dashboard ─── */
-    .dashboard { display: none; }
-    .dashboard.active { display: block; }
-    .header {
-      background: rgba(13,31,74,0.95); padding: 14px 20px;
-      border-bottom: 1px solid rgba(255,191,0,0.15);
-      display: flex; align-items: center; justify-content: space-between;
-    }
-    .logo-text { font-size: 14px; font-weight: 700; color: #FFBF00; letter-spacing: 0.5px; }
-    .header-user { color: rgba(255,255,255,0.5); font-size: 12px; }
-    .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
-    
-    /* ─── Tabs ─── */
-    .tabs { display: flex; gap: 4px; margin-bottom: 20px; background: rgba(255,255,255,0.03); border-radius: 12px; padding: 4px; }
-    .tab-btn {
-      background: none; border: none; color: rgba(255,255,255,0.4); cursor: pointer;
-      padding: 10px 16px; font-family: 'Montserrat', sans-serif; font-weight: 600;
-      font-size: 12px; border-radius: 8px; transition: all 0.2s; white-space: nowrap;
-    }
-    .tab-btn.active { color: #FFBF00; background: rgba(255,191,0,0.1); }
-    .tab-btn .badge {
-      background: #EF4444; color: white; font-size: 10px; padding: 1px 6px;
-      border-radius: 10px; margin-left: 6px; font-weight: 700;
-    }
-    .tab-content { display: none; }
-    .tab-content.active { display: block; }
-    
-    /* ─── Stats ─── */
-    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 20px; }
-    .stat-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 14px 16px; }
-    .stat-label { font-size: 10px; color: rgba(255,255,255,0.4); margin-bottom: 4px; letter-spacing: 0.5px; text-transform: uppercase; }
-    .stat-value { font-size: 22px; font-weight: 700; color: #FFBF00; }
-    
-    /* ─── Call list ─── */
-    .call-list { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; overflow: hidden; }
-    .call-item {
-      padding: 14px 20px; border-bottom: 1px solid rgba(255,255,255,0.04);
-      display: flex; align-items: center; gap: 12px; transition: background 0.2s;
-    }
-    .call-item:hover { background: rgba(255,191,0,0.04); }
-    .call-item.ringing { background: rgba(34,197,94,0.08); animation: pulse 2s infinite; }
-    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
-    .call-item.reminder { animation: blink 1s infinite; }
-    @keyframes blink { 0%,100% { background: rgba(239,68,68,0.05); } 50% { background: rgba(239,68,68,0.15); } }
-    
-    .call-badge {
-      border-radius: 6px; padding: 3px 8px; font-size: 10px; font-weight: 700;
-      min-width: 90px; text-align: center; letter-spacing: 0.3px;
-    }
-    .badge-ringing { background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.3); color: #22C55E; }
-    .badge-answered { background: rgba(59,130,246,0.15); border: 1px solid rgba(59,130,246,0.3); color: #3B82F6; }
-    .badge-missed { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: #EF4444; }
-    .badge-new { background: rgba(168,85,247,0.15); border: 1px solid rgba(168,85,247,0.3); color: #A855F7; }
-    .badge-closed { background: rgba(107,114,128,0.15); border: 1px solid rgba(107,114,128,0.3); color: #9CA3AF; }
-    
-    .call-info { flex: 1; }
-    .call-name { font-size: 14px; font-weight: 600; color: white; margin-bottom: 2px; }
-    .call-phone { font-size: 12px; color: rgba(255,255,255,0.4); }
-    .call-meta { text-align: right; min-width: 80px; }
-    .call-time { font-size: 11px; color: rgba(255,255,255,0.4); }
-    .call-duration { font-size: 11px; color: rgba(255,255,255,0.3); }
-    
-    .call-actions { display: flex; gap: 6px; }
-    .action-btn {
-      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
-      border-radius: 8px; padding: 6px 12px; color: rgba(255,255,255,0.6);
-      cursor: pointer; font-size: 11px; font-family: 'Montserrat', sans-serif; transition: all 0.2s;
-    }
-    .action-btn:hover { background: rgba(255,191,0,0.15); color: #FFBF00; border-color: rgba(255,191,0,0.3); }
-    .action-btn.danger:hover { background: rgba(239,68,68,0.15); color: #EF4444; border-color: rgba(239,68,68,0.3); }
-    .action-btn.primary { background: rgba(255,191,0,0.15); color: #FFBF00; border-color: rgba(255,191,0,0.3); }
-    
-    .empty-state { padding: 48px; text-align: center; color: rgba(255,255,255,0.25); font-size: 13px; }
-    
-    /* ─── Audio player ─── */
-    .audio-player { margin-top: 6px; }
-    .audio-player audio { width: 100%; height: 32px; }
-    
-    /* ─── Modal ─── */
-    .modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
-    .modal.active { display: flex; }
-    .modal-content {
-      background: #0D1F4A; border: 1px solid rgba(255,191,0,0.2); border-radius: 16px;
-      padding: 32px; width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto;
-    }
-    .modal-title { color: #FFBF00; font-size: 18px; font-weight: 700; margin-bottom: 24px; }
-    .form-group { margin-bottom: 14px; }
-    .form-label { display: block; color: rgba(255,255,255,0.5); font-size: 11px; margin-bottom: 5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-    .form-input, .form-select, .form-textarea {
-      width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 8px; padding: 10px 12px; color: white; font-family: 'Montserrat', sans-serif; font-size: 13px;
-    }
-    .form-input:focus, .form-select:focus, .form-textarea:focus { outline: none; border-color: rgba(255,191,0,0.4); }
-    .form-textarea { resize: vertical; min-height: 70px; }
-    .form-input::placeholder, .form-textarea::placeholder { color: rgba(255,255,255,0.2); }
-    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .modal-buttons { display: flex; gap: 12px; margin-top: 24px; }
-    .modal-buttons button { flex: 1; }
-    
-    .btn-primary {
-      background: linear-gradient(135deg, #FFBF00, #E6A800); border: none; border-radius: 10px;
-      padding: 12px 20px; color: #0D1F4A; cursor: pointer; font-size: 13px; font-weight: 700; font-family: 'Montserrat', sans-serif;
-    }
-    .btn-secondary {
-      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 10px;
-      padding: 12px 20px; color: rgba(255,255,255,0.6); cursor: pointer; font-size: 13px; font-family: 'Montserrat', sans-serif;
-    }
-    
-    /* ─── Contacts search ─── */
-    .search-box {
-      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 12px; padding: 12px 16px; color: white; width: 100%;
-      font-family: 'Montserrat', sans-serif; font-size: 14px; margin-bottom: 16px;
-    }
-    .search-box:focus { outline: none; border-color: rgba(255,191,0,0.4); }
-    .search-box::placeholder { color: rgba(255,255,255,0.25); }
-    
-    .contact-item {
-      padding: 12px 20px; border-bottom: 1px solid rgba(255,255,255,0.04);
-      display: flex; align-items: center; gap: 12px;
-    }
-    .contact-avatar {
-      width: 40px; height: 40px; border-radius: 50%; background: rgba(255,191,0,0.15);
-      display: flex; align-items: center; justify-content: center; font-weight: 700; color: #FFBF00; font-size: 14px;
-    }
-    .contact-info { flex: 1; }
-    .contact-name { font-size: 14px; font-weight: 600; }
-    .contact-phone { font-size: 12px; color: rgba(255,255,255,0.4); }
-    
-    /* ─── Stats table ─── */
-    .stats-table { width: 100%; border-collapse: collapse; }
-    .stats-table th { text-align: left; padding: 10px 16px; color: rgba(255,255,255,0.4); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid rgba(255,255,255,0.08); }
-    .stats-table td { padding: 10px 16px; font-size: 13px; border-bottom: 1px solid rgba(255,255,255,0.04); }
-    .stats-table tr:hover td { background: rgba(255,191,0,0.03); }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Navigator Call</title>
+<style>
+/* ═══════════════════════════════════════════════════════════
+   NAVIGATOR CALL — Brandbook: Navy #183C63 + Gold #FFBF00
+   Montserrat
+═══════════════════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap');
+
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Montserrat',sans-serif;background:#f0f2f8;color:#1a1a2e;min-height:100vh;}
+
+/* ── LOGIN ─────────────────────────────────────────────── */
+.login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(135deg,#183C63 0%,#0d2440 100%);}
+.login-box{background:#fff;border-radius:20px;padding:40px 36px;width:400px;box-shadow:0 24px 64px rgba(0,0,0,.35);}
+.login-logo{text-align:center;margin-bottom:24px;}
+.login-title{font-size:22px;font-weight:800;text-align:center;color:#183C63;margin-bottom:4px;}
+.login-sub{text-align:center;color:#888;font-size:13px;margin-bottom:24px;}
+.user-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:20px;}
+.user-btn{padding:12px 8px;border:2px solid #e0e6ef;border-radius:10px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:#183C63;transition:all .2s;font-family:'Montserrat',sans-serif;}
+.user-btn:hover{border-color:#FFBF00;background:#FFFDE7;}
+.user-btn.selected{border-color:#FFBF00;background:#FFBF00;color:#183C63;}
+.user-btn.manager{border-style:dashed;color:#555;}
+.pin-row{display:flex;gap:8px;margin-bottom:16px;}
+.pin-input{flex:1;padding:14px;border:2px solid #e0e6ef;border-radius:10px;font-size:22px;text-align:center;letter-spacing:10px;font-family:'Montserrat',sans-serif;}
+.pin-input:focus{border-color:#FFBF00;outline:none;}
+.login-btn{width:100%;padding:14px;background:#FFBF00;color:#183C63;border:none;border-radius:10px;font-size:16px;font-weight:800;cursor:pointer;font-family:'Montserrat',sans-serif;transition:background .2s;}
+.login-btn:hover{background:#e6ac00;}
+.login-error{color:#e74c3c;text-align:center;margin-top:10px;font-size:13px;display:none;}
+
+/* ── TOP BAR ────────────────────────────────────────────── */
+.top-bar{background:#183C63;color:#fff;padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:56px;box-shadow:0 2px 12px rgba(24,60,99,.3);}
+.logo-wrap{display:flex;align-items:center;gap:10px;}
+.logo-text{font-size:17px;font-weight:800;letter-spacing:.5px;}
+.logo-text span{color:#FFBF00;}
+.ws-dot{width:8px;height:8px;border-radius:50%;background:#e74c3c;display:inline-block;margin-right:4px;}
+.ws-dot.online{background:#27ae60;}
+.ws-label{font-size:12px;color:#aac0d8;}
+.top-right{display:flex;align-items:center;gap:16px;}
+.user-chip{font-size:13px;color:#aac0d8;}
+.logout-btn{background:none;border:1px solid #2d5a8e;color:#aac0d8;padding:6px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-family:'Montserrat',sans-serif;}
+.logout-btn:hover{background:#2d5a8e;}
+
+/* ── TABS ───────────────────────────────────────────────── */
+.tabs{display:flex;background:#fff;border-bottom:2px solid #e0e6ef;padding:0 20px;overflow-x:auto;gap:2px;}
+.tab{padding:14px 18px;cursor:pointer;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;white-space:nowrap;position:relative;transition:color .2s;font-family:'Montserrat',sans-serif;}
+.tab:hover{color:#183C63;}
+.tab.active{color:#183C63;border-bottom-color:#FFBF00;}
+.tab .badge{position:absolute;top:8px;right:4px;background:#e74c3c;color:#fff;font-size:10px;padding:2px 5px;border-radius:8px;min-width:16px;text-align:center;display:none;}
+
+/* ── TAB CONTENT ────────────────────────────────────────── */
+.tab-content{display:none;padding:20px;max-width:1280px;margin:0 auto;}
+.tab-content.active{display:block;}
+.section-title{font-size:18px;font-weight:800;color:#183C63;margin-bottom:16px;}
+
+/* ── DAILY STATS STRIP ──────────────────────────────────── */
+.stats-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px;}
+.stat-card{background:#fff;border-radius:14px;padding:16px 20px;box-shadow:0 2px 8px rgba(24,60,99,.07);border-left:4px solid #FFBF00;}
+.stat-label{font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;}
+.stat-value{font-size:30px;font-weight:800;color:#183C63;line-height:1;}
+.stat-sub{font-size:11px;color:#27ae60;margin-top:4px;font-weight:600;}
+
+/* ── COCKPIT LAYOUT ─────────────────────────────────────── */
+.cockpit-grid{display:grid;grid-template-columns:1fr 380px;gap:24px;}
+
+/* ── COCKPIT PANEL ──────────────────────────────────────── */
+.cockpit-panel{background:#fff;border-radius:16px;padding:24px;box-shadow:0 2px 12px rgba(24,60,99,.08);}
+.cockpit-heading{font-size:15px;font-weight:800;color:#183C63;margin-bottom:4px;}
+.cockpit-sub{font-size:12px;color:#888;margin-bottom:20px;}
+
+/* ── 4 PRZYCISKI KOKPITU ────────────────────────────────── */
+.type-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.type-btn{
+  position:relative;
+  padding:22px 18px 18px;
+  border-radius:16px;
+  cursor:pointer;
+  text-align:center;
+  transition:all .25s;
+  border:3px solid transparent;
+  user-select:none;
+}
+/* Zablokowany — szary, nie klikalny */
+.type-btn.locked{
+  opacity:.35;
+  pointer-events:none;
+  filter:grayscale(.5);
+}
+.type-btn:not(.locked):hover{transform:translateY(-3px);box-shadow:0 10px 28px rgba(0,0,0,.18);}
+.type-btn .t-icon{font-size:36px;margin-bottom:10px;display:block;}
+.type-btn .t-name{font-size:15px;font-weight:800;display:block;margin-bottom:4px;}
+.type-btn .t-desc{font-size:11px;opacity:.75;display:block;}
+.type-btn .t-count{position:absolute;top:10px;right:14px;font-size:11px;font-weight:700;opacity:.65;}
+
+/* Kolory przycisków */
+.btn-nowy{background:linear-gradient(135deg,#e8f5e9,#c8e6c9);color:#1b5e20;border-color:#a5d6a7;}
+.btn-nowy:not(.locked):hover{border-color:#4caf50;}
+.btn-staly{background:linear-gradient(135deg,#e3f2fd,#bbdefb);color:#0d47a1;border-color:#90caf9;}
+.btn-staly:not(.locked):hover{border-color:#2196f3;}
+.btn-wizyta{background:linear-gradient(135deg,#fff3e0,#ffe0b2);color:#e65100;border-color:#ffcc80;}
+.btn-wizyta:not(.locked):hover{border-color:#ff9800;}
+.btn-nie{background:linear-gradient(135deg,#fce4ec,#f8bbd0);color:#880e4f;border-color:#f48fb1;}
+.btn-nie:not(.locked):hover{border-color:#e91e63;}
+
+/* Pulsowanie gdy aktywne połączenie */
+.type-btn.ringing-pulse{animation:btn-pulse 1.4s infinite;}
+@keyframes btn-pulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(255,191,0,.5);}
+  50%{box-shadow:0 0 0 14px rgba(255,191,0,0);}
+}
+
+/* ── PASEK AKTYWNEGO POŁĄCZENIA ─────────────────────────── */
+.active-call-bar{
+  display:none;
+  background:linear-gradient(90deg,#183C63,#1e4d7a);
+  color:#fff;
+  border-radius:12px;
+  padding:14px 20px;
+  margin-bottom:20px;
+  align-items:center;
+  gap:14px;
+  box-shadow:0 4px 16px rgba(24,60,99,.25);
+}
+.active-call-bar.visible{display:flex;}
+.acb-icon{font-size:28px;animation:ring-shake .5s infinite alternate;}
+@keyframes ring-shake{0%{transform:rotate(-12deg);}100%{transform:rotate(12deg);}}
+.acb-info{flex:1;}
+.acb-name{font-size:16px;font-weight:800;}
+.acb-meta{font-size:12px;color:#aac0d8;margin-top:2px;}
+.acb-timer{font-size:22px;font-weight:800;color:#FFBF00;font-variant-numeric:tabular-nums;}
+
+/* ── RECENT CALLS (prawa kolumna) ───────────────────────── */
+.recent-panel{background:#fff;border-radius:16px;padding:20px;box-shadow:0 2px 12px rgba(24,60,99,.08);max-height:600px;overflow-y:auto;}
+.recent-heading{font-size:14px;font-weight:800;color:#183C63;margin-bottom:14px;}
+.recent-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;margin-bottom:6px;cursor:pointer;transition:background .15s;border:1px solid #f0f2f8;}
+.recent-item:hover{background:#f8f9fb;}
+.r-avatar{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:#fff;flex-shrink:0;}
+.r-info{flex:1;min-width:0;}
+.r-name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.r-meta{font-size:11px;color:#888;}
+.r-badge{font-size:10px;padding:3px 8px;border-radius:6px;font-weight:700;white-space:nowrap;flex-shrink:0;}
+.rb-umowiony{background:#e8f5e9;color:#2e7d32;}
+.rb-followup{background:#fff3e0;color:#e65100;}
+.rb-brak{background:#f3e5f5;color:#6a1b9a;}
+.rb-nieodebrane{background:#fce4ec;color:#c62828;}
+.rb-nowe{background:#e3f2fd;color:#1565c0;}
+.rb-ringing{background:#FFBF00;color:#183C63;animation:blink .8s infinite;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:.4;}}
+
+/* ── CALL ITEMS ─────────────────────────────────────────── */
+.call-item{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;background:#fff;border-radius:12px;margin-bottom:8px;box-shadow:0 2px 8px rgba(24,60,99,.06);border-left:4px solid #e0e6ef;}
+.call-item.is-ringing{border-left-color:#FFBF00;animation:row-blink 1.5s infinite;}
+@keyframes row-blink{0%,100%{background:#fff;}50%{background:#FFFDE7;}}
+.call-item.is-answered{border-left-color:#27ae60;}
+.call-item.is-missed{border-left-color:#e74c3c;}
+.call-item.is-closed{border-left-color:#9e9e9e;}
+.ci-badge{padding:4px 10px;border-radius:8px;font-size:11px;font-weight:700;white-space:nowrap;flex-shrink:0;}
+.cib-ringing{background:#FFF3E0;color:#E65100;}
+.cib-answered{background:#E8F5E9;color:#2E7D32;}
+.cib-missed{background:#FCE4EC;color:#C62828;}
+.cib-closed{background:#EEEEEE;color:#616161;}
+.ci-info{flex:1;min-width:0;}
+.ci-name{font-size:14px;font-weight:700;color:#183C63;}
+.ci-phone{font-size:12px;color:#888;margin-top:2px;}
+.ci-effect{display:inline-flex;align-items:center;gap:4px;background:#e8f5e9;color:#2e7d32;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;margin-top:4px;}
+.ci-effect.eff-followup{background:#fff3e0;color:#e65100;}
+.ci-effect.eff-brak{background:#f3e5f5;color:#6a1b9a;}
+.ci-effect.eff-nieodebrane,.ci-effect.eff-nk,.ci-effect.eff-rez{background:#fce4ec;color:#c62828;}
+.ci-time{font-size:11px;color:#bbb;flex-shrink:0;}
+.ci-actions{display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;}
+.act-btn{padding:8px 14px;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Montserrat',sans-serif;transition:all .15s;}
+.act-btn:hover{filter:brightness(.92);}
+.act-primary{background:#FFBF00;color:#183C63;}
+.act-danger{background:#fce4ec;color:#c62828;}
+.act-neutral{background:#f0f2f8;color:#555;}
+audio{height:28px;width:180px;margin-top:4px;display:block;}
+.empty-state{text-align:center;padding:48px 20px;color:#aaa;font-size:14px;}
+
+/* ── NOWE ZGŁOSZENIA ────────────────────────────────────── */
+.lead-item{display:flex;align-items:center;gap:12px;padding:14px 16px;background:#fff;border-radius:12px;margin-bottom:8px;box-shadow:0 2px 8px rgba(24,60,99,.06);border-left:4px solid #183C63;}
+.lead-item.urgent{border-left-color:#e74c3c;animation:row-blink 1.5s infinite;}
+.lead-badge{padding:4px 10px;border-radius:8px;font-size:11px;font-weight:700;white-space:nowrap;flex-shrink:0;background:#e3f2fd;color:#1565c0;}
+.lead-badge.urgent{background:#fce4ec;color:#c62828;animation:blink .8s infinite;}
+
+/* ── REPORT OVERLAY ─────────────────────────────────────── */
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;align-items:center;justify-content:center;}
+.overlay.open{display:flex;}
+.report-panel{background:#fff;border-radius:20px;width:540px;max-height:92vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.3);}
+.rp-header{padding:22px 26px 18px;border-bottom:2px solid #f0f2f8;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#fff;z-index:1;border-radius:20px 20px 0 0;}
+.rp-title{font-size:18px;font-weight:800;color:#183C63;}
+.rp-close{background:none;border:none;font-size:22px;cursor:pointer;color:#bbb;line-height:1;}
+.rp-body{padding:24px 26px;}
+
+/* Stepper */
+.stepper{display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:28px;}
+.st-circle{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;border:2px solid #ddd;color:#bbb;transition:all .25s;}
+.st-circle.active{background:#FFBF00;border-color:#FFBF00;color:#183C63;}
+.st-circle.done{background:#27ae60;border-color:#27ae60;color:#fff;}
+.st-line{width:36px;height:2px;background:#ddd;transition:background .25s;}
+.st-line.done{background:#27ae60;}
+
+/* Form */
+.form-group{margin-bottom:18px;}
+.form-label{font-size:11px;font-weight:800;color:#555;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;display:block;}
+.form-input{width:100%;padding:12px 14px;border:2px solid #e0e6ef;border-radius:10px;font-size:14px;font-family:'Montserrat',sans-serif;transition:border .2s;}
+.form-input:focus{border-color:#FFBF00;outline:none;}
+textarea.form-input{resize:vertical;}
+
+/* Choice buttons */
+.choice-group{display:flex;flex-wrap:wrap;gap:8px;}
+.choice-btn{padding:9px 15px;border:2px solid #e0e6ef;border-radius:10px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:#333;transition:all .2s;font-family:'Montserrat',sans-serif;}
+.choice-btn:hover{border-color:#FFBF00;background:#FFFDE7;}
+.choice-btn.sel{border-color:#FFBF00;background:#FFBF00;color:#183C63;}
+.choice-btn.multi.sel{border-color:#2196f3;background:#e3f2fd;color:#0d47a1;}
+
+/* Outcome buttons — duże z etapem GHL */
+.outcome-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.outcome-btn{padding:16px 12px;border:2px solid #e0e6ef;border-radius:12px;background:#fff;cursor:pointer;text-align:center;transition:all .2s;font-family:'Montserrat',sans-serif;}
+.outcome-btn:hover{border-color:#FFBF00;background:#FFFDE7;}
+.outcome-btn.sel{border-color:#FFBF00;background:#FFBF00;color:#183C63;}
+.ob-icon{font-size:28px;display:block;margin-bottom:6px;}
+.ob-label{font-size:13px;font-weight:700;display:block;}
+.ob-sub{font-size:10px;opacity:.65;display:block;margin-top:2px;}
+.outcome-btn.ob-umowiony.sel{background:#e8f5e9;border-color:#4caf50;color:#1b5e20;}
+.outcome-btn.ob-neg.sel{background:#fce4ec;border-color:#e91e63;color:#880e4f;}
+
+/* Step nav */
+.step-nav{display:flex;gap:10px;margin-top:24px;padding-top:20px;border-top:2px solid #f0f2f8;}
+.step-nav button{flex:1;padding:14px;border:none;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;font-family:'Montserrat',sans-serif;transition:all .2s;}
+.btn-back{background:#f0f2f8;color:#555;}
+.btn-back:hover{background:#e0e6ef;}
+.btn-next{background:#FFBF00;color:#183C63;}
+.btn-next:hover{background:#e6ac00;}
+.btn-next:disabled{opacity:.35;cursor:not-allowed;}
+.btn-save{background:#27ae60;color:#fff;}
+.btn-save:hover{background:#219150;}
+
+/* Summary box */
+.summary-box{background:#f8f9fb;border-radius:12px;padding:16px;margin-bottom:16px;}
+.summary-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee;font-size:13px;}
+.summary-row:last-child{border-bottom:none;}
+.summary-key{color:#888;font-weight:600;}
+.summary-val{font-weight:700;color:#183C63;text-align:right;max-width:60%;}
+
+/* ── CONTACTS ───────────────────────────────────────────── */
+.search-box{width:100%;padding:14px 16px;border:2px solid #e0e6ef;border-radius:12px;font-size:15px;margin-bottom:16px;font-family:'Montserrat',sans-serif;}
+.search-box:focus{border-color:#FFBF00;outline:none;}
+.contact-item{display:flex;align-items:center;gap:12px;padding:12px 16px;background:#fff;border-radius:10px;margin-bottom:6px;box-shadow:0 1px 4px rgba(24,60,99,.06);}
+.c-avatar{width:40px;height:40px;border-radius:50%;background:#183C63;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;color:#FFBF00;flex-shrink:0;}
+.c-info{flex:1;}
+.c-name{font-size:14px;font-weight:700;color:#183C63;}
+.c-phone{font-size:12px;color:#888;}
+
+/* ── DIALER ─────────────────────────────────────────────── */
+.dialer-wrap{max-width:320px;margin:0 auto;}
+.dialer-box{background:#fff;border-radius:20px;padding:28px 24px;box-shadow:0 4px 20px rgba(24,60,99,.1);}
+.dialer-display{font-size:30px;font-weight:800;text-align:center;padding:16px;min-height:64px;border-bottom:2px solid #f0f2f8;margin-bottom:20px;letter-spacing:3px;color:#183C63;}
+.dialer-keys{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+.d-key{padding:18px;border:none;border-radius:14px;background:#f0f2f8;font-size:22px;font-weight:700;cursor:pointer;transition:all .15s;font-family:'Montserrat',sans-serif;color:#183C63;}
+.d-key:hover{background:#e0e6ef;}
+.d-key:active{background:#FFBF00;color:#183C63;}
+.dialer-actions{display:flex;gap:10px;margin-top:14px;}
+.dialer-actions button{flex:1;padding:14px;border:none;border-radius:12px;font-size:14px;font-weight:800;cursor:pointer;font-family:'Montserrat',sans-serif;}
+.d-call{background:#27ae60;color:#fff;}
+.d-add{background:#FFBF00;color:#183C63;}
+
+/* ── STATS TABLE ────────────────────────────────────────── */
+.stats-table{width:100%;border-collapse:collapse;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 2px 8px rgba(24,60,99,.07);}
+.stats-table th{background:#183C63;color:#fff;padding:13px 16px;font-size:12px;text-align:left;font-weight:700;}
+.stats-table td{padding:12px 16px;border-bottom:1px solid #f0f2f8;font-size:13px;}
+.stats-table tr:last-child td{border-bottom:none;}
+.stats-table td:last-child{color:#FFBF00;font-weight:800;}
+
+/* ── ADD CONTACT MODAL ──────────────────────────────────── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal-box{background:#fff;border-radius:20px;padding:28px;width:440px;max-height:90vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.3);}
+.modal-title{font-size:18px;font-weight:800;color:#183C63;margin-bottom:20px;}
+
+/* ── RESPONSIVE ─────────────────────────────────────────── */
+@media(max-width:900px){
+  .cockpit-grid{grid-template-columns:1fr;}
+  .stats-strip{grid-template-columns:1fr 1fr;}
+  .type-grid{grid-template-columns:1fr 1fr;}
+  .report-panel{width:95%;margin:0 10px;}
+  .outcome-grid{grid-template-columns:1fr 1fr;}
+}
+</style>
 </head>
 <body>
 
-<!-- ═══════════════════ LOGIN ═══════════════════ -->
-<div id="login-screen" class="login-screen">
+<!-- ══════════════════════════════════════════════════════════
+     LOGIN
+══════════════════════════════════════════════════════════ -->
+<div class="login-screen" id="login-screen">
   <div class="login-box">
-    <div class="login-title">NAVIGATOR CALL</div>
-    <div class="login-subtitle">ENDOESTETICA</div>
-    
-    <div id="user-select">
-      <p style="color: rgba(255,255,255,0.6); text-align: center; margin-bottom: 20px; font-size: 13px;">Wybierz swoje konto</p>
-      <div style="margin-bottom: 16px;">
-        <p class="section-label">Recepcja</p>
-        <div class="user-grid">
-          <button class="user-btn" onclick="selectUser('asia')">Asia</button>
-          <button class="user-btn" onclick="selectUser('kasia')">Kasia</button>
-          <button class="user-btn" onclick="selectUser('agnieszka')">Agnieszka</button>
-          <button class="user-btn" onclick="selectUser('aneta')">Aneta</button>
-          <button class="user-btn" onclick="selectUser('agata')">Agata</button>
+    <div class="login-logo">
+      <svg width="52" height="52" viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="52" height="52" rx="12" fill="#183C63"/>
+        <rect x="22" y="8" width="8" height="22" rx="2" fill="#FFBF00"/>
+        <polygon points="18,8 34,8 30,4 22,4" fill="#FFBF00"/>
+        <rect x="20" y="14" width="12" height="6" rx="1" fill="#183C63" opacity=".4"/>
+        <rect x="18" y="30" width="16" height="4" rx="1" fill="#FFBF00"/>
+        <rect x="16" y="34" width="20" height="4" rx="1" fill="#FFBF00" opacity=".7"/>
+        <line x1="10" y1="18" x2="18" y2="22" stroke="#FFBF00" stroke-width="2" stroke-linecap="round"/>
+        <line x1="10" y1="24" x2="18" y2="24" stroke="#FFBF00" stroke-width="2" stroke-linecap="round"/>
+        <line x1="42" y1="18" x2="34" y2="22" stroke="#FFBF00" stroke-width="2" stroke-linecap="round"/>
+        <line x1="42" y1="24" x2="34" y2="24" stroke="#FFBF00" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="login-title">Navigator Call</div>
+    <div class="login-sub">Wybierz osobę i wpisz PIN</div>
+    <div class="user-grid">
+      <button class="user-btn" onclick="selectUser('asia',this)">Asia</button>
+      <button class="user-btn" onclick="selectUser('kasia',this)">Kasia</button>
+      <button class="user-btn" onclick="selectUser('agnieszka',this)">Agnieszka</button>
+      <button class="user-btn" onclick="selectUser('aneta',this)">Aneta</button>
+      <button class="user-btn" onclick="selectUser('agata',this)">Agata</button>
+      <button class="user-btn manager" onclick="selectUser('bartosz',this)">Bartosz</button>
+      <button class="user-btn manager" onclick="selectUser('sandra',this)">Sandra</button>
+      <button class="user-btn manager" onclick="selectUser('aneta_m',this)">Aneta (M)</button>
+      <button class="user-btn manager" onclick="selectUser('sonia',this)">Sonia</button>
+    </div>
+    <div class="pin-row">
+      <input type="password" class="pin-input" id="pin-input" placeholder="PIN" maxlength="4"
+             onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="login-btn" onclick="doLogin()">Zaloguj się</button>
+    <div class="login-error" id="login-error">Nieprawidłowy PIN</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     DASHBOARD
+══════════════════════════════════════════════════════════ -->
+<div id="dashboard" style="display:none;">
+
+  <!-- Top bar -->
+  <div class="top-bar">
+    <div class="logo-wrap">
+      <svg width="30" height="30" viewBox="0 0 52 52" fill="none">
+        <rect width="52" height="52" rx="10" fill="#FFBF00"/>
+        <rect x="22" y="8" width="8" height="22" rx="2" fill="#183C63"/>
+        <polygon points="18,8 34,8 30,4 22,4" fill="#183C63"/>
+        <rect x="18" y="30" width="16" height="4" rx="1" fill="#183C63"/>
+        <rect x="16" y="34" width="20" height="4" rx="1" fill="#183C63" opacity=".6"/>
+        <line x1="10" y1="18" x2="18" y2="22" stroke="#183C63" stroke-width="2" stroke-linecap="round"/>
+        <line x1="42" y1="18" x2="34" y2="22" stroke="#183C63" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <div class="logo-text">Navigator <span>Call</span></div>
+      <span class="ws-dot" id="ws-dot"></span>
+      <span class="ws-label" id="ws-label">Łączenie...</span>
+    </div>
+    <div class="top-right">
+      <span class="user-chip" id="user-chip"></span>
+      <button class="logout-btn" onclick="doLogout()">Wyloguj</button>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab(this,'cockpit')">🏠 Kokpit</div>
+    <div class="tab" onclick="switchTab(this,'new-leads')">📋 Nowe zgłoszenia <span class="badge" id="badge-leads"></span></div>
+    <div class="tab" onclick="switchTab(this,'open')">📞 W obsłudze <span class="badge" id="badge-open"></span></div>
+    <div class="tab" onclick="switchTab(this,'closed')">📁 Zamknięte</div>
+    <div class="tab" onclick="switchTab(this,'stats')">📊 Statystyki</div>
+    <div class="tab" onclick="switchTab(this,'contacts')">👥 Kontakty</div>
+    <div class="tab" onclick="switchTab(this,'dialer')">📱 Klawiatura</div>
+  </div>
+
+  <!-- ══ KOKPIT ══ -->
+  <div class="tab-content active" id="tab-cockpit">
+
+    <!-- Stats strip -->
+    <div class="stats-strip">
+      <div class="stat-card">
+        <div class="stat-label">Rozmowy dziś</div>
+        <div class="stat-value" id="s-total">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Umówionych W0</div>
+        <div class="stat-value" id="s-booked">—</div>
+        <div class="stat-sub" id="s-conv"></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Follow-up</div>
+        <div class="stat-value" id="s-followup">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Nieodebrane</div>
+        <div class="stat-value" id="s-missed">—</div>
+      </div>
+    </div>
+
+    <!-- Pasek aktywnego połączenia -->
+    <div class="active-call-bar" id="active-call-bar">
+      <div class="acb-icon">📞</div>
+      <div class="acb-info">
+        <div class="acb-name" id="acb-name">Nieznany numer</div>
+        <div class="acb-meta" id="acb-meta"></div>
+      </div>
+      <div class="acb-timer" id="acb-timer">00:00</div>
+    </div>
+
+    <div class="cockpit-grid">
+      <!-- Lewa: 4 przyciski -->
+      <div class="cockpit-panel">
+        <div class="cockpit-heading">Raport rozmowy telefonicznej</div>
+        <div class="cockpit-sub" id="cockpit-hint">
+          Przyciski aktywują się automatycznie gdy odbierasz połączenie
+        </div>
+        <div class="type-grid">
+          <div class="type-btn btn-nowy locked" id="btn-nowy" onclick="startReport('nowy')">
+            <span class="t-icon">➕</span>
+            <span class="t-name">Nowy Pacjent</span>
+            <span class="t-desc">Pierwszy kontakt</span>
+            <span class="t-count" id="cnt-nowy">0 dziś</span>
+          </div>
+          <div class="type-btn btn-staly locked" id="btn-staly" onclick="startReport('staly')">
+            <span class="t-icon">💎</span>
+            <span class="t-name">Stały Pacjent</span>
+            <span class="t-desc">Nowa rezerwacja</span>
+            <span class="t-count" id="cnt-staly">0 dziś</span>
+          </div>
+          <div class="type-btn btn-wizyta locked" id="btn-wizyta" onclick="startReport('wizyta')">
+            <span class="t-icon">📅</span>
+            <span class="t-name">Aktualna Wizyta</span>
+            <span class="t-desc">Sprawa bieżąca</span>
+            <span class="t-count" id="cnt-wizyta">0 dziś</span>
+          </div>
+          <div class="type-btn btn-nie locked" id="btn-nie" onclick="quickReport()">
+            <span class="t-icon">⚠️</span>
+            <span class="t-name">Nie Pacjent</span>
+            <span class="t-desc">Reklama / pomyłka</span>
+            <span class="t-count" id="cnt-nie">0 dziś</span>
+          </div>
         </div>
       </div>
-      <div>
-        <p class="section-label">Zarządzanie</p>
-        <div class="user-grid">
-          <button class="user-btn" onclick="selectUser('bartosz')">Bartosz</button>
-          <button class="user-btn" onclick="selectUser('sandra')">Sandra</button>
-          <button class="user-btn" onclick="selectUser('aneta_m')">Aneta (M)</button>
-          <button class="user-btn" onclick="selectUser('sonia')">Sonia</button>
+
+      <!-- Prawa: ostatnie rozmowy -->
+      <div class="recent-panel">
+        <div class="recent-heading">📋 Ostatnie rozmowy</div>
+        <div id="recent-list"><div class="empty-state">Brak rozmów</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ NOWE ZGŁOSZENIA ══ -->
+  <div class="tab-content" id="tab-new-leads">
+    <div class="section-title">📋 Do kontaktu — Nowe zgłoszenia z GHL (Etap 1)</div>
+    <div id="new-leads-list"><div class="empty-state">Ładowanie...</div></div>
+  </div>
+
+  <!-- ══ W OBSŁUDZE ══ -->
+  <div class="tab-content" id="tab-open">
+    <div class="section-title">📞 W obsłudze</div>
+    <div id="open-calls-list"><div class="empty-state">Brak otwartych tematów</div></div>
+  </div>
+
+  <!-- ══ ZAMKNIĘTE ══ -->
+  <div class="tab-content" id="tab-closed">
+    <div class="section-title">📁 Zamknięte — Archiwum</div>
+    <div id="closed-calls-list"><div class="empty-state">Brak zamkniętych tematów</div></div>
+  </div>
+
+  <!-- ══ STATYSTYKI ══ -->
+  <div class="tab-content" id="tab-stats">
+    <div class="section-title">📊 Statystyki dzisiejsze</div>
+    <div class="stats-strip" id="total-stats" style="margin-bottom:28px;"></div>
+    <h3 style="font-size:15px;font-weight:800;color:#183C63;margin-bottom:12px;">Per osoba</h3>
+    <table class="stats-table">
+      <thead>
+        <tr><th>Osoba</th><th>Wszystkie</th><th>Odebrane</th><th>Nieodebrane</th><th>Umówieni W0</th></tr>
+      </thead>
+      <tbody id="stats-tbody"></tbody>
+    </table>
+  </div>
+
+  <!-- ══ KONTAKTY ══ -->
+  <div class="tab-content" id="tab-contacts">
+    <div class="section-title">👥 Kontakty GHL</div>
+    <input type="text" class="search-box" id="contact-search"
+           placeholder="Szukaj po nazwisku, telefonie lub email..."
+           oninput="searchContacts()">
+    <div id="contacts-list"><div class="empty-state">Wpisz minimum 2 znaki aby wyszukać</div></div>
+  </div>
+
+  <!-- ══ KLAWIATURA ══ -->
+  <div class="tab-content" id="tab-dialer">
+    <div class="section-title">📱 Klawiatura</div>
+    <div class="dialer-wrap">
+      <div class="dialer-box">
+        <div class="dialer-display" id="dialer-display">&nbsp;</div>
+        <div class="dialer-keys">
+          <button class="d-key" onclick="dk('1')">1</button>
+          <button class="d-key" onclick="dk('2')">2</button>
+          <button class="d-key" onclick="dk('3')">3</button>
+          <button class="d-key" onclick="dk('4')">4</button>
+          <button class="d-key" onclick="dk('5')">5</button>
+          <button class="d-key" onclick="dk('6')">6</button>
+          <button class="d-key" onclick="dk('7')">7</button>
+          <button class="d-key" onclick="dk('8')">8</button>
+          <button class="d-key" onclick="dk('9')">9</button>
+          <button class="d-key" onclick="dk('*')">*</button>
+          <button class="d-key" onclick="dk('0')">0</button>
+          <button class="d-key" onclick="dkBack()">⌫</button>
+        </div>
+        <div class="dialer-actions">
+          <button class="d-call" onclick="dialerCall()">📞 Zadzwoń</button>
+          <button class="d-add" onclick="openAddModal()">➕ Dodaj kontakt</button>
         </div>
       </div>
     </div>
-    
-    <div id="pin-input" style="display: none;">
-      <div style="text-align: center; margin-bottom: 24px;">
-        <div style="width: 56px; height: 56px; border-radius: 50%; background: rgba(255,191,0,0.2); border: 2px solid rgba(255,191,0,0.4); display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; font-size: 22px; font-weight: 700; color: #FFBF00;" id="user-avatar"></div>
-        <p style="color: white; font-weight: 600; font-size: 16px;" id="user-name-display"></p>
-        <button onclick="backToUsers()" style="background: none; border: none; color: rgba(255,255,255,0.4); cursor: pointer; font-size: 12px; font-family: 'Montserrat', sans-serif; margin-top: 4px;">← Zmień osobę</button>
+  </div>
+
+</div><!-- /dashboard -->
+
+<!-- ══════════════════════════════════════════════════════════
+     REPORT OVERLAY — 3 KROKI
+══════════════════════════════════════════════════════════ -->
+<div class="overlay" id="report-overlay">
+  <div class="report-panel">
+    <div class="rp-header">
+      <div class="rp-title" id="rp-title">Raport rozmowy</div>
+      <button class="rp-close" onclick="closeReport()">✕</button>
+    </div>
+    <div class="rp-body">
+
+      <!-- Stepper -->
+      <div class="stepper">
+        <div class="st-circle active" id="sc-1">1</div>
+        <div class="st-line" id="sl-1"></div>
+        <div class="st-circle" id="sc-2">2</div>
+        <div class="st-line" id="sl-2"></div>
+        <div class="st-circle" id="sc-3">3</div>
       </div>
-      <div class="pin-display" id="pin-display"></div>
-      <div class="keypad">
-        <button class="key-btn" onclick="addPin('1')">1</button>
-        <button class="key-btn" onclick="addPin('2')">2</button>
-        <button class="key-btn" onclick="addPin('3')">3</button>
-        <button class="key-btn" onclick="addPin('4')">4</button>
-        <button class="key-btn" onclick="addPin('5')">5</button>
-        <button class="key-btn" onclick="addPin('6')">6</button>
-        <button class="key-btn" onclick="addPin('7')">7</button>
-        <button class="key-btn" onclick="addPin('8')">8</button>
-        <button class="key-btn" onclick="addPin('9')">9</button>
-        <button class="key-btn" style="background:transparent;border:none;"></button>
-        <button class="key-btn" onclick="addPin('0')">0</button>
-        <button class="key-btn" onclick="backspace()">⌫</button>
+
+      <!-- ─── KROK 1: Dane pacjenta + klasyfikacja ─── -->
+      <div id="rs-1">
+        <div class="form-group">
+          <label class="form-label">Imię i nazwisko pacjenta</label>
+          <input type="text" class="form-input" id="r-name" placeholder="np. Anna Kowalska">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Telefon</label>
+          <input type="text" class="form-input" id="r-phone" placeholder="+48 000 000 000">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Powód kontaktu</label>
+          <div class="choice-group">
+            <button class="choice-btn" onclick="pick(this,'reason','bol_pilne')">🦷 Ból / pilne</button>
+            <button class="choice-btn" onclick="pick(this,'reason','estetyka')">✨ Estetyka</button>
+            <button class="choice-btn" onclick="pick(this,'reason','implanty')">🔩 Implanty</button>
+            <button class="choice-btn" onclick="pick(this,'reason','konsultacja')">💬 Konsultacja</button>
+            <button class="choice-btn" onclick="pick(this,'reason','cena')">💰 Cena</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Temperatura leada</label>
+          <div class="choice-group">
+            <button class="choice-btn" onclick="pick(this,'temp','goracy')">🔥 Gorący — chce teraz</button>
+            <button class="choice-btn" onclick="pick(this,'temp','cieply')">🌤️ Ciepły — rozważa</button>
+            <button class="choice-btn" onclick="pick(this,'temp','zimny')">❄️ Zimny — zbiera info</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Obiekcje (można wybrać kilka)</label>
+          <div class="choice-group">
+            <button class="choice-btn multi" onclick="tog(this,'objections','cena')">💰 Cena</button>
+            <button class="choice-btn multi" onclick="tog(this,'objections','strach')">😨 Strach / ból</button>
+            <button class="choice-btn multi" onclick="tog(this,'objections','czas')">⏰ Brak czasu</button>
+            <button class="choice-btn multi" onclick="tog(this,'objections','zaufanie')">🤔 Brak zaufania</button>
+          </div>
+        </div>
+        <div class="step-nav">
+          <button class="btn-back" onclick="closeReport()">Anuluj</button>
+          <button class="btn-next" onclick="goStep(2)">Dalej →</button>
+        </div>
       </div>
+
+      <!-- ─── KROK 2: Wynik rozmowy → etap GHL ─── -->
+      <div id="rs-2" style="display:none;">
+        <div class="form-group">
+          <label class="form-label">Co się stało na końcu rozmowy?</label>
+          <div class="outcome-grid">
+            <button class="outcome-btn ob-umowiony" onclick="pickOutcome(this,'umowiony_w0')">
+              <span class="ob-icon">✅</span>
+              <span class="ob-label">Wizyta umówiona</span>
+              <span class="ob-sub">→ Etap 8 w GHL (Umówiony W0)</span>
+            </button>
+            <button class="outcome-btn" onclick="pickOutcome(this,'followup')">
+              <span class="ob-icon">🔔</span>
+              <span class="ob-label">Follow-up</span>
+              <span class="ob-sub">→ Etap 7 w GHL (Po rozmowie)</span>
+            </button>
+            <button class="outcome-btn" onclick="pickOutcome(this,'brak_decyzji')">
+              <span class="ob-icon">⏸️</span>
+              <span class="ob-label">Brak decyzji</span>
+              <span class="ob-sub">→ Etap 7 w GHL (Po rozmowie)</span>
+            </button>
+            <button class="outcome-btn ob-neg" onclick="pickOutcome(this,'nie_odebral')">
+              <span class="ob-icon">📵</span>
+              <span class="ob-label">Nieodebrane</span>
+              <span class="ob-sub">→ Etap 2 w GHL (1 próba)</span>
+            </button>
+            <button class="outcome-btn ob-neg" onclick="pickOutcome(this,'nie_kwalifikuje_sie')">
+              <span class="ob-icon">❌</span>
+              <span class="ob-label">Nie kwalifikuje się</span>
+              <span class="ob-sub">→ Etap 6 + tag NIE_KWALIFIKUJE_SIE</span>
+            </button>
+            <button class="outcome-btn ob-neg" onclick="pickOutcome(this,'rezygnacja')">
+              <span class="ob-icon">🚫</span>
+              <span class="ob-label">Rezygnacja</span>
+              <span class="ob-sub">→ Etap 6 + tag REZYGNACJA</span>
+            </button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notatki z rozmowy</label>
+          <textarea class="form-input" id="r-notes" rows="3"
+                    placeholder="Dodatkowe informacje, ustalenia z pacjentem..."></textarea>
+        </div>
+        <div class="step-nav">
+          <button class="btn-back" onclick="goStep(1)">← Wróć</button>
+          <button class="btn-next" id="btn-step2-next" onclick="goStep(3)" disabled>Dalej →</button>
+        </div>
+      </div>
+
+      <!-- ─── KROK 3: Źródło + leczenie + podsumowanie ─── -->
+      <div id="rs-3" style="display:none;">
+        <div class="form-group">
+          <label class="form-label">Źródło leada</label>
+          <div class="choice-group">
+            <button class="choice-btn" onclick="pick(this,'source','google')">Google</button>
+            <button class="choice-btn" onclick="pick(this,'source','facebook')">Facebook</button>
+            <button class="choice-btn" onclick="pick(this,'source','instagram')">Instagram</button>
+            <button class="choice-btn" onclick="pick(this,'source','polecenie')">Polecenie</button>
+            <button class="choice-btn" onclick="pick(this,'source','strona')">Strona www</button>
+            <button class="choice-btn" onclick="pick(this,'source','inne')">Inne</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Program leczenia</label>
+          <div class="choice-group">
+            <button class="choice-btn" onclick="pick(this,'treatment','implanty')">Implanty</button>
+            <button class="choice-btn" onclick="pick(this,'treatment','endodoncja')">Endodoncja</button>
+            <button class="choice-btn" onclick="pick(this,'treatment','dsd')">DSD</button>
+            <button class="choice-btn" onclick="pick(this,'treatment','protetyka')">Protetyka</button>
+            <button class="choice-btn" onclick="pick(this,'treatment','ortodoncja')">Ortodoncja</button>
+            <button class="choice-btn" onclick="pick(this,'treatment','inne')">Inne</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Polecony przez (opcjonalne)</label>
+          <input type="text" class="form-input" id="r-referred"
+                 placeholder="Imię osoby polecającej lub lekarza">
+        </div>
+
+        <!-- Podsumowanie przed zapisem -->
+        <div class="summary-box" id="summary-box"></div>
+
+        <div class="step-nav">
+          <button class="btn-back" onclick="goStep(2)">← Wróć</button>
+          <button class="btn-save" onclick="saveReport()">✓ Zapisz i wyślij do GHL</button>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>
 
-<!-- ═══════════════════ DASHBOARD ═══════════════════ -->
-<div id="dashboard" class="dashboard">
-  <div class="header">
-    <div class="logo-text">NAVIGATOR CALL</div>
-    <div style="display: flex; align-items: center; gap: 16px;">
-      <span class="header-user" id="header-user"></span>
-      <button class="btn-secondary" style="padding: 8px 16px; font-size: 12px;" onclick="logout()">Wyloguj</button>
-    </div>
-  </div>
-  
-  <div class="container">
-    <div class="tabs">
-      <button class="tab-btn active" onclick="switchTab('new-leads')">📋 Nowe zgłoszenia <span class="badge" id="badge-new" style="display:none">0</span></button>
-      <button class="tab-btn" onclick="switchTab('in-progress')">📞 W obsłudze <span class="badge" id="badge-open" style="display:none">0</span></button>
-      <button class="tab-btn" onclick="switchTab('closed')">📁 Zamknięte</button>
-      <button class="tab-btn" onclick="switchTab('stats')">📊 Statystyki</button>
-      <button class="tab-btn" onclick="switchTab('contacts')">🔍 Kontakty</button>
-    </div>
-    
-    <!-- ═══ Nowe zgłoszenia (GHL Etap 1) ═══ -->
-    <div id="new-leads" class="tab-content active">
-      <div class="stats-grid" id="daily-stats"></div>
-      <h3 style="font-size: 14px; color: rgba(255,255,255,0.5); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">Do kontaktu — Nowe zgłoszenia</h3>
-      <div class="call-list" id="new-leads-list">
-        <div class="empty-state">Ładowanie...</div>
-      </div>
-    </div>
-    
-    <!-- ═══ W obsłudze ═══ -->
-    <div id="in-progress" class="tab-content">
-      <h3 style="font-size: 14px; color: rgba(255,255,255,0.5); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">W obsłudze</h3>
-      <div class="call-list" id="open-calls-list">
-        <div class="empty-state">Brak otwartych tematów</div>
-      </div>
-    </div>
-    
-    <!-- ═══ Zamknięte ═══ -->
-    <div id="closed" class="tab-content">
-      <h3 style="font-size: 14px; color: rgba(255,255,255,0.5); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">Zamknięte — Archiwum</h3>
-      <div class="call-list" id="closed-calls-list">
-        <div class="empty-state">Brak zamkniętych tematów</div>
-      </div>
-    </div>
-    
-    <!-- ═══ Statystyki ═══ -->
-    <div id="stats" class="tab-content">
-      <div class="stats-grid" id="total-stats"></div>
-      <div class="call-list" style="overflow-x: auto;">
-        <table class="stats-table" id="stats-table">
-          <thead>
-            <tr>
-              <th>Osoba</th>
-              <th>Wszystkie</th>
-              <th>Odebrane</th>
-              <th>Nieodebrane</th>
-              <th>Umówieni</th>
-            </tr>
-          </thead>
-          <tbody id="stats-tbody"></tbody>
-        </table>
-      </div>
-    </div>
-    
-    <!-- ═══ Kontakty ═══ -->
-    <div id="contacts" class="tab-content">
-      <input type="text" class="search-box" id="contact-search" placeholder="Szukaj po nazwisku lub numerze telefonu..." oninput="searchContacts()">
-      <div class="call-list" id="contacts-list">
-        <div class="empty-state">Wpisz minimum 2 znaki aby wyszukać</div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ═══════════════════ MODAL: WYNIK ROZMOWY ═══════════════════ -->
-<div id="outcome-modal" class="modal">
-  <div class="modal-content">
-    <div class="modal-title">📋 Raport z rozmowy</div>
-    <div id="outcome-call-info" style="background: rgba(255,255,255,0.04); border-radius: 8px; padding: 12px; margin-bottom: 20px; font-size: 12px; color: rgba(255,255,255,0.5);"></div>
-    
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Imię i nazwisko</label>
-        <input type="text" class="form-input" id="f-name" placeholder="np. Jan Kowalski">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Telefon</label>
-        <input type="text" class="form-input" id="f-phone" readonly>
-      </div>
-    </div>
-    
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Płeć</label>
-        <select class="form-select" id="f-gender">
-          <option value="">Wybierz</option>
-          <option value="M">Mężczyzna</option>
-          <option value="K">Kobieta</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Data urodzenia</label>
-        <input type="date" class="form-input" id="f-birthdate">
-      </div>
-    </div>
-    
-    <div class="form-group">
-      <label class="form-label">Efekt rozmowy</label>
-      <select class="form-select" id="f-effect">
-        <option value="">Wybierz</option>
-        <option value="umowiony_w0">✅ Umówił się na W0</option>
-        <option value="rozwaza">🤔 Rozważa, oddzwoni</option>
-        <option value="nie_kwalifikuje_sie">❌ Nie kwalifikuje się</option>
-        <option value="rezygnacja">🚫 Rezygnacja</option>
+<!-- ══ ADD CONTACT MODAL ══ -->
+<div class="modal-overlay" id="add-modal">
+  <div class="modal-box">
+    <div class="modal-title">➕ Dodaj kontakt do GHL</div>
+    <div class="form-group"><label class="form-label">Imię</label><input type="text" class="form-input" id="ac-fn"></div>
+    <div class="form-group"><label class="form-label">Nazwisko</label><input type="text" class="form-input" id="ac-ln"></div>
+    <div class="form-group"><label class="form-label">Telefon *</label><input type="text" class="form-input" id="ac-phone"></div>
+    <div class="form-group"><label class="form-label">Email</label><input type="text" class="form-input" id="ac-email"></div>
+    <div class="form-group"><label class="form-label">Źródło</label>
+      <select class="form-input" id="ac-source">
+        <option value="">-- wybierz --</option>
+        <option>google</option><option>facebook</option><option>instagram</option>
+        <option>polecenie</option><option>strona</option><option>inne</option>
       </select>
     </div>
-    
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Temperatura (1-10)</label>
-        <input type="number" class="form-input" id="f-temp" min="1" max="10" placeholder="8">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Źródło</label>
-        <select class="form-select" id="f-source">
-          <option value="">Wybierz</option>
-          <option value="google">Google</option>
-          <option value="facebook">Facebook</option>
-          <option value="instagram">Instagram</option>
-          <option value="polecenie">Polecenie</option>
-          <option value="strona">Strona www</option>
-          <option value="inne">Inne</option>
-        </select>
-      </div>
+    <div class="form-group"><label class="form-label">Leczenie</label>
+      <select class="form-input" id="ac-treatment">
+        <option value="">-- wybierz --</option>
+        <option>implanty</option><option>endodoncja</option><option>dsd</option>
+        <option>protetyka</option><option>ortodoncja</option><option>inne</option>
+      </select>
     </div>
-    
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Program leczenia</label>
-        <select class="form-select" id="f-treatment">
-          <option value="">Wybierz</option>
-          <option value="implanty">Implanty</option>
-          <option value="endodoncja">Endodoncja</option>
-          <option value="dsd">DSD</option>
-          <option value="ortodoncja">Ortodoncja</option>
-          <option value="protetyka">Protetyka</option>
-          <option value="chirurgia">Chirurgia</option>
-          <option value="inne">Inne</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Polecony przez</label>
-        <input type="text" class="form-input" id="f-referred" placeholder="imię pacjenta / lekarza">
-      </div>
+    <div class="form-group"><label class="form-label">Notatki</label>
+      <textarea class="form-input" id="ac-notes" rows="2"></textarea>
     </div>
-    
-    <div class="form-group">
-      <label class="form-label">Notatki</label>
-      <textarea class="form-textarea" id="f-notes" placeholder="Dodatkowe informacje..."></textarea>
-    </div>
-    
-    <div class="modal-buttons">
-      <button class="btn-secondary" onclick="closeOutcomeModal()">Anuluj</button>
-      <button class="btn-primary" onclick="saveOutcome()">Zapisz raport</button>
+    <div class="step-nav">
+      <button class="btn-back" onclick="closeAddModal()">Anuluj</button>
+      <button class="btn-save" onclick="saveNewContact()">✓ Zapisz kontakt</button>
     </div>
   </div>
 </div>
 
+<!-- ══════════════════════════════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════════════════════════════ -->
 <script>
-// ═══════════════════ STATE ═══════════════════
+// ─── STATE ──────────────────────────────────────────────────────────────────
 let currentUser = null;
-let currentPin = '';
 let ws = null;
 let openCalls = [];
 let closedCalls = [];
 let newLeads = [];
-let currentOutcomeCall = null;
+let activeCallId = null;
+let callTimerInterval = null;
+let callStartTime = null;
+let dialerNum = '';
 
-const names = {
-  asia:'Asia', kasia:'Kasia', agnieszka:'Agnieszka', aneta:'Aneta', agata:'Agata',
-  bartosz:'Bartosz', sandra:'Sandra', aneta_m:'Aneta (M)', sonia:'Sonia'
-};
+// Dane formularza
+let rpt = { type:'', reason:'', temp:'', objections:[], outcome:'', source:'', treatment:'' };
 
-// ═══════════════════ LOGIN ═══════════════════
-function selectUser(userId) {
-  currentUser = userId;
-  currentPin = '';
-  document.getElementById('user-select').style.display = 'none';
-  document.getElementById('pin-input').style.display = 'block';
-  document.getElementById('user-avatar').textContent = names[userId][0];
-  document.getElementById('user-name-display').textContent = names[userId];
-  updatePinDisplay();
+// Liczniki dzienne
+let dayCounts = { nowy:0, staly:0, wizyta:0, nie_pacjent:0 };
+
+// ─── LOGIN ───────────────────────────────────────────────────────────────────
+let selUserId = null;
+
+function selectUser(id, btn) {
+  selUserId = id;
+  document.querySelectorAll('.user-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  document.getElementById('pin-input').focus();
 }
 
-function backToUsers() {
-  currentUser = null; currentPin = '';
-  document.getElementById('user-select').style.display = 'block';
-  document.getElementById('pin-input').style.display = 'none';
+async function doLogin() {
+  if (!selUserId) { alert('Wybierz osobę'); return; }
+  const pin = document.getElementById('pin-input').value;
+  if (!pin) { alert('Wpisz PIN'); return; }
+  try {
+    const r = await fetch('/api/auth/login', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ userId: selUserId, pin }),
+    });
+    const d = await r.json();
+    if (d.success) {
+      currentUser = d.user;
+      sessionStorage.setItem('ncUser', JSON.stringify(currentUser));
+      showDashboard();
+    } else {
+      const err = document.getElementById('login-error');
+      err.style.display = 'block';
+      setTimeout(() => err.style.display = 'none', 3000);
+    }
+  } catch(e) { alert('Błąd połączenia z serwerem'); }
 }
 
-function addPin(d) { if (currentPin.length < 4) { currentPin += d; updatePinDisplay(); if (currentPin.length === 4) login(); } }
-function backspace() { currentPin = currentPin.slice(0,-1); updatePinDisplay(); }
-
-function updatePinDisplay() {
-  const el = document.getElementById('pin-display');
-  el.innerHTML = '';
-  for (let i = 0; i < 4; i++) { const d = document.createElement('div'); d.className = 'pin-dot' + (i < currentPin.length ? ' filled' : ''); el.appendChild(d); }
-}
-
-async function login() {
-  const res = await fetch('/api/auth/login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ userId: currentUser, pin: currentPin }) });
-  const data = await res.json();
-  if (data.success) {
-    sessionStorage.setItem('user', JSON.stringify(data.user));
-    showDashboard(data.user);
-  } else { alert('Nieprawidłowy PIN'); currentPin = ''; updatePinDisplay(); }
-}
-
-function logout() {
-  sessionStorage.removeItem('user'); currentUser = null; currentPin = '';
+function doLogout() {
+  currentUser = null;
+  sessionStorage.removeItem('ncUser');
   if (ws) ws.close();
-  document.getElementById('dashboard').classList.remove('active');
+  clearCallTimer();
+  document.getElementById('dashboard').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
-  document.getElementById('user-select').style.display = 'block';
-  document.getElementById('pin-input').style.display = 'none';
 }
 
-// ═══════════════════ DASHBOARD ═══════════════════
-function showDashboard(user) {
+function showDashboard() {
   document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('dashboard').classList.add('active');
-  document.getElementById('header-user').textContent = user.name;
-  connectWebSocket();
+  document.getElementById('dashboard').style.display = 'block';
+  document.getElementById('user-chip').textContent =
+    `${currentUser.name} · ${currentUser.role === 'manager' ? 'Zarządzanie' : 'Recepcja'}`;
+  connectWS();
+  loadDailyStats();
   loadNewLeads();
   loadOpenCalls();
-  // Odświeżaj nowe zgłoszenia co 60s
-  setInterval(loadNewLeads, 60000);
+  loadClosedCalls();
+  setInterval(loadNewLeads, 30000);
+  setInterval(loadDailyStats, 60000);
 }
 
-function switchTab(tab) {
-  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-  document.getElementById(tab).classList.add('active');
-  event.target.closest('.tab-btn').classList.add('active');
-  
-  if (tab === 'closed') loadClosedCalls();
-  if (tab === 'stats') loadStats();
-  if (tab === 'in-progress') loadOpenCalls();
-  if (tab === 'new-leads') loadNewLeads();
+// ─── WEBSOCKET ───────────────────────────────────────────────────────────────
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}`);
+  ws.onopen = () => setWS(true);
+  ws.onclose = () => { setWS(false); setTimeout(connectWS, 3000); };
+  ws.onmessage = e => handleWS(JSON.parse(e.data));
 }
 
-// ═══════════════════ WEBSOCKET ═══════════════════
-function connectWebSocket() {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  ws = new WebSocket(`${protocol}//${window.location.host}`);
-  
-  ws.onmessage = (event) => {
-    const msg = JSON.parse(event.data);
-    
-    if (msg.type === 'INIT') {
+function setWS(online) {
+  document.getElementById('ws-dot').className = 'ws-dot' + (online ? ' online' : '');
+  document.getElementById('ws-label').textContent = online ? 'Online' : 'Offline';
+}
+
+function handleWS(msg) {
+  switch(msg.type) {
+    case 'INIT':
       openCalls = msg.calls || [];
-      renderOpenCalls();
-    } else if (msg.type === 'CALL_RINGING') {
+      renderOpenCalls(); renderRecentCalls(); updateBadges(); checkActiveCall();
+      break;
+
+    case 'CALL_RINGING':
+      // Nowe połączenie przychodzące — automatycznie aktywuj przyciski
+      activeCallId = msg.call.call_id;
       openCalls.unshift(msg.call);
+      renderOpenCalls(); renderRecentCalls(); updateBadges();
+      unlockButtons();
+      showActiveBar(msg.call, 'ringing');
+      startCallTimer();
+      break;
+
+    case 'CALL_ANSWERED':
+      updateCallField(msg.callId, 'status', 'answered');
+      renderOpenCalls(); renderRecentCalls();
+      // Upewnij się że przyciski są aktywne
+      if (!activeCallId) activeCallId = msg.callId;
+      unlockButtons();
+      break;
+
+    case 'CALL_ENDED':
+      updateCallField(msg.callId, 'status', msg.status);
+      updateCallField(msg.callId, 'duration_seconds', msg.duration);
+      renderOpenCalls(); renderRecentCalls(); updateBadges();
+      // Przyciski ZOSTAJĄ aktywne — recepcja musi wypełnić raport
+      break;
+
+    case 'CALL_RECORDING_READY':
+      updateCallField(msg.callId, 'recording_url', msg.recordingUrl);
       renderOpenCalls();
-      // Przełącz na zakładkę W obsłudze
-      switchTabSilent('in-progress');
-    } else if (msg.type === 'CALL_ANSWERED') {
-      const c = openCalls.find(x => x.call_id === msg.callId);
-      if (c) c.status = 'answered';
-      renderOpenCalls();
-    } else if (msg.type === 'CALL_ENDED') {
-      const c = openCalls.find(x => x.call_id === msg.callId);
-      if (c) { c.status = msg.status; c.duration_seconds = msg.duration; }
-      renderOpenCalls();
-    } else if (msg.type === 'CALL_TOPIC_CLOSED') {
-      openCalls = openCalls.filter(x => x.call_id !== msg.callId);
-      renderOpenCalls();
-    } else if (msg.type === 'CALL_TOPIC_REOPENED') {
-      loadOpenCalls();
-    } else if (msg.type === 'CALL_RECORDING_READY') {
-      const c = openCalls.find(x => x.call_id === msg.callId);
-      if (c) c.recording_url = msg.recordingUrl;
-      renderOpenCalls();
-    } else if (msg.type === 'CALL_OUTCOME_SAVED') {
-      const c = openCalls.find(x => x.call_id === msg.callId);
-      if (c) c.call_effect = msg.callEffect;
-      renderOpenCalls();
-    }
-  };
-  
-  ws.onclose = () => { setTimeout(connectWebSocket, 3000); };
+      break;
+
+    case 'CALL_TOPIC_CLOSED':
+      openCalls = openCalls.filter(c => c.call_id !== msg.callId);
+      if (activeCallId === msg.callId) {
+        activeCallId = null; lockButtons(); hideActiveBar(); clearCallTimer();
+      }
+      renderOpenCalls(); renderRecentCalls(); updateBadges(); loadClosedCalls();
+      break;
+
+    case 'CALL_OUTCOME_SAVED':
+      updateCallField(msg.callId, 'call_effect', msg.callEffect);
+      updateCallField(msg.callId, 'contact_type', msg.contactType);
+      renderOpenCalls(); renderRecentCalls(); loadDailyStats();
+      break;
+  }
 }
 
-function switchTabSilent(tab) {
-  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-  document.getElementById(tab).classList.add('active');
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    if (btn.textContent.includes(tab === 'in-progress' ? 'W obsłudze' : tab === 'new-leads' ? 'Nowe' : '')) btn.classList.add('active');
+function updateCallField(callId, field, value) {
+  const c = openCalls.find(c => c.call_id === callId);
+  if (c) c[field] = value;
+}
+
+// ─── ACTIVE CALL BAR ─────────────────────────────────────────────────────────
+function showActiveBar(call, status) {
+  const bar = document.getElementById('active-call-bar');
+  document.getElementById('acb-name').textContent = call.patient_name || call.caller_phone || 'Nieznany numer';
+  document.getElementById('acb-meta').textContent =
+    (call.caller_phone || '') + (status === 'ringing' ? ' · Dzwoni...' : ' · Połączono');
+  bar.classList.add('visible');
+  document.getElementById('cockpit-hint').textContent =
+    '✅ Połączenie aktywne — wybierz typ rozmowy po zakończeniu';
+}
+
+function hideActiveBar() {
+  document.getElementById('active-call-bar').classList.remove('visible');
+  document.getElementById('cockpit-hint').textContent =
+    'Przyciski aktywują się automatycznie gdy odbierasz połączenie';
+}
+
+function startCallTimer() {
+  callStartTime = Date.now();
+  clearCallTimer();
+  callTimerInterval = setInterval(() => {
+    const s = Math.floor((Date.now() - callStartTime) / 1000);
+    const m = Math.floor(s / 60).toString().padStart(2,'0');
+    const sec = (s % 60).toString().padStart(2,'0');
+    document.getElementById('acb-timer').textContent = `${m}:${sec}`;
+  }, 1000);
+}
+
+function clearCallTimer() {
+  if (callTimerInterval) { clearInterval(callTimerInterval); callTimerInterval = null; }
+}
+
+// ─── BUTTONS LOCK / UNLOCK ───────────────────────────────────────────────────
+function unlockButtons() {
+  ['btn-nowy','btn-staly','btn-wizyta','btn-nie'].forEach(id => {
+    const el = document.getElementById(id);
+    el.classList.remove('locked');
+    el.classList.add('ringing-pulse');
   });
 }
 
-// ═══════════════════ NOWE ZGŁOSZENIA ═══════════════════
+function lockButtons() {
+  ['btn-nowy','btn-staly','btn-wizyta','btn-nie'].forEach(id => {
+    const el = document.getElementById(id);
+    el.classList.add('locked');
+    el.classList.remove('ringing-pulse');
+  });
+}
+
+function checkActiveCall() {
+  // Sprawdź czy jest połączenie bez raportu — jeśli tak, odblokuj przyciski
+  const active = openCalls.find(c =>
+    c.status === 'ringing' || c.status === 'answered' ||
+    (!c.call_effect && !c.topic_closed)
+  );
+  if (active) {
+    activeCallId = active.call_id;
+    unlockButtons();
+    showActiveBar(active, active.status);
+  }
+}
+
+// ─── TABS ────────────────────────────────────────────────────────────────────
+function switchTab(el, tabId) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById(`tab-${tabId}`).classList.add('active');
+  if (tabId === 'new-leads') loadNewLeads();
+  if (tabId === 'open') loadOpenCalls();
+  if (tabId === 'closed') loadClosedCalls();
+  if (tabId === 'stats') loadStats();
+}
+
+function updateBadges() {
+  const ob = document.getElementById('badge-open');
+  if (openCalls.length > 0) { ob.style.display = 'inline'; ob.textContent = openCalls.length; }
+  else ob.style.display = 'none';
+}
+
+// ─── REPORT FORM ─────────────────────────────────────────────────────────────
+function startReport(type) {
+  if (!activeCallId) { alert('Brak aktywnego połączenia'); return; }
+  rpt = { type, reason:'', temp:'', objections:[], outcome:'', source:'', treatment:'' };
+
+  const call = openCalls.find(c => c.call_id === activeCallId);
+  document.getElementById('r-phone').value = call ? (call.caller_phone || '') : '';
+  document.getElementById('r-name').value = call ? (call.patient_name || '') : '';
+  document.getElementById('r-notes').value = '';
+  document.getElementById('r-referred').value = '';
+  document.querySelectorAll('.choice-btn').forEach(b => b.classList.remove('sel'));
+  document.querySelectorAll('.outcome-btn').forEach(b => b.classList.remove('sel'));
+
+  const labels = { nowy:'➕ Nowy Pacjent', staly:'💎 Stały Pacjent', wizyta:'📅 Aktualna Wizyta' };
+  document.getElementById('rp-title').textContent = labels[type] || 'Raport';
+  document.getElementById('btn-step2-next').disabled = true;
+
+  goStep(1);
+  document.getElementById('report-overlay').classList.add('open');
+}
+
+async function quickReport() {
+  // "Nie Pacjent" — szybki zapis bez formularza
+  if (!activeCallId) { alert('Brak aktywnego połączenia'); return; }
+  if (!confirm('Oznaczyć jako "Nie Pacjent" i zamknąć temat?')) return;
+  try {
+    const r = await fetch('/api/call/outcome', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        callId: activeCallId,
+        contactType: 'nie_pacjent',
+        callEffect: 'nie_kwalifikuje_sie',
+        userId: currentUser.id,
+      }),
+    });
+    const d = await r.json();
+    if (d.success) {
+      lockButtons(); hideActiveBar(); clearCallTimer();
+      activeCallId = null;
+      loadOpenCalls(); loadDailyStats();
+    }
+  } catch(e) { alert('Błąd połączenia'); }
+}
+
+function closeReport() {
+  document.getElementById('report-overlay').classList.remove('open');
+}
+
+function goStep(step) {
+  [1,2,3].forEach(s => {
+    document.getElementById(`rs-${s}`).style.display = s === step ? 'block' : 'none';
+    const c = document.getElementById(`sc-${s}`);
+    c.classList.remove('active','done');
+    if (s < step) c.classList.add('done');
+    else if (s === step) c.classList.add('active');
+  });
+  [1,2].forEach(l => {
+    document.getElementById(`sl-${l}`).classList.toggle('done', l < step);
+  });
+  if (step === 3) buildSummary();
+}
+
+// Single-select
+function pick(btn, field, val) {
+  btn.closest('.choice-group').querySelectorAll('.choice-btn:not(.multi)').forEach(b => b.classList.remove('sel'));
+  btn.classList.add('sel');
+  rpt[field] = val;
+}
+
+// Multi-select
+function tog(btn, field, val) {
+  btn.classList.toggle('sel');
+  if (rpt[field].includes(val)) rpt[field] = rpt[field].filter(v => v !== val);
+  else rpt[field].push(val);
+}
+
+// Outcome
+function pickOutcome(btn, val) {
+  document.querySelectorAll('.outcome-btn').forEach(b => b.classList.remove('sel'));
+  btn.classList.add('sel');
+  rpt.outcome = val;
+  document.getElementById('btn-step2-next').disabled = false;
+}
+
+function buildSummary() {
+  const outcomeLabels = {
+    umowiony_w0: '✅ Wizyta umówiona → Etap 8 GHL',
+    followup: '🔔 Follow-up → Etap 7 GHL',
+    brak_decyzji: '⏸️ Brak decyzji → Etap 7 GHL',
+    nie_odebral: '📵 Nieodebrane → Etap 2 GHL',
+    nie_kwalifikuje_sie: '❌ Nie kwalifikuje się → Etap 6 GHL',
+    rezygnacja: '🚫 Rezygnacja → Etap 6 GHL',
+  };
+  const typeLabels = { nowy:'Nowy pacjent', staly:'Stały pacjent', wizyta:'Aktualna wizyta' };
+  const rows = [
+    ['Typ kontaktu', typeLabels[rpt.type] || rpt.type],
+    ['Powód', rpt.reason || '—'],
+    ['Temperatura', rpt.temp || '—'],
+    ['Wynik rozmowy', outcomeLabels[rpt.outcome] || rpt.outcome || '—'],
+    ['Obiekcje', rpt.objections.join(', ') || '—'],
+    ['Imię', document.getElementById('r-name').value || '—'],
+    ['Telefon', document.getElementById('r-phone').value || '—'],
+  ];
+  document.getElementById('summary-box').innerHTML = rows.map(([k,v]) =>
+    `<div class="summary-row"><span class="summary-key">${k}</span><span class="summary-val">${v}</span></div>`
+  ).join('');
+}
+
+async function saveReport() {
+  const callId = activeCallId;
+  if (!callId) { alert('Brak aktywnego połączenia'); return; }
+  const call = openCalls.find(c => c.call_id === callId);
+
+  const payload = {
+    callId,
+    ghlContactId: call ? call.ghl_contact_id : null,
+    contactType: rpt.type,
+    callReason: rpt.reason,
+    callEffect: rpt.outcome,
+    temperature: rpt.temp,
+    objections: JSON.stringify(rpt.objections),
+    userId: currentUser.id,
+    patientName: document.getElementById('r-name').value.trim(),
+    notes: document.getElementById('r-notes').value.trim(),
+    source: rpt.source,
+    treatment: rpt.treatment,
+    referredBy: document.getElementById('r-referred').value.trim(),
+    bookedVisit: rpt.outcome === 'umowiony_w0',
+  };
+
+  try {
+    const r = await fetch('/api/call/outcome', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const d = await r.json();
+    if (d.success) {
+      closeReport();
+      lockButtons(); hideActiveBar(); clearCallTimer();
+      activeCallId = null;
+      loadOpenCalls(); loadDailyStats();
+    } else {
+      alert('Błąd zapisu: ' + (d.error || 'Nieznany błąd'));
+    }
+  } catch(e) { alert('Błąd połączenia z serwerem'); }
+}
+
+// ─── NOWE ZGŁOSZENIA ─────────────────────────────────────────────────────────
 async function loadNewLeads() {
   try {
-    const res = await fetch('/api/leads/new');
-    const data = await res.json();
-    newLeads = data.leads || [];
+    const r = await fetch('/api/leads/new');
+    const d = await r.json();
+    newLeads = d.leads || [];
     renderNewLeads();
-    
-    // Badge
-    const badge = document.getElementById('badge-new');
-    if (newLeads.length > 0) { badge.style.display = 'inline'; badge.textContent = newLeads.length; }
-    else { badge.style.display = 'none'; }
-  } catch (err) { console.error(err); }
+    const b = document.getElementById('badge-leads');
+    if (newLeads.length > 0) { b.style.display = 'inline'; b.textContent = newLeads.length; }
+    else b.style.display = 'none';
+  } catch(e) { console.error(e); }
 }
 
 function renderNewLeads() {
   const el = document.getElementById('new-leads-list');
-  if (newLeads.length === 0) { el.innerHTML = '<div class="empty-state">Brak nowych zgłoszeń</div>'; return; }
-  
+  if (!newLeads.length) { el.innerHTML = '<div class="empty-state">Brak nowych zgłoszeń z GHL (Etap 1)</div>'; return; }
   const now = Date.now();
   el.innerHTML = newLeads.map(lead => {
-    const age = now - new Date(lead.createdAt).getTime();
-    const isReminder = age > 2 * 60 * 60 * 1000; // 2 godziny
-    return `
-      <div class="call-item ${isReminder ? 'reminder' : ''}">
-        <div class="call-badge badge-new">NOWE</div>
-        <div class="call-info">
-          <div class="call-name">${lead.name || 'Brak imienia'}</div>
-          <div class="call-phone">${lead.phone || 'Brak numeru'} ${isReminder ? '⚠️ Przypomnienie!' : ''}</div>
-        </div>
-        <div class="call-actions">
-          <button class="action-btn primary" onclick="dialNumber('${lead.phone}')">📞 Zadzwoń</button>
-        </div>
+    const h = (now - new Date(lead.createdAt).getTime()) / 3600000;
+    const urgent = h >= 2;
+    return `<div class="lead-item ${urgent ? 'urgent' : ''}">
+      <div class="lead-badge ${urgent ? 'urgent' : ''}">${urgent ? '⚠️ >2h!' : 'NOWE'}</div>
+      <div class="ci-info">
+        <div class="ci-name">${lead.name || 'Brak imienia'}</div>
+        <div class="ci-phone">${lead.phone || 'Brak numeru'}${urgent ? ' — PILNE! Skontaktuj się natychmiast' : ''}</div>
+        <div class="ci-phone" style="color:#aaa;">${new Date(lead.createdAt).toLocaleString('pl-PL',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'})}</div>
       </div>
-    `;
+      <div class="ci-actions">
+        ${lead.phone ? `<button class="act-btn act-primary" onclick="dialNumber('${lead.phone}')">📞 Zadzwoń</button>` : ''}
+      </div>
+    </div>`;
   }).join('');
 }
 
-// ═══════════════════ W OBSŁUDZE ═══════════════════
+// ─── W OBSŁUDZE ──────────────────────────────────────────────────────────────
 async function loadOpenCalls() {
   try {
-    const res = await fetch('/api/calls/open');
-    const data = await res.json();
-    openCalls = data.calls || [];
-    renderOpenCalls();
-    
-    const badge = document.getElementById('badge-open');
-    if (openCalls.length > 0) { badge.style.display = 'inline'; badge.textContent = openCalls.length; }
-    else { badge.style.display = 'none'; }
-  } catch (err) { console.error(err); }
+    const r = await fetch('/api/calls/open');
+    const d = await r.json();
+    openCalls = d.calls || [];
+    renderOpenCalls(); renderRecentCalls(); updateBadges(); checkActiveCall();
+  } catch(e) { console.error(e); }
 }
 
 function renderOpenCalls() {
   const el = document.getElementById('open-calls-list');
-  if (openCalls.length === 0) { el.innerHTML = '<div class="empty-state">Brak otwartych tematów</div>'; return; }
-  
-  el.innerHTML = openCalls.map(call => {
-    const isRinging = call.status === 'ringing';
-    const isAnswered = call.status === 'answered';
-    const isMissed = call.status === 'no-answer';
-    const badgeClass = isRinging ? 'badge-ringing' : isAnswered ? 'badge-answered' : 'badge-missed';
-    const badgeText = isRinging ? '📞 DZWONI' : isAnswered ? '✅ Odebrane' : '📵 Nieodebrane';
-    const effectText = call.call_effect ? effectLabel(call.call_effect) : '';
-    
-    let recordingHtml = '';
-    if (call.recording_url) {
-      recordingHtml = `<div class="audio-player"><audio controls preload="none" src="${call.recording_url}"></audio></div>`;
-    }
-    
-    return `
-      <div class="call-item ${isRinging ? 'ringing' : ''}">
-        <div class="call-badge ${badgeClass}">${badgeText}</div>
-        <div class="call-info">
-          <div class="call-name">${call.patient_name || call.caller_phone || 'Nieznany'}</div>
-          <div class="call-phone">${call.caller_phone || ''} ${call.duration_seconds ? '· ' + call.duration_seconds + 's' : ''} ${effectText}</div>
-          ${recordingHtml}
-        </div>
-        <div class="call-meta">
-          <div class="call-time">${new Date(call.created_at).toLocaleTimeString('pl-PL', {hour:'2-digit',minute:'2-digit'})}</div>
-        </div>
-        <div class="call-actions">
-          ${!isRinging ? `<button class="action-btn primary" onclick="openOutcomeModal('${call.call_id}', '${call.ghl_contact_id || ''}', '${call.caller_phone || ''}', '${(call.patient_name || '').replace(/'/g, '')}')">📋 Raport</button>` : ''}
-          <button class="action-btn danger" onclick="closeTopic('${call.call_id}')">✕ Zamknij</button>
-        </div>
-      </div>
-    `;
-  }).join('');
+  if (!openCalls.length) { el.innerHTML = '<div class="empty-state">Brak otwartych tematów</div>'; return; }
+  el.innerHTML = openCalls.map(c => buildCallItem(c, false)).join('');
 }
 
-function effectLabel(e) {
-  const map = { umowiony_w0: '✅ W0', rozwaza: '🤔 Rozważa', nie_kwalifikuje_sie: '❌ NK', rezygnacja: '🚫 Rez.' };
-  return map[e] ? `<span style="background:rgba(255,191,0,0.1);padding:2px 6px;border-radius:4px;font-size:10px;color:#FFBF00;">${map[e]}</span>` : '';
+function buildCallItem(c, closed) {
+  const isRinging = c.status === 'ringing';
+  const isAnswered = c.status === 'answered';
+  const isMissed = c.status === 'no-answer';
+
+  const stateClass = closed ? 'is-closed' : isRinging ? 'is-ringing' : isAnswered ? 'is-answered' : isMissed ? 'is-missed' : '';
+  const badgeClass = closed ? 'cib-closed' : isRinging ? 'cib-ringing' : isAnswered ? 'cib-answered' : isMissed ? 'cib-missed' : 'cib-answered';
+  const badgeText = closed ? 'ZAMKNIĘTE' : isRinging ? '📞 DZWONI' : isAnswered ? '✅ Odebrane' : isMissed ? '📵 Nieodebrane' : '✅ Zakończone';
+
+  const effectMap = {
+    umowiony_w0: ['✅ Wizyta W0 (Etap 8)', 'ci-effect'],
+    followup: ['🔔 Follow-up (Etap 7)', 'ci-effect eff-followup'],
+    brak_decyzji: ['⏸️ Brak decyzji (Etap 7)', 'ci-effect eff-brak'],
+    nie_odebral: ['📵 Nieodebrane (Etap 2)', 'ci-effect eff-nieodebrane'],
+    nie_kwalifikuje_sie: ['❌ Nie kwalifikuje się (Etap 6)', 'ci-effect eff-nk'],
+    rezygnacja: ['🚫 Rezygnacja (Etap 6)', 'ci-effect eff-rez'],
+    nie_pacjent: ['⚠️ Nie pacjent', 'ci-effect eff-nk'],
+  };
+  const [effLabel, effClass] = c.call_effect ? (effectMap[c.call_effect] || [c.call_effect, 'ci-effect']) : ['',''];
+  const effectHtml = c.call_effect ? `<div class="${effClass}">${effLabel}</div>` : '';
+  const recHtml = c.recording_url ? `<audio controls preload="none" src="${c.recording_url}"></audio>` : '';
+  const time = new Date(c.created_at).toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'});
+
+  const actions = closed
+    ? `<button class="act-btn act-neutral" onclick="reopenTopic('${c.call_id}')">↩ Otwórz</button>`
+    : `${!c.call_effect ? `<button class="act-btn act-primary" onclick="openReportFor('${c.call_id}')">📋 Raport</button>` : ''}
+       <button class="act-btn act-danger" onclick="closeTopic('${c.call_id}')">✕ Zamknij</button>`;
+
+  return `<div class="call-item ${stateClass}">
+    <div class="ci-badge ${badgeClass}">${badgeText}</div>
+    <div class="ci-info">
+      <div class="ci-name">${c.patient_name || c.caller_phone || 'Nieznany'}</div>
+      <div class="ci-phone">${c.caller_phone || ''}${c.duration_seconds ? ' · ' + c.duration_seconds + 's' : ''}</div>
+      ${effectHtml}${recHtml}
+    </div>
+    <div class="ci-time">${time}</div>
+    <div class="ci-actions">${actions}</div>
+  </div>`;
 }
 
-// ═══════════════════ ZAMKNIĘTE ═══════════════════
+function openReportFor(callId) {
+  activeCallId = callId;
+  const call = openCalls.find(c => c.call_id === callId);
+  rpt = { type:'nowy', reason:'', temp:'', objections:[], outcome:'', source:'', treatment:'' };
+  document.getElementById('r-phone').value = call ? (call.caller_phone || '') : '';
+  document.getElementById('r-name').value = call ? (call.patient_name || '') : '';
+  document.getElementById('r-notes').value = '';
+  document.getElementById('r-referred').value = '';
+  document.querySelectorAll('.choice-btn').forEach(b => b.classList.remove('sel'));
+  document.querySelectorAll('.outcome-btn').forEach(b => b.classList.remove('sel'));
+  document.getElementById('rp-title').textContent = 'Raport rozmowy';
+  document.getElementById('btn-step2-next').disabled = true;
+  goStep(1);
+  document.getElementById('report-overlay').classList.add('open');
+}
+
+// ─── ZAMKNIĘTE ───────────────────────────────────────────────────────────────
 async function loadClosedCalls() {
   try {
-    const res = await fetch('/api/calls/closed');
-    const data = await res.json();
-    closedCalls = data.calls || [];
+    const r = await fetch('/api/calls/closed');
+    const d = await r.json();
+    closedCalls = d.calls || [];
     renderClosedCalls();
-  } catch (err) { console.error(err); }
+  } catch(e) { console.error(e); }
 }
 
 function renderClosedCalls() {
   const el = document.getElementById('closed-calls-list');
-  if (closedCalls.length === 0) { el.innerHTML = '<div class="empty-state">Brak zamkniętych tematów</div>'; return; }
-  
-  el.innerHTML = closedCalls.map(call => `
-    <div class="call-item">
-      <div class="call-badge badge-closed">ZAMKNIĘTE</div>
-      <div class="call-info">
-        <div class="call-name">${call.patient_name || call.caller_phone || 'Nieznany'}</div>
-        <div class="call-phone">${call.caller_phone || ''} · ${call.duration_seconds || 0}s ${call.call_effect ? '· ' + effectLabel(call.call_effect) : ''}</div>
-      </div>
-      <div class="call-meta">
-        <div class="call-time">${new Date(call.created_at).toLocaleTimeString('pl-PL', {hour:'2-digit',minute:'2-digit'})}</div>
-      </div>
-      <div class="call-actions">
-        <button class="action-btn" onclick="reopenTopic('${call.call_id}')">↩ Otwórz ponownie</button>
-      </div>
-    </div>
-  `).join('');
+  if (!closedCalls.length) { el.innerHTML = '<div class="empty-state">Brak zamkniętych tematów</div>'; return; }
+  el.innerHTML = closedCalls.map(c => buildCallItem(c, true)).join('');
 }
 
-// ═══════════════════ STATYSTYKI ═══════════════════
-async function loadStats() {
-  try {
-    const res = await fetch('/api/stats');
-    const data = await res.json();
-    
-    document.getElementById('total-stats').innerHTML = `
-      <div class="stat-card"><div class="stat-label">Wszystkie</div><div class="stat-value">${data.totals.total}</div></div>
-      <div class="stat-card"><div class="stat-label">Odebrane</div><div class="stat-value">${data.totals.answered}</div></div>
-      <div class="stat-card"><div class="stat-label">Nieodebrane</div><div class="stat-value">${data.totals.missed}</div></div>
-      <div class="stat-card"><div class="stat-label">Umówieni</div><div class="stat-value">${data.totals.booked}</div></div>
-    `;
-    
-    const tbody = document.getElementById('stats-tbody');
-    tbody.innerHTML = Object.entries(data.perUser)
-      .filter(([k,v]) => v.total > 0)
-      .map(([k,v]) => `<tr><td style="font-weight:600;">${v.name}</td><td>${v.total}</td><td>${v.answered}</td><td>${v.missed}</td><td style="color:#FFBF00;font-weight:700;">${v.booked}</td></tr>`)
-      .join('');
-  } catch (err) { console.error(err); }
-}
+// ─── RECENT CALLS ────────────────────────────────────────────────────────────
+function renderRecentCalls() {
+  const el = document.getElementById('recent-list');
+  const calls = openCalls.slice(0, 12);
+  if (!calls.length) { el.innerHTML = '<div class="empty-state">Brak rozmów</div>'; return; }
 
-// ═══════════════════ KONTAKTY ═══════════════════
-let searchTimeout;
-function searchContacts() {
-  clearTimeout(searchTimeout);
-  searchTimeout = setTimeout(async () => {
-    const q = document.getElementById('contact-search').value;
-    if (q.length < 2) { document.getElementById('contacts-list').innerHTML = '<div class="empty-state">Wpisz minimum 2 znaki aby wyszukać</div>'; return; }
-    
-    const res = await fetch(`/api/contacts?q=${encodeURIComponent(q)}`);
-    const data = await res.json();
-    
-    const el = document.getElementById('contacts-list');
-    if (data.contacts.length === 0) { el.innerHTML = '<div class="empty-state">Brak wyników</div>'; return; }
-    
-    el.innerHTML = data.contacts.map(c => `
-      <div class="contact-item">
-        <div class="contact-avatar">${(c.name || '?')[0].toUpperCase()}</div>
-        <div class="contact-info">
-          <div class="contact-name">${c.name || 'Brak imienia'}</div>
-          <div class="contact-phone">${c.phone || 'Brak numeru'}</div>
-        </div>
-        <div class="call-actions">
-          ${c.phone ? `<button class="action-btn primary" onclick="dialNumber('${c.phone}')">📞 Zadzwoń</button>` : ''}
-        </div>
-      </div>
-    `).join('');
-  }, 300);
-}
-
-// ═══════════════════ CLICK-TO-CALL ═══════════════════
-async function dialNumber(phone) {
-  if (!phone) { alert('Brak numeru telefonu'); return; }
-  if (!confirm(`Zadzwonić do ${phone}?`)) return;
-  
-  try {
-    const res = await fetch('/api/call/dial', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ toNumber: phone, fromExt: '103' })
-    });
-    const data = await res.json();
-    if (data.status === 'success') {
-      alert('Łączenie... Zadarma zadzwoni na Twój telefon, a potem połączy z pacjentem.');
-    } else {
-      alert('Błąd: ' + (data.message || 'Nieznany błąd'));
-    }
-  } catch (err) { alert('Błąd połączenia'); }
-}
-
-// ═══════════════════ OUTCOME MODAL ═══════════════════
-function openOutcomeModal(callId, contactId, phone, patientName) {
-  currentOutcomeCall = { callId, contactId, phone };
-  document.getElementById('outcome-call-info').textContent = `Połączenie: ${phone} ${patientName ? '(' + patientName + ')' : ''}`;
-  document.getElementById('f-phone').value = phone;
-  document.getElementById('f-name').value = patientName || '';
-  document.getElementById('outcome-modal').classList.add('active');
-}
-
-function closeOutcomeModal() {
-  document.getElementById('outcome-modal').classList.remove('active');
-  currentOutcomeCall = null;
-}
-
-async function saveOutcome() {
-  if (!currentOutcomeCall) return;
-  const user = JSON.parse(sessionStorage.getItem('user'));
-  const effect = document.getElementById('f-effect').value;
-  
-  if (!effect) { alert('Wybierz efekt rozmowy'); return; }
-  
-  const body = {
-    callId: currentOutcomeCall.callId,
-    ghlContactId: currentOutcomeCall.contactId,
-    callEffect: effect,
-    temperature: parseInt(document.getElementById('f-temp').value) || null,
-    userId: user.id,
-    patientName: document.getElementById('f-name').value,
-    notes: document.getElementById('f-notes').value,
-    source: document.getElementById('f-source').value,
-    treatment: document.getElementById('f-treatment').value,
-    referredBy: document.getElementById('f-referred').value,
-    gender: document.getElementById('f-gender').value,
-    birthDate: document.getElementById('f-birthdate').value,
-    bookedVisit: effect === 'umowiony_w0',
+  const typeColors = { nowy:'#27ae60', staly:'#2196f3', wizyta:'#ff9800', nie_pacjent:'#e91e63' };
+  const effectBadge = {
+    umowiony_w0: ['W0 ✅','rb-umowiony'],
+    followup: ['Follow-up','rb-followup'],
+    brak_decyzji: ['Brak decyzji','rb-brak'],
+    nie_odebral: ['Nieodebrane','rb-nieodebrane'],
+    nie_kwalifikuje_sie: ['NK','rb-nieodebrane'],
+    rezygnacja: ['Rezygnacja','rb-nieodebrane'],
+    nie_pacjent: ['Nie pacjent','rb-nieodebrane'],
   };
-  
-  try {
-    const res = await fetch('/api/call/outcome', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
-    if (res.ok) {
-      closeOutcomeModal();
-      // Reset form
-      ['f-name','f-phone','f-gender','f-birthdate','f-effect','f-temp','f-source','f-treatment','f-referred','f-notes'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el.tagName === 'SELECT') el.selectedIndex = 0;
-        else el.value = '';
-      });
-    }
-  } catch (err) { alert('Błąd zapisu'); }
+
+  el.innerHTML = calls.map(c => {
+    const name = c.patient_name || c.caller_phone || 'Nieznany';
+    const init = name[0].toUpperCase();
+    const color = typeColors[c.contact_type] || '#183C63';
+    const isRinging = c.status === 'ringing';
+    const [effLabel, effClass] = c.call_effect
+      ? (effectBadge[c.call_effect] || [c.call_effect,'rb-nowe'])
+      : isRinging ? ['📞 Dzwoni','rb-ringing'] : ['Nowe','rb-nowe'];
+    const time = new Date(c.created_at).toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'});
+
+    return `<div class="recent-item" onclick="openReportFor('${c.call_id}')">
+      <div class="r-avatar" style="background:${color}">${init}</div>
+      <div class="r-info">
+        <div class="r-name">${name}</div>
+        <div class="r-meta">${time}${c.contact_type ? ' · ' + c.contact_type : ''}</div>
+      </div>
+      <div class="r-badge ${effClass}">${effLabel}</div>
+    </div>`;
+  }).join('');
 }
 
-// ═══════════════════ CLOSE / REOPEN ═══════════════════
+// ─── CLOSE / REOPEN ──────────────────────────────────────────────────────────
 async function closeTopic(callId) {
   if (!confirm('Zamknąć ten temat?')) return;
-  await fetch('/api/call/close', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ callId }) });
+  await fetch('/api/call/close', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ callId }),
+  });
 }
 
 async function reopenTopic(callId) {
-  await fetch('/api/call/reopen', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ callId }) });
-  loadClosedCalls();
-  loadOpenCalls();
+  await fetch('/api/call/reopen', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ callId }),
+  });
+  loadClosedCalls(); loadOpenCalls();
 }
 
-// ═══════════════════ DAILY STATS ═══════════════════
+// ─── STATS ───────────────────────────────────────────────────────────────────
 async function loadDailyStats() {
   try {
-    const res = await fetch('/api/stats');
-    const data = await res.json();
-    document.getElementById('daily-stats').innerHTML = `
-      <div class="stat-card"><div class="stat-label">Dzisiaj</div><div class="stat-value">${data.totals.total}</div></div>
-      <div class="stat-card"><div class="stat-label">Odebrane</div><div class="stat-value">${data.totals.answered}</div></div>
-      <div class="stat-card"><div class="stat-label">Nieodebrane</div><div class="stat-value">${data.totals.missed}</div></div>
-      <div class="stat-card"><div class="stat-label">Umówieni W0</div><div class="stat-value">${data.totals.booked}</div></div>
-    `;
-  } catch (err) {}
+    const r = await fetch('/api/stats');
+    const d = await r.json();
+    const t = d.totals;
+    document.getElementById('s-total').textContent = t.total;
+    document.getElementById('s-booked').textContent = t.booked;
+    document.getElementById('s-conv').textContent = t.total > 0 ? `${Math.round(t.booked/t.total*100)}% konwersja` : '';
+    document.getElementById('s-followup').textContent = t.followup || 0;
+    document.getElementById('s-missed').textContent = t.missed;
+    dayCounts = d.typeCounts || { nowy:0, staly:0, wizyta:0, nie_pacjent:0 };
+    document.getElementById('cnt-nowy').textContent = `${dayCounts.nowy||0} dziś`;
+    document.getElementById('cnt-staly').textContent = `${dayCounts.staly||0} dziś`;
+    document.getElementById('cnt-wizyta').textContent = `${dayCounts.wizyta||0} dziś`;
+    document.getElementById('cnt-nie').textContent = `${dayCounts.nie_pacjent||0} dziś`;
+  } catch(e) {}
 }
 
-// ═══════════════════ INIT ═══════════════════
+async function loadStats() {
+  try {
+    const r = await fetch('/api/stats');
+    const d = await r.json();
+    const t = d.totals;
+    document.getElementById('total-stats').innerHTML = `
+      <div class="stat-card"><div class="stat-label">Wszystkie</div><div class="stat-value">${t.total}</div></div>
+      <div class="stat-card"><div class="stat-label">Odebrane</div><div class="stat-value">${t.answered}</div></div>
+      <div class="stat-card"><div class="stat-label">Nieodebrane</div><div class="stat-value">${t.missed}</div></div>
+      <div class="stat-card"><div class="stat-label">Umówieni W0</div><div class="stat-value">${t.booked}</div></div>`;
+    document.getElementById('stats-tbody').innerHTML = Object.entries(d.perUser)
+      .filter(([,v]) => v.total > 0)
+      .map(([,v]) => `<tr><td style="font-weight:700">${v.name}</td><td>${v.total}</td><td>${v.answered}</td><td>${v.missed}</td><td>${v.booked}</td></tr>`)
+      .join('');
+  } catch(e) {}
+}
+
+// ─── CONTACTS ────────────────────────────────────────────────────────────────
+let searchTimer;
+function searchContacts() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(async () => {
+    const q = document.getElementById('contact-search').value;
+    if (q.length < 2) { document.getElementById('contacts-list').innerHTML = '<div class="empty-state">Wpisz minimum 2 znaki</div>'; return; }
+    const r = await fetch(`/api/contacts?q=${encodeURIComponent(q)}`);
+    const d = await r.json();
+    const el = document.getElementById('contacts-list');
+    if (!d.contacts.length) { el.innerHTML = '<div class="empty-state">Brak wyników</div>'; return; }
+    el.innerHTML = d.contacts.map(c => `<div class="contact-item">
+      <div class="c-avatar">${(c.name||'?')[0].toUpperCase()}</div>
+      <div class="c-info"><div class="c-name">${c.name||'Brak imienia'}</div><div class="c-phone">${c.phone||'Brak numeru'}</div></div>
+      <div class="ci-actions">${c.phone ? `<button class="act-btn act-primary" onclick="dialNumber('${c.phone}')">📞 Zadzwoń</button>` : ''}</div>
+    </div>`).join('');
+  }, 300);
+}
+
+// ─── DIALER ──────────────────────────────────────────────────────────────────
+function dk(k) { dialerNum += k; document.getElementById('dialer-display').textContent = dialerNum || '\u00a0'; }
+function dkBack() { dialerNum = dialerNum.slice(0,-1); document.getElementById('dialer-display').textContent = dialerNum || '\u00a0'; }
+function dialerCall() { if (dialerNum.length < 3) { alert('Wpisz numer telefonu'); return; } dialNumber(dialerNum); }
+function openAddModal() { document.getElementById('ac-phone').value = dialerNum || ''; document.getElementById('add-modal').classList.add('open'); }
+function closeAddModal() { document.getElementById('add-modal').classList.remove('open'); }
+
+async function saveNewContact() {
+  const fn = document.getElementById('ac-fn').value.trim();
+  const ln = document.getElementById('ac-ln').value.trim();
+  const phone = document.getElementById('ac-phone').value.trim();
+  if (!fn && !ln) { alert('Wpisz imię lub nazwisko'); return; }
+  if (!phone) { alert('Wpisz numer telefonu'); return; }
+  try {
+    const r = await fetch('/api/contacts/add', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ firstName:fn, lastName:ln, phone, email:document.getElementById('ac-email').value.trim(), source:document.getElementById('ac-source').value, treatment:document.getElementById('ac-treatment').value, notes:document.getElementById('ac-notes').value.trim() }),
+    });
+    const d = await r.json();
+    if (d.success) { alert('Kontakt dodany do GHL!'); closeAddModal(); ['ac-fn','ac-ln','ac-phone','ac-email','ac-notes'].forEach(id => document.getElementById(id).value = ''); }
+    else alert('Błąd: ' + (d.error || 'Nieznany błąd'));
+  } catch(e) { alert('Błąd połączenia'); }
+}
+
+// ─── CLICK-TO-CALL ───────────────────────────────────────────────────────────
+async function dialNumber(phone) {
+  if (!phone) { alert('Brak numeru'); return; }
+  if (!confirm(`Zadzwonić do ${phone}?`)) return;
+  try {
+    const r = await fetch('/api/call/dial', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ toNumber:phone, fromExt:'103' }),
+    });
+    const d = await r.json();
+    if (d.status === 'success') alert('Łączenie... Zadarma zadzwoni na Twój telefon, a potem połączy z pacjentem.');
+    else alert('Błąd: ' + (d.message || 'Nieznany błąd'));
+  } catch(e) { alert('Błąd połączenia'); }
+}
+
+// ─── INIT ────────────────────────────────────────────────────────────────────
 window.addEventListener('load', () => {
-  const user = sessionStorage.getItem('user');
-  if (user) showDashboard(JSON.parse(user));
-  loadDailyStats();
-  setInterval(loadDailyStats, 30000);
+  const saved = sessionStorage.getItem('ncUser');
+  if (saved) { currentUser = JSON.parse(saved); showDashboard(); }
 });
 </script>
 </body>
