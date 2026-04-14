@@ -18,7 +18,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // ─── Konfiguracja ────────────────────────────────────────────────────────────
 
-const GHL_TOKEN = process.env.GHL_TOKEN || '';
+const GHL_TOKEN = process.env.GHL_TOKEN || 'pit-c118110f-ce3c-4ff6-9b05-cb614ae1da5d';
 const GHL_LOCATION_ID = process.env.GHL_LOCATION_ID || '';
 const ZADARMA_KEY = process.env.ZADARMA_KEY || '';
 const ZADARMA_SECRET = process.env.ZADARMA_SECRET || '';
@@ -29,20 +29,18 @@ const PORT = process.env.PORT || 3000;
 // Pipeline ID
 const PIPELINE_ID = 'FVgB3ga52b0PUi6QjJ0x';
 
-// Stage IDs
+// Stage IDs — EndoEstetica pipeline
 const STAGES = {
-  NOWE_ZGLOSZENIE: '4d006021-f3b2-4efc-8efc-4f049522379c',
-  PO_PIERWSZEJ_PROBIE: '002dbc5a-c6a4-4931-a9a3-af4877b2c525',
-  PO_DRUGIEJ_PROBIE: 'de0a619e-ee22-41c3-9a90-eccfcb1a8fb8',
-  DZIEN_2_EMAIL: '6d0c5ca9-8b79-4bf3-a091-381e636cd21e',
-  DZIEN_4_SMS: '53ad4911-a26c-41fa-9b23-bc3c88f98ea4',
-  BEZ_KONTAKTU: '6517c39e-15fe-4041-a847-89ba822b3c96',
-  PO_ROZMOWIE: '19126f1b-5529-48fc-be95-d6b64e264e59',
-  UMOWIONY_W0: '73f6704f-1d6a-49dc-8591-4b129ba1b692',
-  NA_W0_PODEJMUJE_DECYZJE: 'e946be7b-c766-4563-9b93-e60f465a2dab',
-  NA_W0_ZAPISAL_SIE: 'c12bac70-da03-411e-89e8-9347977267fa',
-  NA_W0_NO_SHOW: 'afc5a678-b78b-47bd-858e-78968724ac4d',
-  NA_W0_ODMOWIL: '139cde76-d37e-4a14-ad45-ae94a843d78b',
+  NOWE_ZGLOSZENIE:    '4d006021-f3b2-4efc-8efc-4f049522379c', // Stage 1
+  PO_PIERWSZEJ_PROBIE:'002dbc5a-c6a4-4931-a9a3-af4877b2c525', // Stage 2
+  PO_DRUGIEJ_PROBIE:  'de0a619e-ee22-41c3-9a90-eccfcb1a8fb8', // Stage 3
+  DZIEN_2_EMAIL:      '6d0c5ca9-8b79-4bf3-a091-381e636cd21e', // Stage 4
+  DZIEN_4_SMS:        '53ad4911-a26c-41fa-9b23-bc3c88f98ea4', // Stage 5
+  BEZ_KONTAKTU:       '6517c39e-15fe-4041-a847-89ba822b3c96', // Stage 6
+  PO_ROZMOWIE:        '19126f1b-5529-48fc-be95-d6b64e264e59', // Stage 7
+  UMOWIONY_W0:        '73f6704f-1d6a-49dc-8591-4b129ba1b692', // Stage 8
+  NO_SHOW:            'afc5a678-b78b-47bd-858e-78968724ac4d', // Stage 9A — nie przyszedł
+  ODMOWIL:            '139cde76-d37e-4a14-ad45-ae94a843d78b', // Stage 9B — odmówił
 };
 
 // ─── Users ───────────────────────────────────────────────────────────────────
@@ -638,11 +636,14 @@ app.post('/api/call/outcome', async (req, res) => {
     // Notatka z raportu
     const noteLines = [];
     if (contactType) noteLines.push(`Typ kontaktu: ${contactType}`);
-    if (callReason)  noteLines.push(`Powód: ${callReason}`);
-    if (temperature) noteLines.push(`Temperatura: ${temperature}`);
-    if (objections)  noteLines.push(`Obiekcje: ${objections}`);
-    if (notes)       noteLines.push(`Notatki: ${notes}`);
+    if (callEffect)  noteLines.push(`Efekt rozmowy: ${callEffect}`);
+    if (req.body.visitDate)    noteLines.push(`Data wizyty: ${req.body.visitDate}`);
+    if (req.body.followupWhen) noteLines.push(`Kiedy kontakt: ${req.body.followupWhen}`);
+    if (req.body.followupDate) noteLines.push(`Data kontaktu: ${req.body.followupDate}`);
+    if (req.body.reasonNeg)    noteLines.push(`Powód: ${req.body.reasonNeg}`);
+    if (source)      noteLines.push(`Źródło: ${source}`);
     if (referredBy)  noteLines.push(`Polecony przez: ${referredBy}`);
+    if (notes)       noteLines.push(`Notatki: ${notes}`);
     if (callerPhone) noteLines.push(`Telefon: ${callerPhone}`);
     if (noteLines.length > 0) {
       await addNoteToContact(
