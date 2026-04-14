@@ -732,6 +732,9 @@ let rpt = { type:'', reason:'', temp:'', objections:[], outcome:'', source:'', t
 // Liczniki dzienne
 let dayCounts = { nowy:0, staly:0, wizyta:0, nie_pacjent:0 };
 
+// Lokalna lista kontaktów (cache z GHL + osoby z raportów)
+let localContacts = [];
+
 // ─── LOGIN ───────────────────────────────────────────────────────────────────
 let selUserId = null;
 
@@ -783,8 +786,10 @@ function showDashboard() {
   loadNewLeads();
   loadOpenCalls();
   loadClosedCalls();
+  loadAllContacts(); // wczytaj kontakty z GHL do lokalnego cache
   setInterval(loadNewLeads, 30000);
   setInterval(loadDailyStats, 60000);
+  setInterval(loadAllContacts, 120000); // odśwież kontakty co 2 minuty
 }
 
 // ─── WEBSOCKET ───────────────────────────────────────────────────────────────
@@ -850,6 +855,11 @@ function handleWS(msg) {
       updateCallField(msg.callId, 'call_effect', msg.callEffect);
       updateCallField(msg.callId, 'contact_type', msg.contactType);
       renderOpenCalls(); renderRecentCalls(); loadDailyStats();
+      break;
+
+    case 'CONTACT_UPSERTED':
+      // Dodaj lub zaktualizuj kontakt w lokalnej liście
+      upsertLocalContact(msg.contact);
       break;
   }
 }
@@ -1311,22 +1321,91 @@ async function loadStats() {
   } catch(e) {}
 }
 
-// ─── CONTACTS ────────────────────────────────────────────────────────────────
+// ─── CONTACTS ────────────────────────────────────────────────────────────────────────────────
+
+// Dodaj lub zaktualizuj kontakt w lokalnej liście
+function upsertLocalContact(c) {
+  const idx = localContacts.findIndex(x => x.id === c.id || (c.phone && x.phone === c.phone));
+  if (idx >= 0) {
+    localContacts[idx] = { ...localContacts[idx], ...c };
+  } else {
+    localContacts.unshift(c);
+  }
+  // Jeśli jesteśmy na zakładce Kontakty — odśwież listę
+  const searchVal = document.getElementById('contact-search')?.value || '';
+  if (searchVal.length >= 2) searchContacts();
+  else renderAllContacts();
+}
+
+// Wczytaj wszystkie kontakty z serwera do lokalnego cache
+async function loadAllContacts() {
+  try {
+    const r = await fetch('/api/contacts?q=');
+    const d = await r.json();
+    if (d.contacts && d.contacts.length) {
+      // Scalań z lokalnym cache (zachowaj nowe z raportów)
+      d.contacts.forEach(c => {
+        if (!localContacts.find(x => x.id === c.id)) localContacts.push(c);
+      });
+      renderAllContacts();
+    }
+  } catch(e) {}
+}
+
+// Renderuj wszystkie kontakty (bez filtrowania)
+function renderAllContacts() {
+  const el = document.getElementById('contacts-list');
+  if (!el) return;
+  if (!localContacts.length) { el.innerHTML = '<div class="empty-state">Brak kontaktów</div>'; return; }
+  el.innerHTML = localContacts.slice(0, 100).map(c => `<div class="contact-item">
+    <div class="c-avatar">${(c.name||c.firstName||'?')[0].toUpperCase()}</div>
+    <div class="c-info">
+      <div class="c-name">${c.name || [c.firstName,c.lastName].filter(Boolean).join(' ') || 'Brak imienia'}</div>
+      <div class="c-phone">${c.phone||'Brak numeru'}</div>
+    </div>
+    <div class="ci-actions">${c.phone ? `<button class="act-btn act-primary" onclick="dialNumber('${c.phone}')">📞 Zadzwoń</button>` : ''}</div>
+  </div>`).join('');
+}
+
 let searchTimer;
 function searchContacts() {
   clearTimeout(searchTimer);
+  const q = document.getElementById('contact-search').value.trim();
+  if (q.length < 2) { renderAllContacts(); return; }
   searchTimer = setTimeout(async () => {
-    const q = document.getElementById('contact-search').value;
-    if (q.length < 2) { document.getElementById('contacts-list').innerHTML = '<div class="empty-state">Wpisz minimum 2 znaki</div>'; return; }
-    const r = await fetch(`/api/contacts?q=${encodeURIComponent(q)}`);
-    const d = await r.json();
+    // Najpierw szukaj lokalnie
+    const ql = q.toLowerCase();
+    const local = localContacts.filter(c =>
+      (c.name||'').toLowerCase().includes(ql) ||
+      (c.firstName||'').toLowerCase().includes(ql) ||
+      (c.lastName||'').toLowerCase().includes(ql) ||
+      (c.phone||'').includes(q)
+    );
     const el = document.getElementById('contacts-list');
-    if (!d.contacts.length) { el.innerHTML = '<div class="empty-state">Brak wyników</div>'; return; }
-    el.innerHTML = d.contacts.map(c => `<div class="contact-item">
-      <div class="c-avatar">${(c.name||'?')[0].toUpperCase()}</div>
-      <div class="c-info"><div class="c-name">${c.name||'Brak imienia'}</div><div class="c-phone">${c.phone||'Brak numeru'}</div></div>
-      <div class="ci-actions">${c.phone ? `<button class="act-btn act-primary" onclick="dialNumber('${c.phone}')">📞 Zadzwoń</button>` : ''}</div>
-    </div>`).join('');
+    if (local.length) {
+      el.innerHTML = local.map(c => `<div class="contact-item">
+        <div class="c-avatar">${(c.name||c.firstName||'?')[0].toUpperCase()}</div>
+        <div class="c-info">
+          <div class="c-name">${c.name || [c.firstName,c.lastName].filter(Boolean).join(' ') || 'Brak imienia'}</div>
+          <div class="c-phone">${c.phone||'Brak numeru'}</div>
+        </div>
+        <div class="ci-actions">${c.phone ? `<button class="act-btn act-primary" onclick="dialNumber('${c.phone}')">📞 Zadzwoń</button>` : ''}</div>
+      </div>`).join('');
+    } else {
+      // Fallback: szukaj na serwerze (GHL API)
+      try {
+        const r = await fetch(`/api/contacts?q=${encodeURIComponent(q)}`);
+        const d = await r.json();
+        if (!d.contacts.length) { el.innerHTML = '<div class="empty-state">Brak wyników</div>'; return; }
+        // Dodaj do lokalnego cache
+        d.contacts.forEach(c => upsertLocalContact(c));
+        el.innerHTML = d.contacts.map(c => `<div class="contact-item">
+          <div class="c-avatar">${(c.name||'?')[0].toUpperCase()}</div>
+          <div class="c-info"><div class="c-name">${c.name||'Brak imienia'}</div><div class="c-phone">${c.phone||'Brak numeru'}</div></div>
+          <div class="ci-actions">${c.phone ? `<button class="act-btn act-primary" onclick="dialNumber('${c.phone}')">📞 Zadzwoń</button>` : ''}</div>
+        </div>`).join('');
+      } catch(e) { el.innerHTML = '<div class="empty-state">Błąd wyszukiwania</div>'; }
+    }
   }, 300);
 }
 

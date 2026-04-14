@@ -624,7 +624,31 @@ app.post('/api/call/outcome', async (req, res) => {
     }
   }
 
-  // Krok 5: Auto-zamknij temat w aplikacji po zapisaniu raportu
+  // Krok 5: Zaktualizuj lokalny cache kontaktów GHL
+  if (resolvedContactId) {
+    const fullName = [firstName, lastName].filter(Boolean).join(' ') || patientName || 'Nieznany';
+    const existingIdx = ghlContactsCache.findIndex(c => c.id === resolvedContactId);
+    const contactEntry = {
+      id:        resolvedContactId,
+      name:      fullName,
+      firstName: firstName || '',
+      lastName:  lastName  || '',
+      phone:     callerPhone || '',
+      email:     '',
+      tags:      [...(EFFECT_TO_TAGS[callEffect] || []), 'lead_call'],
+    };
+    if (existingIdx >= 0) {
+      // Aktualizuj istniejący wpis
+      ghlContactsCache[existingIdx] = { ...ghlContactsCache[existingIdx], ...contactEntry };
+    } else {
+      // Dodaj nowy na początek listy
+      ghlContactsCache.unshift(contactEntry);
+    }
+    // Wyślij do wszystkich klientów WS — frontend odświeży zakładkę Kontakty
+    broadcast({ type: 'CONTACT_UPSERTED', contact: contactEntry });
+  }
+
+  // Krok 6: Auto-zamknij temat w aplikacji po zapisaniu raportu
   await supabase.updateCall(callId, {
     topic_closed: true,
     closed_at: new Date().toISOString(),
