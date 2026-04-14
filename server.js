@@ -284,53 +284,81 @@ async function addNoteToContact(contactId, note) {
 
 async function getNewLeadsFromGHL() {
   try {
-    const res = await ghlApi.get('/pipelines/' + PIPELINE_ID);
-    const pipeline = res.data;
-    
-    // Pobierz opportunities z pipeline
-    const oppsRes = await ghlApi.get('/opportunities/', {
+    console.log(`[GHL] Pobieranie leadów z Etapu 1 | pipeline=${PIPELINE_ID} | stage=${STAGES.NOWE_ZGLOSZENIE}`);
+
+    // GHL API v1 — opportunities z konkretnego etapu
+    const oppsRes = await ghlApi.get('/opportunities/search', {
       params: {
-        locationId: GHL_LOCATION_ID,
-        pipelineId: PIPELINE_ID,
-        stageId: STAGES.NOWE_ZGLOSZENIE,
+        location_id: GHL_LOCATION_ID,
+        pipeline_id: PIPELINE_ID,
+        pipeline_stage_id: STAGES.NOWE_ZGLOSZENIE,
         limit: 50,
       },
+    }).catch(async () => {
+      // Fallback: spróbuj inny format parametrów
+      return await ghlApi.get('/opportunities/', {
+        params: {
+          locationId: GHL_LOCATION_ID,
+          pipelineId: PIPELINE_ID,
+          stageId: STAGES.NOWE_ZGLOSZENIE,
+          limit: 50,
+        },
+      });
     });
-    
-    const opportunities = oppsRes.data.opportunities || [];
-    
-    // Dla każdej opportunity pobierz dane kontaktu
+
+    console.log('[GHL] Odpowiedź opportunities:', JSON.stringify(oppsRes.data).slice(0, 500));
+
+    // GHL może zwracać dane pod różnymi kluczami
+    const opportunities =
+      oppsRes.data.opportunities ||
+      oppsRes.data.data ||
+      oppsRes.data.results ||
+      [];
+
+    console.log(`[GHL] Znaleziono ${opportunities.length} szans sprzedaży w Etapie 1`);
+
     const leads = [];
     for (const opp of opportunities) {
-      let contactName = opp.contact?.name || opp.name || 'Brak imienia';
-      let contactPhone = opp.contact?.phone || '';
-      let contactEmail = opp.contact?.email || '';
-      
-      // Jeśli brak danych kontaktu — pobierz z GHL
-      if (opp.contactId && (!contactPhone || !contactName || contactName === 'Brak imienia')) {
+      // Dane kontaktu mogą być zagnieżdżone lub płaskie
+      const contact = opp.contact || {};
+      let contactName = contact.name ||
+        `${contact.firstName || ''} ${contact.lastName || ''}`.trim() ||
+        opp.name || '';
+      let contactPhone = contact.phone || opp.phone || '';
+      let contactEmail = contact.email || opp.email || '';
+      const contactId = opp.contactId || opp.contact_id || contact.id || '';
+
+      // Pobierz pełne dane kontaktu jeśli brak telefonu lub imienia
+      if (contactId && (!contactPhone || !contactName)) {
         try {
-          const contactRes = await ghlApi.get(`/contacts/${opp.contactId}`);
+          const contactRes = await ghlApi.get(`/contacts/${contactId}`);
           const c = contactRes.data.contact || contactRes.data;
-          contactName = `${c.firstName || ''} ${c.lastName || ''}`.trim() || contactName;
+          const fn = c.firstName || c.first_name || '';
+          const ln = c.lastName  || c.last_name  || '';
+          contactName  = `${fn} ${ln}`.trim() || contactName || 'Brak imienia';
           contactPhone = c.phone || contactPhone;
           contactEmail = c.email || contactEmail;
-        } catch (e) { /* ignore */ }
+          console.log(`[GHL] Pobrano kontakt ${contactId}: ${contactName} / ${contactPhone}`);
+        } catch (e) {
+          console.error(`[GHL] Błąd pobierania kontaktu ${contactId}:`, e.message);
+        }
       }
-      
+
       leads.push({
-        id: opp.id,
-        contactId: opp.contactId,
-        name: contactName,
-        phone: contactPhone,
-        email: contactEmail,
-        createdAt: opp.createdAt,
-        source: opp.source || '',
+        id:        opp.id,
+        contactId: contactId,
+        name:      contactName || 'Brak imienia',
+        phone:     contactPhone,
+        email:     contactEmail,
+        createdAt: opp.createdAt || opp.created_at || new Date().toISOString(),
+        source:    opp.source || '',
       });
     }
-    
+
+    console.log(`[GHL] Zwrócono ${leads.length} leadów do aplikacji`);
     return leads;
   } catch (err) {
-    console.error('[GHL] Get new leads error:', err.message);
+    console.error('[GHL] Get new leads error:', err.response?.data || err.message);
     return [];
   }
 }
@@ -664,6 +692,46 @@ app.post('/api/call/outcome', async (req, res) => {
 app.get('/api/leads/new', async (req, res) => {
   const leads = await getNewLeadsFromGHL();
   res.json({ leads });
+});
+
+// ─── DIAGNOSTYKA: surowa odpowiedź z GHL (do debugowania) ───
+app.get('/api/leads/debug', async (req, res) => {
+  try {
+    // Próba 1: /opportunities/search
+    let r1 = null, r2 = null, err1 = null, err2 = null;
+    try {
+      const x = await ghlApi.get('/opportunities/search', {
+        params: {
+          location_id: GHL_LOCATION_ID,
+          pipeline_id: PIPELINE_ID,
+          pipeline_stage_id: STAGES.NOWE_ZGLOSZENIE,
+          limit: 10,
+        },
+      });
+      r1 = x.data;
+    } catch(e) { err1 = e.response?.data || e.message; }
+
+    // Próba 2: /opportunities/
+    try {
+      const x = await ghlApi.get('/opportunities/', {
+        params: {
+          locationId: GHL_LOCATION_ID,
+          pipelineId: PIPELINE_ID,
+          stageId: STAGES.NOWE_ZGLOSZENIE,
+          limit: 10,
+        },
+      });
+      r2 = x.data;
+    } catch(e) { err2 = e.response?.data || e.message; }
+
+    res.json({
+      config: { PIPELINE_ID, STAGE_ID: STAGES.NOWE_ZGLOSZENIE, GHL_LOCATION_ID: GHL_LOCATION_ID ? '✅ ustawione' : '❌ brak' },
+      search_endpoint: { result: r1, error: err1 },
+      opportunities_endpoint: { result: r2, error: err2 },
+    });
+  } catch(e) {
+    res.json({ error: e.message });
+  }
 });
 
 // ─── API: Kontakty GHL (wyszukiwarka) ────────────────────────────────────
