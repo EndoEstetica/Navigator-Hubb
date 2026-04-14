@@ -1,8 +1,11 @@
 -- Navigator Call v6 — Supabase Schema
 -- Uruchom ten SQL w Supabase Dashboard → SQL Editor → New query → Run
 
+-- Usuń starą tabelę
+DROP TABLE IF EXISTS calls;
+
 -- Tabela połączeń
-CREATE TABLE IF NOT EXISTS calls (
+CREATE TABLE calls (
   id BIGSERIAL PRIMARY KEY,
   call_id TEXT UNIQUE NOT NULL,
   pbx_call_id TEXT,
@@ -22,9 +25,17 @@ CREATE TABLE IF NOT EXISTS calls (
   ghl_contact_id TEXT,
   ghl_logged BOOLEAN DEFAULT FALSE,
   
-  -- Raport
-  call_effect TEXT,
-  temperature INTEGER,
+  -- Raport — Krok 1 (Klasyfikacja)
+  contact_type TEXT,          -- nowy / staly / wizyta / nie_pacjent
+  call_reason TEXT,           -- bol_pilne / estetyka / implanty / konsultacja / cena
+  temperature TEXT,           -- goracy / cieply / zimny
+  objections TEXT,            -- JSON array: ["cena","strach","czas","zaufanie"]
+  
+  -- Raport — Krok 2 (Wynik rozmowy)
+  call_effect TEXT,           -- umowiony_w0 / followup / brak_decyzji / nieodebrane
+  booked_visit BOOLEAN DEFAULT FALSE,
+  
+  -- Raport — Krok 3 (Dodatkowe dane)
   source TEXT,
   treatment TEXT,
   referred_by TEXT,
@@ -43,11 +54,12 @@ CREATE TABLE IF NOT EXISTS calls (
 );
 
 -- Indeksy
-CREATE INDEX IF NOT EXISTS idx_calls_call_id ON calls(call_id);
-CREATE INDEX IF NOT EXISTS idx_calls_topic_closed ON calls(topic_closed);
-CREATE INDEX IF NOT EXISTS idx_calls_created_at ON calls(created_at);
-CREATE INDEX IF NOT EXISTS idx_calls_status ON calls(status);
+CREATE INDEX idx_calls_call_id ON calls(call_id);
+CREATE INDEX idx_calls_topic_closed ON calls(topic_closed);
+CREATE INDEX idx_calls_created_at ON calls(created_at);
+CREATE INDEX idx_calls_status ON calls(status);
+CREATE INDEX idx_calls_contact_type ON calls(contact_type);
 
--- RLS (Row Level Security) — wyłączony dla prostoty
+-- RLS
 ALTER TABLE calls ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all" ON calls FOR ALL USING (true) WITH CHECK (true);

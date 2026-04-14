@@ -106,6 +106,33 @@ body{font-family:'Montserrat',sans-serif;background:#f0f2f8;color:#1a1a2e;min-he
 .btn-nie{background:linear-gradient(135deg,#fce4ec,#f8bbd0);color:#880e4f;border-color:#f48fb1;}
 .btn-nie:not(.locked):hover{border-color:#e91e63;}
 
+/* ── NOWY FORMULARZ RAPORTU ─────────────────────────────────────────────── */
+.rpt-section-label{font-size:11px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;color:#183C63;margin-bottom:10px;}
+.outcome-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.outcome-btn{
+  padding:18px 14px;
+  border-radius:14px;
+  border:3px solid transparent;
+  cursor:pointer;
+  font-weight:800;
+  font-size:14px;
+  transition:all .2s;
+  text-align:center;
+  background:#f5f7fa;
+  color:#333;
+}
+.outcome-btn:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.12);}
+.outcome-btn.sel{box-shadow:0 0 0 3px #183C63 inset;}
+.ob-umowiony{background:#4caf50;color:#fff;border-color:#388e3c;}
+.ob-umowiony:hover{background:#43a047;}
+.ob-umowiony.sel{box-shadow:0 0 0 3px #1b5e20 inset;}
+.ob-followup{background:#ff9800;color:#fff;border-color:#e65100;font-size:12px;}
+.ob-followup:hover{background:#fb8c00;}
+.ob-followup.sel{box-shadow:0 0 0 3px #bf360c inset;}
+.ob-neg{background:#f44336;color:#fff;border-color:#c62828;}
+.ob-neg:hover{background:#e53935;}
+.ob-neg.sel{box-shadow:0 0 0 3px #7f0000 inset;}
+
 /* Pulsowanie gdy aktywne połączenie */
 .type-btn.ringing-pulse{animation:btn-pulse 1.4s infinite;}
 @keyframes btn-pulse{
@@ -214,6 +241,9 @@ body{font-family:'Montserrat',sans-serif;background:#f0f2f8;color:#1a1a2e;min-he
 .ci-actions{display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;}
 .act-btn{padding:8px 14px;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Montserrat',sans-serif;transition:all .15s;}
 .act-btn:hover{filter:brightness(.92);}
+.act-play{background:#183C63;color:#FFBF00;}
+.act-play:hover{background:#1e4d7a;filter:none;}
+audio.mini-player{width:100%;max-width:300px;height:34px;margin-top:6px;display:block;border-radius:8px;}
 .act-primary{background:#FFBF00;color:#183C63;}
 .act-danger{background:#fce4ec;color:#c62828;}
 .act-neutral{background:#f0f2f8;color:#555;}
@@ -570,7 +600,7 @@ textarea.form-input{resize:vertical;}
 </div><!-- /dashboard -->
 
 <!-- ══════════════════════════════════════════════════════════
-     REPORT OVERLAY — 3 KROKI
+     REPORT OVERLAY — 2 KROKI (nowy format)
 ══════════════════════════════════════════════════════════ -->
 <div class="overlay" id="report-overlay">
   <div class="report-panel">
@@ -580,18 +610,96 @@ textarea.form-input{resize:vertical;}
     </div>
     <div class="rp-body">
 
-      <!-- Stepper -->
+      <!-- Stepper 2-krokowy -->
       <div class="stepper">
         <div class="st-circle active" id="sc-1">1</div>
         <div class="st-line" id="sl-1"></div>
         <div class="st-circle" id="sc-2">2</div>
-        <div class="st-line" id="sl-2"></div>
-        <div class="st-circle" id="sc-3">3</div>
       </div>
 
-      <!-- ─── KROK 1: Dane pacjenta + klasyfikacja ─── -->
+      <!-- ─── KROK 1: Efekt rozmowy + kiedy kontakt -->
       <div id="rs-1">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+
+        <!-- EFEKT ROZMOWY -->
+        <div class="form-group">
+          <label class="form-label rpt-section-label">EFEKT ROZMOWY</label>
+          <div class="outcome-grid">
+            <button class="outcome-btn ob-umowiony" onclick="pickOutcome(this,'umowiony_w0')">
+              <span class="ob-label">Umówił się</span>
+            </button>
+            <button class="outcome-btn ob-followup" onclick="pickOutcome(this,'followup')">
+              <span class="ob-label">PROSI O KOLEJNY KONTAKT</span>
+            </button>
+            <button class="outcome-btn ob-neg" onclick="pickOutcome(this,'rezygnacja')">
+              <span class="ob-label">Rezygnacja</span>
+            </button>
+            <button class="outcome-btn ob-neg" onclick="pickOutcome(this,'nie_kwalifikuje_sie')">
+              <span class="ob-label">Nie kwalifikuje się</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- DATA WIZYTY (tylko gdy umówił się) -->
+        <div class="form-group" id="rg-visit-date" style="display:none;">
+          <label class="form-label rpt-section-label">DATA WIZYTY</label>
+          <input type="date" class="form-input" id="r-visit-date">
+        </div>
+
+        <!-- KIEDY KONTAKT (tylko gdy prosi o kolejny kontakt) -->
+        <div class="form-group" id="rg-followup-when" style="display:none;">
+          <label class="form-label rpt-section-label">ZA ILE UMÓWIONY KONTAKT</label>
+          <div class="choice-group">
+            <button class="choice-btn" onclick="pick(this,'followup_when','jutro')">JUTRO</button>
+            <button class="choice-btn" onclick="pick(this,'followup_when','pojutrze')">POJUTRZE</button>
+            <button class="choice-btn" onclick="pick(this,'followup_when','2dni')">ZA 2 DNI</button>
+            <button class="choice-btn" onclick="pick(this,'followup_when','3dni')">ZA 3 DNI</button>
+            <button class="choice-btn" onclick="pick(this,'followup_when','5dni')">ZA 5 DNI</button>
+            <button class="choice-btn" onclick="pick(this,'followup_when','tydzien')">ZA TYDZIEŃ</button>
+            <button class="choice-btn" onclick="pick(this,'followup_when','inna_data')">INNA DATA</button>
+            <button class="choice-btn" onclick="pick(this,'followup_when','bez_daty')">BEZ DATY</button>
+          </div>
+          <!-- Inna data -->
+          <div id="rg-followup-date" style="display:none;margin-top:10px;">
+            <input type="date" class="form-input" id="r-followup-date" placeholder="Wybierz datę">
+          </div>
+        </div>
+
+        <!-- POWÓD REZYGNACJI / BRAKU KWALIFIKACJI -->
+        <div class="form-group" id="rg-reason-neg" style="display:none;">
+          <label class="form-label rpt-section-label" id="rg-reason-neg-label">POWÓD REZYGNACJI</label>
+          <textarea class="form-input" id="r-reason-neg" rows="2" placeholder="Wpisz powód..."></textarea>
+        </div>
+
+        <div class="step-nav">
+          <button class="btn-back" onclick="closeReport()">Anuluj</button>
+          <button class="btn-next" id="btn-step1-next" onclick="goStep(2)" disabled>Dalej →</button>
+        </div>
+      </div>
+
+      <!-- ─── KROK 2: Źródło + imię/nazwisko -->
+      <div id="rs-2" style="display:none;">
+
+        <!-- ŹRÓDŁO LEADA -->
+        <div class="form-group">
+          <label class="form-label rpt-section-label">ŹRÓDŁO LEADA</label>
+          <div class="choice-group">
+            <button class="choice-btn" onclick="pickSource(this,'google')">Google</button>
+            <button class="choice-btn" onclick="pickSource(this,'facebook')">Facebook</button>
+            <button class="choice-btn" onclick="pickSource(this,'instagram')">Instagram</button>
+            <button class="choice-btn" onclick="pickSource(this,'polecenie')">Polecenie</button>
+            <button class="choice-btn" onclick="pickSource(this,'strona')">Strona www</button>
+            <button class="choice-btn" onclick="pickSource(this,'inne')">Inne</button>
+          </div>
+        </div>
+
+        <!-- POLECENIE: imię i nazwisko polecającego -->
+        <div class="form-group" id="rg-referral" style="display:none;">
+          <label class="form-label">Imię i nazwisko osoby polecającej</label>
+          <input type="text" class="form-input" id="r-referred" placeholder="np. Jan Kowalski / Dr Nowak">
+        </div>
+
+        <!-- IMIĘ I NAZWISKO -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px;">
           <div class="form-group">
             <label class="form-label">Imię</label>
             <input type="text" class="form-input" id="r-firstname" placeholder="np. Anna">
@@ -601,127 +709,12 @@ textarea.form-input{resize:vertical;}
             <input type="text" class="form-input" id="r-lastname" placeholder="np. Kowalska">
           </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Telefon</label>
-          <input type="text" class="form-input" id="r-phone" placeholder="+48 000 000 000">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Powód kontaktu</label>
-          <div class="choice-group">
-            <button class="choice-btn" onclick="pick(this,'reason','bol_pilne')">🦷 Ból / pilne</button>
-            <button class="choice-btn" onclick="pick(this,'reason','estetyka')">✨ Estetyka</button>
-            <button class="choice-btn" onclick="pick(this,'reason','implanty')">🔩 Implanty</button>
-            <button class="choice-btn" onclick="pick(this,'reason','konsultacja')">💬 Konsultacja</button>
-            <button class="choice-btn" onclick="pick(this,'reason','cena')">💰 Cena</button>
-          </div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Temperatura leada</label>
-          <div class="choice-group">
-            <button class="choice-btn" onclick="pick(this,'temp','goracy')">🔥 Gorący — chce teraz</button>
-            <button class="choice-btn" onclick="pick(this,'temp','cieply')">🌤️ Ciepły — rozważa</button>
-            <button class="choice-btn" onclick="pick(this,'temp','zimny')">❄️ Zimny — zbiera info</button>
-          </div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Obiekcje (można wybrać kilka)</label>
-          <div class="choice-group">
-            <button class="choice-btn multi" onclick="tog(this,'objections','cena')">💰 Cena</button>
-            <button class="choice-btn multi" onclick="tog(this,'objections','strach')">😨 Strach / ból</button>
-            <button class="choice-btn multi" onclick="tog(this,'objections','czas')">⏰ Brak czasu</button>
-            <button class="choice-btn multi" onclick="tog(this,'objections','zaufanie')">🤔 Brak zaufania</button>
-          </div>
-        </div>
-        <div class="step-nav">
-          <button class="btn-back" onclick="closeReport()">Anuluj</button>
-          <button class="btn-next" onclick="goStep(2)">Dalej →</button>
-        </div>
-      </div>
+        <input type="hidden" id="r-phone">
+        <input type="hidden" id="r-notes">
 
-      <!-- ─── KROK 2: Wynik rozmowy → etap GHL ─── -->
-      <div id="rs-2" style="display:none;">
-        <div class="form-group">
-          <label class="form-label">Co się stało na końcu rozmowy?</label>
-          <div class="outcome-grid">
-            <button class="outcome-btn ob-umowiony" onclick="pickOutcome(this,'umowiony_w0')">
-              <span class="ob-icon">✅</span>
-              <span class="ob-label">Wizyta umówiona</span>
-              <span class="ob-sub">→ Etap 8 w GHL (Umówiony W0)</span>
-            </button>
-            <button class="outcome-btn" onclick="pickOutcome(this,'followup')">
-              <span class="ob-icon">🔔</span>
-              <span class="ob-label">Follow-up</span>
-              <span class="ob-sub">→ Etap 7 w GHL (Po rozmowie)</span>
-            </button>
-            <button class="outcome-btn" onclick="pickOutcome(this,'brak_decyzji')">
-              <span class="ob-icon">⏸️</span>
-              <span class="ob-label">Brak decyzji</span>
-              <span class="ob-sub">→ Etap 7 w GHL (Po rozmowie)</span>
-            </button>
-            <button class="outcome-btn ob-neg" onclick="pickOutcome(this,'nie_odebral')">
-              <span class="ob-icon">📵</span>
-              <span class="ob-label">Nieodebrane</span>
-              <span class="ob-sub">→ Etap 2 w GHL (1 próba)</span>
-            </button>
-            <button class="outcome-btn ob-neg" onclick="pickOutcome(this,'nie_kwalifikuje_sie')">
-              <span class="ob-icon">❌</span>
-              <span class="ob-label">Nie kwalifikuje się</span>
-              <span class="ob-sub">→ Etap 6 + tag NIE_KWALIFIKUJE_SIE</span>
-            </button>
-            <button class="outcome-btn ob-neg" onclick="pickOutcome(this,'rezygnacja')">
-              <span class="ob-icon">🚫</span>
-              <span class="ob-label">Rezygnacja</span>
-              <span class="ob-sub">→ Etap 6 + tag REZYGNACJA</span>
-            </button>
-          </div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Notatki z rozmowy</label>
-          <textarea class="form-input" id="r-notes" rows="3"
-                    placeholder="Dodatkowe informacje, ustalenia z pacjentem..."></textarea>
-        </div>
         <div class="step-nav">
           <button class="btn-back" onclick="goStep(1)">← Wróć</button>
-          <button class="btn-next" id="btn-step2-next" onclick="goStep(3)" disabled>Dalej →</button>
-        </div>
-      </div>
-
-      <!-- ─── KROK 3: Źródło + leczenie + podsumowanie ─── -->
-      <div id="rs-3" style="display:none;">
-        <div class="form-group">
-          <label class="form-label">Źródło leada</label>
-          <div class="choice-group">
-            <button class="choice-btn" onclick="pick(this,'source','google')">Google</button>
-            <button class="choice-btn" onclick="pick(this,'source','facebook')">Facebook</button>
-            <button class="choice-btn" onclick="pick(this,'source','instagram')">Instagram</button>
-            <button class="choice-btn" onclick="pick(this,'source','polecenie')">Polecenie</button>
-            <button class="choice-btn" onclick="pick(this,'source','strona')">Strona www</button>
-            <button class="choice-btn" onclick="pick(this,'source','inne')">Inne</button>
-          </div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Program leczenia</label>
-          <div class="choice-group">
-            <button class="choice-btn" onclick="pick(this,'treatment','implanty')">Implanty</button>
-            <button class="choice-btn" onclick="pick(this,'treatment','endodoncja')">Endodoncja</button>
-            <button class="choice-btn" onclick="pick(this,'treatment','dsd')">DSD</button>
-            <button class="choice-btn" onclick="pick(this,'treatment','protetyka')">Protetyka</button>
-            <button class="choice-btn" onclick="pick(this,'treatment','ortodoncja')">Ortodoncja</button>
-            <button class="choice-btn" onclick="pick(this,'treatment','inne')">Inne</button>
-          </div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Polecony przez (opcjonalne)</label>
-          <input type="text" class="form-input" id="r-referred"
-                 placeholder="Imię osoby polecającej lub lekarza">
-        </div>
-
-        <!-- Podsumowanie przed zapisem -->
-        <div class="summary-box" id="summary-box"></div>
-
-        <div class="step-nav">
-          <button class="btn-back" onclick="goStep(2)">← Wróć</button>
-          <button class="btn-save" onclick="saveReport()">✓ Zapisz i wyślij do GHL</button>
+          <button class="btn-save" onclick="saveReport()">✓ Zapisz i wyślij do Navigatora</button>
         </div>
       </div>
 
@@ -1064,24 +1057,45 @@ function updateBadges() {
   else ob.style.display = 'none';
 }
 
-// ─── REPORT FORM ─────────────────────────────────────────────────────────────
+// ─── PLAYER ────────────────────────────────────────────────────────────────────────────────
+function togglePlayer(btn, callId, url) {
+  const slot = document.getElementById('player-' + callId);
+  if (!slot) return;
+  const visible = slot.style.display !== 'none';
+  slot.style.display = visible ? 'none' : 'block';
+  btn.textContent = visible ? '▶ Odtwórz' : '⏹ Zatrzymaj';
+  if (!visible) {
+    const audio = slot.querySelector('audio');
+    if (audio) audio.play().catch(() => {});
+  } else {
+    const audio = slot.querySelector('audio');
+    if (audio) { audio.pause(); audio.currentTime = 0; }
+  }
+}
+
+// ─── REPORT FORM ────────────────────────────────────────────────────────────────────────────────
 function startReport(type) {
   if (!activeCallId) { alert('Brak aktywnego połączenia'); return; }
-  rpt = { type, reason:'', temp:'', objections:[], outcome:'', source:'', treatment:'' };
+  rpt = { type, outcome:'', source:'', followup_when:'' };
 
   const call = openCalls.find(c => c.call_id === activeCallId);
   const nameParts = call && call.patient_name ? call.patient_name.split(' ') : [];
   document.getElementById('r-firstname').value = nameParts[0] || '';
   document.getElementById('r-lastname').value = nameParts.slice(1).join(' ') || '';
   document.getElementById('r-phone').value = call ? (call.caller_phone || '') : '';
-  document.getElementById('r-notes').value = '';
   document.getElementById('r-referred').value = '';
+  document.getElementById('r-reason-neg').value = '';
   document.querySelectorAll('.choice-btn').forEach(b => b.classList.remove('sel'));
   document.querySelectorAll('.outcome-btn').forEach(b => b.classList.remove('sel'));
+  // Ukryj pola warunkowe
+  ['rg-visit-date','rg-followup-when','rg-reason-neg','rg-referral'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
 
   const labels = { nowy:'➕ Nowy Pacjent', staly:'💎 Stały Pacjent', wizyta:'📅 Aktualna Wizyta' };
   document.getElementById('rp-title').textContent = labels[type] || 'Raport';
-  document.getElementById('btn-step2-next').disabled = true;
+  document.getElementById('btn-step1-next').disabled = true;
 
   goStep(1);
   document.getElementById('report-overlay').classList.add('open');
@@ -1115,17 +1129,14 @@ function closeReport() {
 }
 
 function goStep(step) {
-  [1,2,3].forEach(s => {
-    document.getElementById(`rs-${s}`).style.display = s === step ? 'block' : 'none';
-    const c = document.getElementById(`sc-${s}`);
-    c.classList.remove('active','done');
-    if (s < step) c.classList.add('done');
-    else if (s === step) c.classList.add('active');
+  [1,2].forEach(s => {
+    const rs = document.getElementById(`rs-${s}`);
+    if (rs) rs.style.display = s === step ? 'block' : 'none';
+    const sc = document.getElementById(`sc-${s}`);
+    if (sc) { sc.classList.remove('active','done'); if (s < step) sc.classList.add('done'); else if (s === step) sc.classList.add('active'); }
   });
-  [1,2].forEach(l => {
-    document.getElementById(`sl-${l}`).classList.toggle('done', l < step);
-  });
-  if (step === 3) buildSummary();
+  const sl1 = document.getElementById('sl-1');
+  if (sl1) sl1.classList.toggle('done', step > 1);
 }
 
 // Single-select
@@ -1142,12 +1153,48 @@ function tog(btn, field, val) {
   else rpt[field].push(val);
 }
 
-// Outcome
+// Outcome — z logiką warunkową
 function pickOutcome(btn, val) {
   document.querySelectorAll('.outcome-btn').forEach(b => b.classList.remove('sel'));
   btn.classList.add('sel');
   rpt.outcome = val;
-  document.getElementById('btn-step2-next').disabled = false;
+  document.getElementById('btn-step1-next').disabled = false;
+
+  // Pokaż/ukryj pola warunkowe
+  const showVisit    = val === 'umowiony_w0';
+  const showFollowup = val === 'followup';
+  const showNeg      = val === 'rezygnacja' || val === 'nie_kwalifikuje_sie';
+
+  document.getElementById('rg-visit-date').style.display    = showVisit    ? 'block' : 'none';
+  document.getElementById('rg-followup-when').style.display = showFollowup ? 'block' : 'none';
+  document.getElementById('rg-reason-neg').style.display    = showNeg      ? 'block' : 'none';
+
+  if (showNeg) {
+    document.getElementById('rg-reason-neg-label').textContent =
+      val === 'rezygnacja' ? 'POWÓD REZYGNACJI' : 'POWÓD BRAKU KWALIFIKACJI';
+  }
+
+  // Inna data w followup
+  const followupWhen = document.getElementById('rg-followup-when');
+  if (followupWhen) {
+    followupWhen.querySelectorAll('.choice-btn').forEach(b => {
+      b.onclick = function() {
+        pick(this, 'followup_when', this.textContent.toLowerCase().replace(/ /g,'_'));
+        const isInna = this.textContent === 'INNA DATA';
+        document.getElementById('rg-followup-date').style.display = isInna ? 'block' : 'none';
+      };
+    });
+  }
+}
+
+// Źródło leada — z logiką polecenia
+function pickSource(btn, val) {
+  btn.closest('.choice-group').querySelectorAll('.choice-btn').forEach(b => b.classList.remove('sel'));
+  btn.classList.add('sel');
+  rpt.source = val;
+  const showRef = val === 'polecenie';
+  document.getElementById('rg-referral').style.display = showRef ? 'block' : 'none';
+  if (!showRef) document.getElementById('r-referred').value = '';
 }
 
 function buildSummary() {
@@ -1182,22 +1229,46 @@ async function saveReport() {
 
   const firstName = document.getElementById('r-firstname').value.trim();
   const lastName  = document.getElementById('r-lastname').value.trim();
+
+  // Pobierz datę wizyty
+  const visitDateEl = document.getElementById('r-visit-date');
+  const visitDate = visitDateEl ? visitDateEl.value : '';
+
+  // Pobierz datę followup
+  const followupDateEl = document.getElementById('r-followup-date');
+  const followupDate = followupDateEl ? followupDateEl.value : '';
+
+  // Powód rezygnacji / braku kwalifikacji
+  const reasonNegEl = document.getElementById('r-reason-neg');
+  const reasonNeg = reasonNegEl ? reasonNegEl.value.trim() : '';
+
+  // Polecający
+  const referredBy = document.getElementById('r-referred').value.trim();
+
+  // Notatka z danych
+  const noteLines = [];
+  if (rpt.followup_when) noteLines.push(`Kiedy kontakt: ${rpt.followup_when}`);
+  if (followupDate) noteLines.push(`Data kontaktu: ${followupDate}`);
+  if (visitDate) noteLines.push(`Data wizyty: ${visitDate}`);
+  if (reasonNeg) noteLines.push(`Powód: ${reasonNeg}`);
+  if (referredBy) noteLines.push(`Polecony przez: ${referredBy}`);
+
   const payload = {
     callId,
     ghlContactId: call ? call.ghl_contact_id : null,
     contactType: rpt.type,
-    callReason: rpt.reason,
     callEffect: rpt.outcome,
-    temperature: rpt.temp,
-    objections: JSON.stringify(rpt.objections),
     userId: currentUser.id,
     firstName,
     lastName,
     patientName: [firstName, lastName].filter(Boolean).join(' '),
-    notes: document.getElementById('r-notes').value.trim(),
+    notes: noteLines.join(' | '),
     source: rpt.source,
-    treatment: rpt.treatment,
-    referredBy: document.getElementById('r-referred').value.trim(),
+    referredBy,
+    visitDate,
+    followupWhen: rpt.followup_when,
+    followupDate,
+    reasonNeg,
     bookedVisit: rpt.outcome === 'umowiony_w0',
   };
 
@@ -1291,20 +1362,27 @@ function buildCallItem(c, closed) {
   };
   const [effLabel, effClass] = c.call_effect ? (effectMap[c.call_effect] || [c.call_effect, 'ci-effect']) : ['',''];
   const effectHtml = c.call_effect ? `<div class="${effClass}">${effLabel}</div>` : '';
-  const recHtml = c.recording_url ? `<audio controls preload="none" src="${c.recording_url}"></audio>` : '';
   const time = new Date(c.created_at).toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'});
+  const dur = c.duration_seconds ? ` · ${Math.floor(c.duration_seconds/60)}:${String(c.duration_seconds%60).padStart(2,'0')}` : '';
+
+  // Przycisk PLAY — otwiera mini-player pod spodem
+  const playBtn = c.recording_url
+    ? `<button class="act-btn act-play" onclick="togglePlayer(this,'${c.call_id}','${c.recording_url}')">▶ Odtwórz</button>`
+    : '';
+  const playerSlot = c.recording_url ? `<div id="player-${c.call_id}" style="display:none;"><audio class="mini-player" controls preload="none" src="${c.recording_url}"></audio></div>` : '';
 
   const actions = closed
-    ? `<button class="act-btn act-neutral" onclick="reopenTopic('${c.call_id}')">↩ Otwórz</button>`
+    ? `${playBtn}<button class="act-btn act-neutral" onclick="reopenTopic('${c.call_id}')">↩ Otwórz</button>`
     : `${!c.call_effect ? `<button class="act-btn act-primary" onclick="openReportFor('${c.call_id}')">📋 Raport</button>` : ''}
+       ${playBtn}
        <button class="act-btn act-danger" onclick="closeTopic('${c.call_id}')">✕ Zamknij</button>`;
 
   return `<div class="call-item ${stateClass}">
     <div class="ci-badge ${badgeClass}">${badgeText}</div>
     <div class="ci-info">
       <div class="ci-name">${c.patient_name || c.caller_phone || 'Nieznany'}</div>
-      <div class="ci-phone">${c.caller_phone || ''}${c.duration_seconds ? ' · ' + c.duration_seconds + 's' : ''}</div>
-      ${effectHtml}${recHtml}
+      <div class="ci-phone">${c.caller_phone || ''}${dur}</div>
+      ${effectHtml}${playerSlot}
     </div>
     <div class="ci-time">${time}</div>
     <div class="ci-actions">${actions}</div>
@@ -1314,17 +1392,20 @@ function buildCallItem(c, closed) {
 function openReportFor(callId) {
   activeCallId = callId;
   const call = openCalls.find(c => c.call_id === callId);
-  rpt = { type:'nowy', reason:'', temp:'', objections:[], outcome:'', source:'', treatment:'' };
+  rpt = { type:'nowy', outcome:'', source:'', followup_when:'' };
   const nameParts2 = call && call.patient_name ? call.patient_name.split(' ') : [];
   document.getElementById('r-firstname').value = nameParts2[0] || '';
   document.getElementById('r-lastname').value = nameParts2.slice(1).join(' ') || '';
   document.getElementById('r-phone').value = call ? (call.caller_phone || '') : '';
-  document.getElementById('r-notes').value = '';
   document.getElementById('r-referred').value = '';
   document.querySelectorAll('.choice-btn').forEach(b => b.classList.remove('sel'));
   document.querySelectorAll('.outcome-btn').forEach(b => b.classList.remove('sel'));
+  ['rg-visit-date','rg-followup-when','rg-reason-neg','rg-referral'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
   document.getElementById('rp-title').textContent = 'Raport rozmowy';
-  document.getElementById('btn-step2-next').disabled = true;
+  document.getElementById('btn-step1-next').disabled = true;
   goStep(1);
   document.getElementById('report-overlay').classList.add('open');
 }
