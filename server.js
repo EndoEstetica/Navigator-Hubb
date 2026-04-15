@@ -35,7 +35,7 @@ const PIPELINE_ID = 'FVgB3ga52b0PUi6QjJ0x';
 // Stage IDs — EndoEstetica pipeline
 const STAGES = {
   NOWE_ZGLOSZENIE:    '4d006021-f3b2-4efc-8efc-4f049522379c', // Stage 1 (EndoEstetica)
-  NOWE_ZGLOSZENIE_ALT: 'FVgB3ga52b0PUi6QjJ0x', // Alternatywny ID z debuga
+  NOWE_ZGLOSZENIE_ALT: '4d006021-f3b2-4efc-8efc-4f049522379c', // To samo co wyżej, ale upewnijmy się że jest używane poprawnie
   PO_PIERWSZEJ_PROBIE:'002dbc5a-c6a4-4931-a9a3-af4877b2c525', // Stage 2
   PO_DRUGIEJ_PROBIE:  'de0a619e-ee22-41c3-9a90-eccfcb1a8fb8', // Stage 3
   DZIEN_2_EMAIL:      '6d0c5ca9-8b79-4bf3-a091-381e636cd21e', // Stage 4
@@ -366,6 +366,7 @@ async function getNewLeadsFromGHL() {
 
     // Próba 1: /opportunities/ z pipelineId i stageId (GHL v2 poprawny parametr dla listy)
     try {
+      // GHL v2 API dla szans sprzedaży używa pipelineId i stageId
       const data = await ghlRequest('get', '/opportunities/', {
         locationId: GHL_LOCATION_ID,
         pipelineId: PIPELINE_ID,
@@ -374,15 +375,15 @@ async function getNewLeadsFromGHL() {
       });
       opportunities = data.opportunities || [];
       
-      // Jeśli pusto, spróbuj z alternatywnym Stage ID
+      // Jeśli pusto, spróbuj pobrać wszystkie i filtrować po statusie 'open'
       if (opportunities.length === 0) {
-        const dataAlt = await ghlRequest('get', '/opportunities/', {
+        const dataAll = await ghlRequest('get', '/opportunities/', {
           locationId: GHL_LOCATION_ID,
           pipelineId: PIPELINE_ID,
-          stageId: STAGES.NOWE_ZGLOSZENIE_ALT,
           limit: 100,
         });
-        opportunities = dataAlt.opportunities || [];
+        const all = dataAll.opportunities || [];
+        opportunities = all.filter(o => o.stageId === STAGES.NOWE_ZGLOSZENIE || o.pipelineStageId === STAGES.NOWE_ZGLOSZENIE);
       }
       
       console.log(`[GHL] Próba 1 (list+stage): ${opportunities.length} szans`);
@@ -460,11 +461,24 @@ async function getNewLeadsFromGHL() {
 // ─── Zadarma API ─────────────────────────────────────────────────────────────
 
 function zadarmaSign(method, params) {
+  // 1. Sortowanie kluczy alfabetycznie
   const sortedKeys = Object.keys(params).sort();
+  
+  // 2. Budowanie query string (bez encodeURIComponent!)
   const paramString = sortedKeys.map(k => `${k}=${params[k]}`).join('&');
+  
+  // 3. MD5 z parametrów (HEX)
   const md5Hash = crypto.createHash('md5').update(paramString).digest('hex');
+  
+  // 4. String do podpisu: metoda + parametry + md5
   const signString = `${method}${paramString}${md5Hash}`;
-  const hexSignature = crypto.createHmac('sha1', ZADARMA_SECRET).update(signString).digest('hex');
+  
+  // 5. HMAC-SHA1 (HEX)
+  const hexSignature = crypto.createHmac('sha1', ZADARMA_SECRET)
+    .update(signString)
+    .digest('hex');
+  
+  // 6. Base64 z HEXa
   return Buffer.from(hexSignature).toString('base64');
 }
 
