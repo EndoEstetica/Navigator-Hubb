@@ -391,21 +391,19 @@ async function getNewLeadsFromGHL() {
       console.error('[GHL] Próba 1 błąd:', e.response?.data || e.message);
     }
 
-    // Próba 2: pobierz wszystkie z pipeline i filtruj lokalnie
+    // Próba 2: pobierz absolutnie wszystkie szanse z lokalizacji (bez filtrów) aby sprawdzić czy cokolwiek przychodzi
     if (opportunities.length === 0) {
       try {
         const data = await ghlRequest('get', '/opportunities/search', {
           location_id: GHL_LOCATION_ID,
-          pipeline_id: PIPELINE_ID,
           limit: 100,
         });
         const all = data.opportunities || [];
-        opportunities = all.filter(o =>
-          o.pipelineStageId === STAGES.NOWE_ZGLOSZENIE ||
-          o.stageId         === STAGES.NOWE_ZGLOSZENIE ||
-          o.stage_id        === STAGES.NOWE_ZGLOSZENIE
-        );
-        console.log(`[GHL] Próba 2 (filter): ${opportunities.length} szans z ${all.length} wszystkich`);
+        
+        // Filtrujemy tylko po statusie 'open' (otwarte szanse)
+        opportunities = all.filter(o => o.status === 'open' || !o.status);
+        
+        console.log(`[GHL] Próba 2 (all location): ${opportunities.length} szans z ${all.length} wszystkich w lokalizacji`);
       } catch(e) {
         console.error('[GHL] Próba 2 błąd:', e.response?.data || e.message);
       }

@@ -372,7 +372,8 @@ textarea.form-input{resize:vertical;}
 /* ── DIALER ─────────────────────────────────────────────── */
 .dialer-wrap{max-width:320px;margin:0 auto;}
 .dialer-box{background:#fff;border-radius:20px;padding:28px 24px;box-shadow:0 4px 20px rgba(24,60,99,.1);}
-.dialer-display{font-size:30px;font-weight:800;text-align:center;padding:16px;min-height:64px;border-bottom:2px solid #f0f2f8;margin-bottom:20px;letter-spacing:3px;color:#183C63;}
+.dialer-display-input{width:100%;font-size:30px;font-weight:800;text-align:center;padding:16px;min-height:64px;border:none;border-bottom:2px solid #f0f2f8;margin-bottom:20px;letter-spacing:3px;color:#183C63;font-family:'Montserrat',sans-serif;background:transparent;}
+.dialer-display-input:focus{outline:none;border-bottom-color:#FFBF00;}
 .dialer-keys{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
 .d-key{padding:18px;border:none;border-radius:14px;background:#f0f2f8;font-size:22px;font-weight:700;cursor:pointer;transition:all .15s;font-family:'Montserrat',sans-serif;color:#183C63;}
 .d-key:hover{background:#e0e6ef;}
@@ -607,7 +608,7 @@ textarea.form-input{resize:vertical;}
     <div class="section-title">📱 Klawiatura</div>
     <div class="dialer-wrap">
       <div class="dialer-box">
-        <div class="dialer-display" id="dialer-display">&nbsp;</div>
+        <input type="text" class="dialer-display-input" id="dialer-display" placeholder="Wpisz numer..." oninput="onDialerInput(this)">
         <div class="dialer-keys">
           <button class="d-key" onclick="dk('1')">1</button>
           <button class="d-key" onclick="dk('2')">2</button>
@@ -618,7 +619,7 @@ textarea.form-input{resize:vertical;}
           <button class="d-key" onclick="dk('7')">7</button>
           <button class="d-key" onclick="dk('8')">8</button>
           <button class="d-key" onclick="dk('9')">9</button>
-          <button class="d-key" onclick="dk('*')">*</button>
+          <button class="d-key" onclick="dk('+')">+</button>
           <button class="d-key" onclick="dk('0')">0</button>
           <button class="d-key" onclick="dkBack()">⌫</button>
         </div>
@@ -909,9 +910,9 @@ function showDashboard() {
   document.getElementById('user-chip').textContent =
     `${currentUser.name} · ${currentUser.role === 'manager' ? 'Zarządzanie' : 'Recepcja'}`;
   
-  // Domyślnie otwórz zakładkę "W obsłudze"
-  const openTab = document.querySelector('.tab:nth-child(3)');
-  if (openTab) switchTab(openTab, 'open');
+  // Domyślnie otwórz zakładkę "Nowe zgłoszenia"
+  const leadsTab = document.querySelector('.tab:nth-child(2)');
+  if (leadsTab) switchTab(leadsTab, 'new-leads');
 
   connectWS();
   loadDailyStats();
@@ -1877,8 +1878,56 @@ async function submitEditRequest() {
 }
 
 // ─── DIALER ──────────────────────────────────────────────────────────────────
-function dk(k) { dialerNum += k; document.getElementById('dialer-display').textContent = dialerNum || '\u00a0'; }
-function dkBack() { dialerNum = dialerNum.slice(0,-1); document.getElementById('dialer-display').textContent = dialerNum || '\u00a0'; }
+function dk(k) {
+  const input = document.getElementById('dialer-display');
+  const start = input.selectionStart;
+  const end = input.selectionEnd;
+  const val = input.value;
+  input.value = val.slice(0, start) + k + val.slice(end);
+  dialerNum = input.value;
+  input.focus();
+  input.setSelectionRange(start + 1, start + 1);
+}
+
+function dkBack() {
+  const input = document.getElementById('dialer-display');
+  const start = input.selectionStart;
+  const end = input.selectionEnd;
+  const val = input.value;
+  if (start === end && start > 0) {
+    input.value = val.slice(0, start - 1) + val.slice(end);
+    input.setSelectionRange(start - 1, start - 1);
+  } else {
+    input.value = val.slice(0, start) + val.slice(end);
+    input.setSelectionRange(start, start);
+  }
+  dialerNum = input.value;
+  input.focus();
+}
+
+function onDialerInput(el) {
+  dialerNum = el.value;
+}
+
+// Obsługa klawiatury fizycznej dla dialera
+document.addEventListener('keydown', (e) => {
+  const dialerTab = document.getElementById('tab-dialer');
+  if (dialerTab && dialerTab.classList.contains('active')) {
+    const input = document.getElementById('dialer-display');
+    if (document.activeElement !== input) {
+      if (/^[0-9+*#]$/.test(e.key)) {
+        e.preventDefault();
+        dk(e.key);
+      } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        dkBack();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        dialerCall();
+      }
+    }
+  }
+});
 async function dialerCall() {
   if (dialerNum.length < 3) { alert('Wpisz numer telefonu'); return; }
   const btn = document.querySelector('.d-call');
@@ -1939,7 +1988,11 @@ async function saveNewContact() {
 function dialNumber(phone) {
   switchTab(document.querySelector('.tab:nth-child(7)'), 'dialer');
   dialerNum = phone;
-  document.getElementById('dialer-display').textContent = phone;
+  const input = document.getElementById('dialer-display');
+  if (input) {
+    input.value = phone;
+    input.focus();
+  }
 }
 
 // ─── TOAST ───────────────────────────────────────────────────────────────────
