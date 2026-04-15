@@ -1901,7 +1901,32 @@ async function submitEditRequest() {
 // ─── DIALER ──────────────────────────────────────────────────────────────────
 function dk(k) { dialerNum += k; document.getElementById('dialer-display').textContent = dialerNum || '\u00a0'; }
 function dkBack() { dialerNum = dialerNum.slice(0,-1); document.getElementById('dialer-display').textContent = dialerNum || '\u00a0'; }
-function dialerCall() { if (dialerNum.length < 3) { alert('Wpisz numer telefonu'); return; } dialNumber(dialerNum); }
+async function dialerCall() {
+  if (dialerNum.length < 3) { alert('Wpisz numer telefonu'); return; }
+  const btn = document.querySelector('.d-call');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Łączenie...';
+  
+  try {
+    const r = await fetch('/api/call/dial', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ toNumber: dialerNum, fromExt: currentUser?.ext || '225340' })
+    });
+    const d = await r.json();
+    if (d.status === 'success' || d.status === 'ok') {
+      showToast('📞 Inicjowanie połączenia...');
+    } else {
+      alert('Błąd połączenia: ' + (d.message || 'Nieznany błąd'));
+    }
+  } catch (e) {
+    alert('Błąd sieci: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
 function openAddModal() { document.getElementById('ac-phone').value = dialerNum || ''; document.getElementById('add-modal').classList.add('open'); }
 function closeAddModal() { document.getElementById('add-modal').classList.remove('open'); }
 

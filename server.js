@@ -66,6 +66,10 @@ let ghlContactsCache = [];
 let ghlContactsLastSync = 0;
 const GHL_SYNC_INTERVAL = 10 * 60 * 1000; // 10 minut
 
+let ghlLeadsCache = null;
+let ghlLeadsLastSync = 0;
+const GHL_LEADS_CACHE_TTL = 30 * 1000; // 30 sekund cache dla nowych zgłoszeń
+
 // ─── Supabase Helper ─────────────────────────────────────────────────────────
 
 const supabase = {
@@ -694,8 +698,20 @@ app.post('/api/call/outcome', async (req, res) => {
 // ─── API: Nowe zgłoszenia z GHL (Etap 1) ────────────────────────────────
 
 app.get('/api/leads/new', async (req, res) => {
-  const leads = await getNewLeadsFromGHL();
-  res.json({ leads });
+  const now = Date.now();
+  if (ghlLeadsCache && (now - ghlLeadsLastSync < GHL_LEADS_CACHE_TTL)) {
+    return res.json({ leads: ghlLeadsCache, cached: true });
+  }
+  
+  try {
+    const leads = await getNewLeadsFromGHL();
+    ghlLeadsCache = leads;
+    ghlLeadsLastSync = now;
+    res.json({ leads });
+  } catch (err) {
+    console.error('[API] Get leads error:', err.message);
+    res.json({ leads: ghlLeadsCache || [], error: err.message });
+  }
 });
 
 // ─── DIAGNOSTYKA: surowa odpowiedź z GHL ───
