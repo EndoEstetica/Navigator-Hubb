@@ -1168,7 +1168,13 @@ function togglePlayer(btn, callId, url) {
   btn.textContent = visible ? '▶ Odtwórz' : '⏹ Zatrzymaj';
   if (!visible) {
     const audio = slot.querySelector('audio');
-    if (audio) audio.play().catch(() => {});
+    if (audio) {
+      audio.load();
+      audio.play().catch(err => {
+        console.error('[Audio] Playback error:', err);
+        showToast('❌ Nie można odtworzyć nagrania', 'error');
+      });
+    }
   } else {
     const audio = slot.querySelector('audio');
     if (audio) { audio.pause(); audio.currentTime = 0; }
@@ -1589,10 +1595,12 @@ function buildCallItem(c, closed) {
     ? `<div id="player-${c.call_id}" style="display:none;"><audio class="mini-player" controls preload="none" src="${c.recording_url}"></audio></div>`
     : '';
 
-  // pkt 5: w Zamkniętych — tylko podgląd (nie ma przycisku Raport, jest Podgląd)
+  const dialBtn = c.caller_phone && c.caller_phone !== 'unknown'
+    ? `<button class="act-btn act-primary" onclick="event.stopPropagation();dialNumber('${c.caller_phone}')" title="Zadzwoń">📞 Oddzwoń</button>`
+    : '';
   const actions = closed
-    ? `${playBtn}<button class="act-btn act-neutral" onclick="openReportFor('${c.call_id}')">👁 Podgląd</button><button class="act-btn act-neutral" onclick="reopenTopic('${c.call_id}')">↩ Otwórz</button>`
-    : `${!c.call_effect ? `<button class="act-btn act-report" onclick="openReportFor('${c.call_id}')">📋 Raport</button>` : `<button class="act-btn act-neutral" onclick="openReportFor('${c.call_id}')">👁 Podgląd</button>`}
+    ? `${dialBtn}${playBtn}<button class="act-btn act-neutral" onclick="openReportFor('${c.call_id}')">👁 Podgląd</button><button class="act-btn act-neutral" onclick="reopenTopic('${c.call_id}')">↩ Otwórz</button>`
+    : `${dialBtn}${!c.call_effect ? `<button class="act-btn act-report" onclick="openReportFor('${c.call_id}')">📋 Raport</button>` : `<button class="act-btn act-neutral" onclick="openReportFor('${c.call_id}')">👁 Podgląd</button>`}
        ${playBtn}
        <button class="act-btn act-danger" onclick="closeTopic('${c.call_id}')">✕ Zamknij</button>`;
 

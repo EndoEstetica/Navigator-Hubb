@@ -157,10 +157,10 @@ async function syncGHLContacts() {
       if (startAfter)   params.startAfter   = startAfter;
       if (startAfterId) params.startAfterId = startAfterId;
 
-      const res = await ghlApi.get('/contacts/', { params });
-      const contacts = res.data.contacts || [];
+      // Używamy ghlRequest zamiast bezpośredniego ghlApi.get dla obsługi 429
+      const data = await ghlRequest('get', '/contacts/', params);
+      const contacts = data.contacts || [];
 
-      // pkt 7: tylko kontakty z numerem telefonu
       const withPhone = contacts.filter(c => c.phone && c.phone.trim() !== '');
       allContacts = allContacts.concat(withPhone.map(c => ({
         id: c.id,
@@ -172,15 +172,23 @@ async function syncGHLContacts() {
         tags:      c.tags      || [],
       })));
 
-      // GHL v2 paginacja
-      const meta = res.data.meta || {};
+      const meta = data.meta || {};
       if (!meta.nextPage || contacts.length < limit) break;
+      
       const last = contacts[contacts.length - 1];
-      startAfter   = last.startAfter   ? last.startAfter[0]   : null;
-      startAfterId = last.startAfter   ? last.startAfter[1]   : null;
+      // Poprawka paginacji GHL v2
+      if (meta.startAfterId) {
+          startAfterId = meta.startAfterId;
+          startAfter = meta.startAfter;
+      } else {
+          startAfter   = last.startAfter   ? last.startAfter[0]   : null;
+          startAfterId = last.startAfter   ? last.startAfter[1]   : null;
+      }
 
       page++;
       if (page > 50) break;
+      // Dodajemy małe opóźnienie między stronami, aby nie uderzać zbyt mocno w API
+      await new Promise(r => setTimeout(r, 500));
     }
     
     ghlContactsCache = allContacts;
@@ -328,7 +336,7 @@ async function createTaskForSonia(contactId, contactName, changeRequest, request
 // pkt 2: Pobierz leady z Etapu 1 lejka — naprawiona wersja z retry
 async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-async function ghlRequest(method, path, params = {}, retries = 3) {
+async function ghlRequest(method, path, params = {}, retries = 5) {
   for (let i = 0; i < retries; i++) {
     try {
       const res = await ghlApi[method](path, { params });
@@ -336,9 +344,9 @@ async function ghlRequest(method, path, params = {}, retries = 3) {
     } catch(e) {
       const status = e.response?.status;
       if (status === 429 && i < retries - 1) {
-        const wait = (i + 1) * 2000;
-        console.log(`[GHL] Rate limit (429), retry ${i+1}/${retries} in ${wait}ms...`);
-        await sleep(wait);
+        const wait = Math.pow(2, i + 1) * 2000; // Exponential backoff: 4s, 8s, 16s, 32s
+        console.warn(`[GHL] Rate limit (429), retry ${i+1}/${retries} in ${wait}ms...`);
+        await new Promise(resolve => setTimeout(resolve, wait));
         continue;
       }
       throw e;
@@ -453,19 +461,34 @@ function verifyZadarmaSignature(params, signature) {
   return computedSignature === signature;
 }
 
-async function zadarmaClickToCall(fromExt, toNumber) {
-  try {
-    const params = { from: fromExt, to: toNumber, sip: '225340' };
-    const sign = zadarmaSign('/v1/request/callback/', params);
-    const res = await axios.get('https://api.zadarma.com/v1/request/callback/', {
-      params,
-      headers: { 'Authorization': `${ZADARMA_KEY}:${sign}` },
-    });
-    return res.data;
-  } catch (err) {
-    const errData = err.response?.data || err.message;
-    console.error('[Zadarma] Click-to-Call error:', errData);
-    return { status: 'error', message: typeof errData === 'object' ? errData.message : errData };
+async function zadarmaClickToCall(fromExt, toNumber, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const params = { from: fromExt, to: toNumber, sip: '225340' };
+      const sign = zadarmaSign('/v1/request/callback/', params);
+      const res = await axios.get('https://api.zadarma.com/v1/request/callback/', {
+        params,
+        headers: { 'Authorization': `${ZADARMA_KEY}:${sign}` },
+        timeout: 10000,
+      });
+      console.log(`[Zadarma] Click-to-Call success: ${fromExt} -> ${toNumber}`);
+      return res.data;
+    } catch (err) {
+      const status = err.response?.status;
+      const errData = err.response?.data || err.message;
+      console.error(`[Zadarma] Click-to-Call error (attempt ${i+1}/${retries}):`, errData);
+      
+      if ((status === 429 || status === 503) && i < retries - 1) {
+        const wait = Math.pow(2, i + 1) * 1000;
+        console.log(`[Zadarma] Retrying in ${wait}ms...`);
+        await sleep(wait);
+        continue;
+      }
+      
+      if (i === retries - 1) {
+        return { status: 'error', message: typeof errData === 'object' ? errData.message : errData };
+      }
+    }
   }
 }
 
@@ -858,6 +881,8 @@ app.get('/api/stats', async (req, res) => {
   allCalls.forEach(c => {
     const t = c.contact_type;
     if (t && typeCounts[t] !== undefined) typeCounts[t]++;
+    // Zliczaj nowe połączenia przychodzące bez contact_type
+    else if (!t && c.direction !== 'outbound' && !c.call_effect) typeCounts.nowy++;
   });
 
   const inbound = allCalls.filter(c => c.direction !== 'outbound');
