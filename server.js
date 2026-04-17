@@ -463,8 +463,8 @@ function zadarmaSign(method, params) {
   // 1. Sortowanie kluczy alfabetycznie
   const sortedKeys = Object.keys(params).sort();
   
-  // 2. Budowanie query string
-  const paramString = sortedKeys.map(k => `${k}=${encodeURIComponent(String(params[k]))}`).join('&');
+  // 2. Budowanie query string BEZ encodeURIComponent (raw key=value)
+  const paramString = sortedKeys.map(k => `${k}=${String(params[k])}`).join('&');
   
   // 3. MD5 z parametrów (HEX)
   const md5Hash = crypto.createHash('md5').update(paramString).digest('hex');
@@ -472,12 +472,12 @@ function zadarmaSign(method, params) {
   // 4. String do podpisu: metoda + parametry + md5
   const signString = `${method}${paramString}${md5Hash}`;
   
-  // 5. HMAC-SHA1 (HEX)
+  // 5. HMAC-SHA1 → HEX digest (nie binary!)
   const hexSignature = crypto.createHmac('sha1', ZADARMA_SECRET)
     .update(signString)
     .digest('hex');
   
-  // 6. Base64 z HEXa
+  // 6. Base64 z HEX stringa (jak PHP: base64_encode(hash_hmac(...)))
   return Buffer.from(hexSignature).toString('base64');
 }
 
@@ -686,6 +686,22 @@ app.post('/api/call/outcome', async (req, res) => {
     const tags = [...(EFFECT_TO_TAGS[callEffect] || []), 'lead_call'];
     if (treatment) tags.push(`leczenie_${treatment}`);
     if (source)    tags.push(`zrodlo_${source}`);
+
+    // Synchronizacja ródła kontaktu i lekarza polecającego do GHL custom fields
+    const { rdoKontaktu, daneOsobyPolecajacej } = req.body;
+    if (rdoKontaktu || daneOsobyPolecajacej) {
+      try {
+        const customFieldUpdates = {};
+        if (rdoKontaktu) customFieldUpdates['rdo_kontaktu'] = rdoKontaktu;
+        if (daneOsobyPolecajacej) customFieldUpdates['dane_osoby_polecajcej'] = daneOsobyPolecajacej;
+        // GHL custom fields update
+        const cfPayload = Object.entries(customFieldUpdates).map(([key, value]) => ({ key, field_value: value }));
+        await ghlApi.put(`/contacts/${resolvedContactId}`, { customFields: cfPayload });
+        console.log(`[GHL] Updated contact custom fields: rdo_kontaktu=${rdoKontaktu}, lekarz=${daneOsobyPolecajacej}`);
+      } catch (err) {
+        console.error('[GHL] Update custom fields error:', err.response?.data || err.message);
+      }
+    }
 
     if (targetStage) {
       const moved = await moveOpportunityToStage(resolvedContactId, targetStage);
@@ -899,6 +915,28 @@ app.post('/api/call/dial', async (req, res) => {
   res.json(result);
 });
 
+// ─── API: Rozłącz połączenie ─────────────────────────────────────────────────
+
+app.post('/api/call/hangup', async (req, res) => {
+  const { callId } = req.body;
+  if (!callId) return res.status(400).json({ success: false, error: 'Brak callId' });
+  try {
+    // Zadarma nie ma dedykowanego endpointu hangup przez API callback
+    // Rozłączenie następuje przez zakończenie połączenia po stronie PBX
+    // Tutaj oznaczamy połączenie jako zakończone lokalnie
+    await supabase.updateCall(callId, {
+      status: 'ended',
+      ended_at: new Date().toISOString(),
+    });
+    broadcast({ type: 'CALL_ENDED', callId, status: 'ended', duration: 0 });
+    console.log(`[API] Hangup requested for call ${callId}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[API] Hangup error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ─── API: Nagranie ──────────────────────────────────────────────────────────
 
 app.get('/api/call/recording/:callId', async (req, res) => {
@@ -1102,6 +1140,25 @@ app.post('/webhook/zadarma', async (req, res) => {
   if (event === 'NOTIFY_START') {
     const ghlContact = await getGHLContactByPhone(caller_id);
     
+    // Pobierz pole z_czym_si_zgasza z GHL jeśli znamy kontakt
+    let zCzymSieZglasza = '';
+    if (ghlContact && ghlContact.id) {
+      try {
+        const contactRes = await ghlApi.get(`/contacts/${ghlContact.id}`);
+        const contactData = contactRes.data.contact || contactRes.data;
+        const customFields = contactData.customFields || contactData.customField || [];
+        const field = customFields.find(f =>
+          f.key === 'z_czym_si_zgasza' ||
+          f.fieldKey === 'z_czym_si_zgasza' ||
+          (f.name || '').toLowerCase().includes('z czym') ||
+          (f.name || '').toLowerCase().includes('zgłasza')
+        );
+        if (field) zCzymSieZglasza = field.value || field.fieldValue || '';
+      } catch (e) {
+        console.warn('[GHL] Could not fetch z_czym_si_zgasza:', e.message);
+      }
+    }
+    
     const callData = {
       call_id: callId,
       pbx_call_id: pbx_call_id || null,
@@ -1114,6 +1171,7 @@ app.post('/webhook/zadarma', async (req, res) => {
       ghl_logged: false,
       ghl_contact_id: ghlContact ? ghlContact.id : null,
       patient_name: ghlContact ? ghlContact.name : null,
+      z_czym_sie_zglasza: zCzymSieZglasza,
       topic_closed: false,
       contact_attempts: 0,
     };

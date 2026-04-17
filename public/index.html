@@ -558,8 +558,10 @@ textarea.form-input{resize:vertical;}
       <div class="acb-info">
         <div class="acb-name" id="acb-name">Nieznany numer</div>
         <div class="acb-meta" id="acb-meta"></div>
+        <div class="acb-zgasza" id="acb-zgasza" style="display:none;font-size:11px;color:#FFBF00;margin-top:4px;font-weight:700;"></div>
       </div>
       <div class="acb-timer" id="acb-timer">00:00</div>
+      <button id="acb-hangup-btn" onclick="hangupCall()" style="display:none;background:#e74c3c;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:'Montserrat',sans-serif;margin-left:8px;">🔴 Rozłącz</button>
     </div>
   </div>
 
@@ -954,16 +956,24 @@ function handleWS(msg) {
         activeCallId = msg.call.call_id;
         unlockButtons();
         showActiveBar(msg.call, 'ringing');
-        startCallTimer();
+        // Timer NIE startuje przy dzwonieniu — startuje dopiero po odebraniu
       }
       break;
 
     case 'CALL_ANSWERED':
       updateCallField(msg.callId, 'status', 'answered');
+      updateCallField(msg.callId, 'answered_at', msg.answeredAt || new Date().toISOString());
       renderOpenCalls(); renderRecentCalls();
       if (currentUser?.role !== 'manager') {
         if (!activeCallId) activeCallId = msg.callId;
         unlockButtons();
+        // Timer startuje dopiero od momentu odebrania
+        startCallTimer();
+        const answeredCall = openCalls.find(c => c.call_id === msg.callId);
+        if (answeredCall) showActiveBar(answeredCall, 'answered');
+        // Pokaż przycisk rozłączenia
+        const hangupBtn = document.getElementById('acb-hangup-btn');
+        if (hangupBtn) hangupBtn.style.display = 'inline-block';
       }
       break;
 
@@ -972,6 +982,9 @@ function handleWS(msg) {
       updateCallField(msg.callId, 'duration_seconds', msg.duration);
       renderOpenCalls(); renderRecentCalls(); updateBadges();
       clearCallTimer();
+      // Ukryj przycisk rozłączenia
+      const hangupBtnEnd = document.getElementById('acb-hangup-btn');
+      if (hangupBtnEnd) hangupBtnEnd.style.display = 'none';
       // pkt 1: po zakończeniu — pokaż "Uzupełnij raport" zamiast migającego stanu
       const endedCall = openCalls.find(c => c.call_id === msg.callId);
       if (currentUser?.role !== 'manager' && activeCallId === msg.callId) {
@@ -1031,6 +1044,16 @@ function showActiveBar(call, status) {
   document.getElementById('acb-name').textContent = call.patient_name || call.caller_phone || 'Nieznany numer';
   document.getElementById('acb-meta').textContent =
     (call.caller_phone || '') + (status === 'ringing' ? ' · Dzwoni...' : ' · Połączono');
+  // Pokaż pole z_czym_si_zgasza jeśli dostępne
+  const hintEl = document.getElementById('acb-zgasza');
+  if (hintEl) {
+    if (call.z_czym_si_zgasza) {
+      hintEl.textContent = '💬 ' + call.z_czym_si_zgasza;
+      hintEl.style.display = 'block';
+    } else {
+      hintEl.style.display = 'none';
+    }
+  }
   bar.classList.add('visible');
   document.getElementById('cockpit-hint').textContent = '✅ Połączenie aktywne — wybierz typ rozmowy po zakończeniu';
 }
@@ -1049,7 +1072,32 @@ function showPostCallBar(call) {
 function hideActiveBar() {
   document.getElementById('active-call-bar').classList.remove('visible');
   document.getElementById('post-call-bar').classList.remove('visible');
-  document.getElementById('cockpit-hint').textContent = 'Przyciski aktywują się automatycznie gdy odbierasz połączenie';
+  const hangupBtn = document.getElementById('acb-hangup-btn');
+  if (hangupBtn) hangupBtn.style.display = 'none';
+}
+
+async function hangupCall() {
+  if (!activeCallId) return;
+  const call = openCalls.find(c => c.call_id === activeCallId);
+  const callId = call ? (call.pbx_call_id || call.call_id) : activeCallId;
+  try {
+    const r = await fetch('/api/call/hangup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ callId })
+    });
+    const d = await r.json();
+    if (!d.success) console.warn('[Hangup]', d.error);
+  } catch(e) { console.error('[Hangup] Error:', e); }
+  // Lokalnie zamknij baner niezależnie od odpowiedzi API
+  clearCallTimer();
+  document.getElementById('active-call-bar').classList.remove('visible');
+  const hangupBtn = document.getElementById('acb-hangup-btn');
+  if (hangupBtn) hangupBtn.style.display = 'none';
+  if (activeCallId) {
+    showPostCallBar(openCalls.find(c => c.call_id === activeCallId));
+    unlockButtonsPostCall();
+  }
 }
 
 // pkt 1: Kliknięcie "Uzupełnij raport" na pasku post-call — otwiera raport z kafelkami
