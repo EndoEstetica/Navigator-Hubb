@@ -955,11 +955,39 @@ app.post('/api/contacts/add', async (req, res) => {
 
 app.post('/api/contacts/edit-request', async (req, res) => {
   const { contactId, contactName, changeRequest, requestedBy } = req.body;
-  if (!contactId || !changeRequest) {
-    return res.status(400).json({ success: false, error: 'Brak wymaganych danych' });
+  if (!contactId) {
+    return res.status(400).json({ success: false, error: 'Brak contactId' });
   }
-  const ok = await createTaskForSonia(contactId, contactName || 'Nieznany kontakt', changeRequest, requestedBy || 'Recepcja');
-  res.json({ success: ok });
+  const name = contactName || 'Nieznany kontakt';
+  const request = changeRequest || `Prośba o weryfikację i aktualizację danych kontaktu: ${name}`;
+  const by = requestedBy || 'Recepcja';
+
+  // 1. Utwórz zadanie w GHL przypisane do Soni
+  const ghlOk = await createTaskForSonia(contactId, name, request, by);
+
+  // 2. Zapisz zadanie również w Supabase (widoczne w module zadań aplikacji)
+  try {
+    const dueDate = new Date();
+    dueDate.setHours(dueDate.getHours() + 24);
+    await supabase.query('tasks', 'POST', {
+      title: `Edycja kontaktu: ${name}`,
+      body: request,
+      contact_id: contactId,
+      contact_name: name,
+      assigned_to: 'MPfq6I0r42R3P50ZqJ3V', // Sonia
+      assigned_name: 'Sonia Czajewicz',
+      requested_by: by,
+      due_date: dueDate.toISOString(),
+      status: 'pending',
+      task_type: 'edit_contact',
+      created_at: new Date().toISOString(),
+    });
+    console.log(`[Task] Edit-contact task saved to Supabase for ${name}`);
+  } catch(e) {
+    console.warn('[Task] Supabase task save failed:', e.message);
+  }
+
+  res.json({ success: ghlOk, ghl: ghlOk });
 });
 
 // ─── Webhook: GHL — auto-sync kontaktów ─────────────────────────────────────

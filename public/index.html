@@ -228,28 +228,40 @@ a{text-decoration:none;color:inherit}
 
 /* ═══ CONTACTS ════════════════════════════════════════════════════════════════ */
 /* Kontakty — poziomy układ wierszowy */
-.contacts-grid{display:flex;flex-direction:column;gap:6px;max-width:1000px;margin:0 auto}
+.contacts-grid{display:flex;flex-direction:column;gap:4px;max-width:1200px;margin:0 auto}
 .contact-item{
-  display:flex;align-items:center;gap:14px;
-  padding:12px 16px;border:1px solid var(--border);background:var(--white);
-  transition:border-color .15s;border-radius:var(--r);
+  display:grid;
+  grid-template-columns: 42px 220px 1fr 1fr 1fr 110px auto auto;
+  align-items:center;gap:0;
+  padding:10px 16px;border:1px solid var(--border);background:var(--white);
+  transition:border-color .15s,background .15s;border-radius:var(--r);
+  min-height:52px;
 }
-.contact-item:hover{border-color:var(--navy-mid);background:#fafafa}
-.contact-avatar{width:38px;height:38px;background:var(--navy);color:var(--white);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;border-radius:50%}
-.contact-main{flex:0 0 200px;min-width:0}
+.contact-item:hover{border-color:var(--navy-mid);background:#f8f9fc}
+.contact-avatar{width:36px;height:36px;background:var(--navy);color:var(--white);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;border-radius:50%}
+.contact-main{padding:0 12px 0 10px;min-width:0}
 .contact-name{font-size:14px;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.contact-sub{font-size:12px;color:var(--text-muted);margin-top:1px}
-.contact-fields{display:flex;gap:20px;flex:1;min-width:0;align-items:center}
-.contact-field{min-width:0;flex:1}
+.contact-sub{font-size:12px;color:var(--text-muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.contact-fields{display:contents} /* grid children */
+.contact-field{padding:0 12px;min-width:0;border-left:1px solid var(--border)}
 .contact-field-label{font-size:9px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
 .contact-field-value{font-size:13px;font-weight:500;color:var(--text);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.contact-visit-date{flex:0 0 auto;text-align:center;padding:6px 12px;background:var(--beige);border:1px solid var(--beige-mid);border-radius:var(--r);min-width:90px}
-.contact-visit-label{font-size:8px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
-.contact-visit-value{font-size:13px;font-weight:700;color:var(--navy);margin-top:2px}
+.contact-visit-date{padding:0 12px;text-align:left;border-left:1px solid var(--border)}
+.contact-visit-label{font-size:9px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
+.contact-visit-value{font-size:13px;font-weight:700;color:var(--navy);margin-top:1px}
 .contact-visit-value.no-visit{color:var(--text-light);font-style:italic;font-size:11px;font-weight:400}
-.contact-tags{display:flex;gap:3px;flex-wrap:wrap;flex:0 0 auto}
-.contact-tag{font-size:9px;padding:2px 7px;background:var(--beige-dark);color:var(--text-muted);font-weight:600;letter-spacing:.2px;border-radius:10px}
-.contact-actions{display:flex;gap:5px;flex-shrink:0;align-items:center}
+.contact-tags{display:flex;gap:3px;flex-wrap:nowrap;padding:0 8px;border-left:1px solid var(--border)}
+.contact-tag{font-size:9px;padding:2px 7px;background:var(--beige-dark);color:var(--text-muted);font-weight:600;letter-spacing:.2px;border-radius:10px;white-space:nowrap}
+.contact-actions{display:flex;gap:5px;flex-shrink:0;align-items:center;padding-left:10px;border-left:1px solid var(--border)}
+/* Nagłówek kolumn kontaktów */
+.contacts-header{
+  display:grid;
+  grid-template-columns: 42px 220px 1fr 1fr 1fr 110px auto auto;
+  gap:0;padding:6px 16px;
+  font-size:9px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;
+  border-bottom:2px solid var(--border);margin-bottom:2px;
+}
+.contacts-header>div{padding:0 12px}
 
 .pin-section{margin-top:20px;padding-top:16px;border-top:1px solid var(--border);text-align:center}
 
@@ -1189,17 +1201,41 @@ function showView(view) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // WEBSOCKET
 // ═══════════════════════════════════════════════════════════════════════════════
+let pollInterval = null;
+function startPolling() {
+  if (pollInterval) clearInterval(pollInterval);
+  pollInterval = setInterval(() => {
+    // Polling fallback — odświeża aktywny widok co 30s niezależnie od WebSocket
+    if (currentView === 'calls') renderCalls();
+    if (currentView === 'dashboard') renderDashboard();
+    if (currentView === 'ct-calls') renderCtCalls();
+  }, 30000);
+}
 function connectWS() {
   if (ws) ws.close();
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}`);
-  ws.onopen = () => { console.log('[WS] Connected'); clearTimeout(wsReconnectTimer); };
+  ws.onopen = () => {
+    console.log('[WS] Connected');
+    clearTimeout(wsReconnectTimer);
+    startPolling(); // Uruchom polling jako fallback
+  };
   ws.onmessage = (e) => {
     try { handleWSMessage(JSON.parse(e.data)); } catch(err) { console.error('[WS] Parse error', err); }
   };
   ws.onclose = () => {
     console.log('[WS] Disconnected, reconnecting in 3s...');
     wsReconnectTimer = setTimeout(connectWS, 3000);
+    // Przy braku WS — polling co 10s
+    if (pollInterval) clearInterval(pollInterval);
+    pollInterval = setInterval(() => {
+      if (currentView === 'calls') renderCalls();
+      if (currentView === 'dashboard') renderDashboard();
+      if (currentView === 'ct-calls') renderCtCalls();
+    }, 10000);
+  };
+  ws.onerror = (err) => {
+    console.warn('[WS] Error:', err);
   };
 }
 function handleWSMessage(msg) {
@@ -1231,6 +1267,8 @@ function handleWSMessage(msg) {
         setPopupStatus('answered');
         startPopupTimer();
       }
+      if (currentView === 'calls') renderCalls();
+      if (currentView === 'ct-calls') renderCtCalls();
       break;
     case 'CALL_ENDED':
       if (activeCall && activeCall.call_id === msg.callId) {
@@ -2018,10 +2056,20 @@ async function renderContacts() {
   try {
     const res = await fetch('/api/contacts').then(r => r.json()).catch(() => ({ contacts:[] }));
     const contacts = res.contacts || [];
-    let html = `<div style="max-width:960px;margin:0 auto">
-    <div class="search-bar" style="display:flex;align-items:center;gap:10px">
-      <input type="text" class="search-input" id="contact-search" placeholder="Szukaj po nazwisku, telefonie..." oninput="filterContacts()" style="flex:1">
+    let html = `<div style="max-width:1200px;margin:0 auto">
+    <div class="search-bar" style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <input type="text" class="search-input" id="contact-search" placeholder="Szukaj po nazwisku, telefonie, emailu..." oninput="filterContacts()" style="flex:1">
       ${currentUser?.role === 'admin' ? '<button class="btn-primary" onclick="openAddContactModal()" style="white-space:nowrap">+ Dodaj kontakt</button>' : ''}
+    </div>
+    <div class="contacts-header">
+      <div></div>
+      <div>Pacjent</div>
+      <div>Telefon</div>
+      <div>Email</div>
+      <div>Program</div>
+      <div>Ostatnia wizyta</div>
+      <div>Tagi</div>
+      <div>Akcje</div>
     </div>
     <div class="contacts-grid" id="contacts-grid">`;
 
@@ -2045,28 +2093,28 @@ async function renderContacts() {
           <div class="contact-avatar">${initials}</div>
           <div class="contact-main">
             <div class="contact-name">${fullName}</div>
-            <div class="contact-sub">${c.phone || c.email || '—'}</div>
+            <div class="contact-sub">${c.tags && c.tags.length ? c.tags.slice(0,2).join(', ') : (c.assignedTo || '')}</div>
           </div>
-          <div class="contact-fields">
-            <div class="contact-field">
-              <div class="contact-field-label">Telefon</div>
-              <div class="contact-field-value">${c.phone || '—'}</div>
-            </div>
-            <div class="contact-field">
-              <div class="contact-field-label">Email</div>
-              <div class="contact-field-value">${c.email || '—'}</div>
-            </div>
-            <div class="contact-field">
-              <div class="contact-field-label">Program</div>
-              <div class="contact-field-value">${c.program || '—'}</div>
-            </div>
+          <div class="contact-field">
+            <div class="contact-field-label">Telefon</div>
+            <div class="contact-field-value">${c.phone || '—'}</div>
+          </div>
+          <div class="contact-field">
+            <div class="contact-field-label">Email</div>
+            <div class="contact-field-value">${c.email || '—'}</div>
+          </div>
+          <div class="contact-field">
+            <div class="contact-field-label">Program</div>
+            <div class="contact-field-value">${c.program || '—'}</div>
           </div>
           ${visitHtml}
-          ${c.tags && c.tags.length ? `<div class="contact-tags">${c.tags.map(t=>`<span class="contact-tag">${t}</span>`).join('')}</div>` : ''}
+          <div class="contact-tags">${c.tags && c.tags.length ? c.tags.map(t=>`<span class="contact-tag">${t}</span>`).join('') : '<span style="color:var(--text-light);font-size:11px">—</span>'}</div>
           <div class="contact-actions">
-            ${c.phone ? `<button class="act-btn act-call" onclick="quickCall('${c.phone}')">&#9742; Zadzwoń</button>` : ''}
-            <button class="act-btn act-view" onclick="requestContactEdit('${c.id}','${fullName}')">Prośba o edycję</button>
-            ${currentUser?.role === 'admin' ? `<button class="act-btn act-edit" onclick="openEditContactModal('${c.id}','${c.firstName||''}','${c.lastName||''}','${c.phone||''}','${c.email||''}')">Edytuj</button>` : ''}
+            ${c.phone ? `<button class="act-btn act-call" onclick="quickCall('${c.phone}')">&#9742;</button>` : ''}
+            ${currentUser?.role === 'admin'
+              ? `<button class="act-btn act-edit" onclick="openEditContactModal('${c.id}','${c.firstName||''}','${c.lastName||''}','${c.phone||''}','${c.email||''}')">Edytuj</button>`
+              : `<button class="act-btn act-view" onclick="requestContactEdit('${c.id}','${fullName}')">Prośba o edycję</button>`
+            }
           </div>
         </div>`;
       });
@@ -2148,51 +2196,129 @@ async function renderAdminStats() {
   const area = document.getElementById('content-area');
   area.innerHTML = '<div class="loading"><span class="spinner"></span>Ładowanie...</div>';
   try {
-    const res = await fetch('/api/stats').then(r => r.json()).catch(() => ({}));
-    const stats = res.stats || {};
-    const perUser = res.perUser || [];
-    const total = stats.total || 0;
-    const answered = stats.answered || 0;
-    const missed = stats.missed || 0;
-    const w0 = stats.w0 || 0;
-    const convRate = total > 0 ? Math.round((w0/total)*100) : 0;
+    const res = await fetch('/api/stats').then(r => r.json()).catch(() => null);
+    if (!res) {
+      area.innerHTML = `<div class="empty"><div class="empty-icon">◎</div><div class="empty-text">Brak danych — nie można połączyć się z serwerem</div></div>`;
+      return;
+    }
 
-    let html = `<div class="kpi-grid">
-      <div class="kpi-tile"><div class="kpi-value">${total}</div><div class="kpi-label">Połączenia ogółem</div></div>
-      <div class="kpi-tile green"><div class="kpi-value">${answered}</div><div class="kpi-label">Odebrane</div></div>
-      <div class="kpi-tile red"><div class="kpi-value">${missed}</div><div class="kpi-label">Nieodebrane</div></div>
-      <div class="kpi-tile accent"><div class="kpi-value">${convRate}%</div><div class="kpi-label">Konwersja W0</div></div>
-    </div>
-    <div class="card">
-      <div class="card-title">Statystyki per osoba</div>
-      <table class="stats-table">
-        <thead><tr>
-          <th>Osoba</th><th>Połączenia</th><th>Odebrane</th><th>W0</th><th>Follow-up</th><th>Konwersja</th>
-        </tr></thead>
-        <tbody>`;
+    const totals = res.totals || {};
+    const kpi = res.kpi || {};
+    const perUserObj = res.perUser || {};
+    const coaching = res.coaching || [];
+    const typeCounts = res.typeCounts || {};
 
-    if (perUser.length === 0) {
-      html += `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:16px">Brak danych</td></tr>`;
+    const total = totals.total || 0;
+    const answered = totals.answered || 0;
+    const missed = totals.missed || 0;
+    const booked = totals.booked || 0;
+
+    const noData = total === 0;
+
+    // Helper: format KPI value
+    const kpiVal = (k) => {
+      const v = kpi[k]?.value;
+      if (v === null || v === undefined) return '<span style="color:var(--text-muted)">brak danych</span>';
+      return v + (kpi[k]?.unit || '');
+    };
+    const kpiColor = (k) => {
+      const v = kpi[k]?.value;
+      const t = kpi[k]?.target;
+      const hib = kpi[k]?.higher_is_better;
+      if (v === null || v === undefined || t === null) return '';
+      if (hib) return v >= t ? 'green' : v >= t * 0.8 ? '' : 'red';
+      return v <= t ? 'green' : v <= t * 1.2 ? '' : 'red';
+    };
+
+    let html = `<div style="max-width:1100px;margin:0 auto">`;
+
+    // KPI tiles
+    html += `<div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px">`;
+    html += `<div class="kpi-tile"><div class="kpi-value">${total}</div><div class="kpi-label">Połączenia dziś</div></div>`;
+    html += `<div class="kpi-tile green"><div class="kpi-value">${answered}</div><div class="kpi-label">Odebrane</div></div>`;
+    html += `<div class="kpi-tile red"><div class="kpi-value">${missed}</div><div class="kpi-label">Nieodebrane</div></div>`;
+    html += `<div class="kpi-tile accent"><div class="kpi-value">${booked}</div><div class="kpi-label">Umówione W0</div></div>`;
+    html += `<div class="kpi-tile ${kpiColor('pickupRate')}"><div class="kpi-value">${kpiVal('pickupRate')}</div><div class="kpi-label">Odbieralność</div></div>`;
+    html += `<div class="kpi-tile ${kpiColor('fastPickupRate')}"><div class="kpi-value">${kpiVal('fastPickupRate')}</div><div class="kpi-label">Odebrane ≤35s</div></div>`;
+    html += `<div class="kpi-tile ${kpiColor('callbackRate')}"><div class="kpi-value">${kpiVal('callbackRate')}</div><div class="kpi-label">Oddzwanialność</div></div>`;
+    html += `<div class="kpi-tile ${kpiColor('avgPickupSeconds')}"><div class="kpi-value">${kpiVal('avgPickupSeconds')}</div><div class="kpi-label">Śr. czas odebrania</div></div>`;
+    html += `</div>`;
+
+    if (noData) {
+      html += `<div class="empty" style="margin:20px 0"><div class="empty-icon">◎</div><div class="empty-text">Brak połączeń z dziś — statystyki zostaną uzupełnione po pierwszych rozmowach</div></div>`;
+    }
+
+    // Tabela per osoba
+    html += `<div class="card" style="margin-bottom:16px">`;
+    html += `<div class="card-title">Statystyki per osoba (dziś)</div>`;
+    const perUserArr = Object.values(perUserObj).filter(u => u.role !== 'admin');
+    if (perUserArr.length === 0 || noData) {
+      html += `<div style="padding:20px;text-align:center;color:var(--text-muted)">Brak danych — brak połączeń dziś</div>`;
     } else {
-      perUser.forEach(u => {
-        const conv = u.total > 0 ? Math.round((u.w0/u.total)*100) : 0;
+      html += `<table class="stats-table"><thead><tr>
+        <th>Osoba</th><th>Ogółem</th><th>Odebrane</th><th>Nieodebrane</th><th>Umówione</th><th>Follow-up</th><th>Konwersja</th>
+      </tr></thead><tbody>`;
+      perUserArr.forEach(u => {
+        const conv = u.total > 0 ? Math.round(((u.booked || 0)/u.total)*100) : 0;
         html += `<tr>
           <td style="font-weight:600">${u.name}</td>
           <td>${u.total}</td>
-          <td>${u.answered}</td>
-          <td>${u.w0}</td>
+          <td style="color:#16a34a">${u.answered}</td>
+          <td style="color:#dc2626">${u.missed}</td>
+          <td style="color:#7c3aed">${u.booked || 0}</td>
           <td>${u.followup || 0}</td>
           <td>
-            ${conv}%
-            <div class="progress-bar"><div class="progress-fill ${conv > 50 ? 'green' : conv > 20 ? '' : 'red'}" style="width:${conv}%"></div></div>
+            <span style="font-weight:700">${conv}%</span>
+            <div class="progress-bar"><div class="progress-fill ${conv >= 30 ? 'green' : conv >= 15 ? '' : 'red'}" style="width:${Math.min(conv,100)}%"></div></div>
           </td>
         </tr>`;
       });
+      html += `</tbody></table>`;
     }
-    html += `</tbody></table></div>`;
+    html += `</div>`;
+
+    // Typy kontaktów
+    html += `<div class="card" style="margin-bottom:16px">`;
+    html += `<div class="card-title">Typy kontaktów dziś</div>`;
+    const typeLabels = { nowy:'Nowy pacjent', staly:'Stały pacjent', wizyta:'Bieżąca wizyta', nie_pacjent:'Spam/Inne' };
+    const typeColors = { nowy:'#7c3aed', staly:'#2563eb', wizyta:'#16a34a', nie_pacjent:'#9ca3af' };
+    const typeTotal = Object.values(typeCounts).reduce((a,b) => a+b, 0);
+    if (typeTotal === 0) {
+      html += `<div style="padding:16px;text-align:center;color:var(--text-muted)">Brak danych</div>`;
+    } else {
+      html += `<div style="display:flex;gap:12px;flex-wrap:wrap;padding:12px">`;
+      Object.entries(typeLabels).forEach(([k,label]) => {
+        const cnt = typeCounts[k] || 0;
+        const pct = typeTotal > 0 ? Math.round((cnt/typeTotal)*100) : 0;
+        html += `<div style="flex:1;min-width:120px;background:${typeColors[k]}18;border:1px solid ${typeColors[k]}44;border-radius:8px;padding:12px;text-align:center">`;
+        html += `<div style="font-size:22px;font-weight:800;color:${typeColors[k]}">${cnt}</div>`;
+        html += `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${label}</div>`;
+        html += `<div style="font-size:11px;font-weight:600;color:${typeColors[k]}">${pct}%</div>`;
+        html += `</div>`;
+      });
+      html += `</div>`;
+    }
+    html += `</div>`;
+
+    // Coaching tips
+    if (coaching && coaching.length > 0) {
+      html += `<div class="card" style="margin-bottom:16px">`;
+      html += `<div class="card-title">💡 Wskazówki coachingowe</div>`;
+      coaching.forEach(tip => {
+        const bg = tip.priority === 'high' ? '#fee2e2' : tip.priority === 'medium' ? '#fef9c3' : '#f0fdf4';
+        const border = tip.priority === 'high' ? '#fca5a5' : tip.priority === 'medium' ? '#fde68a' : '#86efac';
+        html += `<div style="background:${bg};border:1px solid ${border};border-radius:8px;padding:12px 14px;margin-bottom:8px">`;
+        html += `<div style="font-weight:700;font-size:13px">${tip.icon || ''} ${tip.title}</div>`;
+        html += `<div style="font-size:12px;color:var(--text-muted);margin-top:4px">${tip.desc}</div>`;
+        html += `</div>`;
+      });
+      html += `</div>`;
+    }
+
+    html += `</div>`; // max-width wrapper
     area.innerHTML = html;
   } catch(e) {
-    area.innerHTML = `<div class="empty"><div class="empty-text">Błąd: ${e.message}</div></div>`;
+    area.innerHTML = `<div class="empty"><div class="empty-icon">⚠</div><div class="empty-text">Błąd ładowania statystyk: ${e.message}</div></div>`;
   }
 }
 
@@ -2331,16 +2457,28 @@ async function claimTask(taskId, contactId, btn) {
 }
 
 async function requestContactEdit(contactId, contactName) {
+  // Tworzymy zadanie dla Soni z domyślnym opisem (recepcja może dopisać szczegóły)
+  const changeRequest = `Prośba o weryfikację i aktualizację danych kontaktu: ${contactName}`;
   try {
     const res = await fetch('/api/contacts/edit-request', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ contactId, contactName, requestedBy: currentUser?.name || '' })
+      body: JSON.stringify({
+        contactId,
+        contactName,
+        changeRequest,
+        requestedBy: currentUser?.name || 'Recepcja'
+      })
     });
+    if (!res.ok) {
+      const text = await res.text();
+      showToast('Błąd serwera: ' + text.slice(0,80), 'error');
+      return;
+    }
     const data = await res.json();
-    if (data.success) showToast('Prośba wysłana do Soni', 'success');
-    else showToast('Błąd: ' + (data.error || ''), 'error');
+    if (data.success) showToast('✅ Zadanie dla Soni utworzone w GHL i aplikacji', 'success');
+    else showToast('Błąd: ' + (data.error || 'nieznany'), 'error');
   } catch(e) {
-    showToast('Błąd połączenia', 'error');
+    showToast('Błąd połączenia: ' + e.message, 'error');
   }
 }
 
