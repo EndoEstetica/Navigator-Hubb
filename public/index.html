@@ -1127,12 +1127,15 @@ function doLogin() {
   document.getElementById('sb-role-badge').textContent = { reception:'Recepcja', caretaker:'Opiekun', admin:'Administracja' }[u.role];
   document.getElementById('sb-role-badge').className = 'sidebar-role ' + u.role;
   showNavForRole(u.role);
-  // Show widget for reception/caretaker
+  // Widget Zadarma tylko dla recepcji i opiekunów
   if (u.role !== 'admin') {
     document.getElementById('zadarma-widget').classList.add('visible');
-    document.getElementById('chat-toggle').classList.add('visible');
-  } else {
-    document.getElementById('chat-toggle').classList.add('visible');
+  }
+  // Chat do Soni — widoczny dla WSZYSTKICH ról (recepcja, opiekun, admin)
+  const chatToggle = document.getElementById('chat-toggle');
+  if (chatToggle) {
+    chatToggle.style.display = 'flex';
+    chatToggle.classList.add('visible');
   }
   updateTopbarDate();
   connectWS();
@@ -1842,9 +1845,9 @@ async function renderCalls() {
   const area = document.getElementById('content-area');
   area.innerHTML = '<div class="loading"><span class="spinner"></span>Ładowanie...</div>';
   try {
-    const res = await fetch('/api/calls/closed').then(r => r.json()).catch(() => ({ calls:[] }));
-    const openRes = await fetch('/api/calls/open').then(r => r.json()).catch(() => ({ calls:[] }));
-    const allCalls = [...(openRes.calls || []), ...(res.calls || [])].sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+    // /api/calls zwraca WSZYSTKIE połączenia z 7 dni (niezależnie od topic_closed)
+    const res = await fetch('/api/calls').then(r => r.json()).catch(() => ({ calls:[] }));
+    const allCalls = (res.calls || []).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
 
     let activeFilter = 'all';
     const renderList = (filter) => {

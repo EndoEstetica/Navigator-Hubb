@@ -504,25 +504,28 @@ async function getNewLeadsFromGHL() {
 // ─── Zadarma API ─────────────────────────────────────────────────────────────
 
 function zadarmaSign(method, params) {
+  // Zadarma HMAC-SHA1 signature (zgodnie z oficjalną dokumentacją Zadarma API)
+  // https://zadarma.com/en/support/api/
+  
   // 1. Sortowanie kluczy alfabetycznie
   const sortedKeys = Object.keys(params).sort();
   
-  // 2. Budowanie query string BEZ encodeURIComponent (raw key=value)
+  // 2. Budowanie query string (raw key=value, bez encodeURIComponent)
   const paramString = sortedKeys.map(k => `${k}=${String(params[k])}`).join('&');
   
-  // 3. MD5 z parametrów (HEX)
+  // 3. MD5 z query string → HEX
   const md5Hash = crypto.createHash('md5').update(paramString).digest('hex');
   
-  // 4. String do podpisu: metoda + parametry + md5
+  // 4. String do podpisu: endpoint + query_string + md5
   const signString = `${method}${paramString}${md5Hash}`;
   
-  // 5. HMAC-SHA1 → HEX digest (nie binary!)
-  const hexSignature = crypto.createHmac('sha1', ZADARMA_SECRET)
+  // 5. HMAC-SHA1 z SECRET → BINARY → base64
+  // UWAGA: Zadarma oczekuje base64(binary_hmac), NIE base64(hex_hmac)
+  const signature = crypto.createHmac('sha1', ZADARMA_SECRET)
     .update(signString)
-    .digest('hex');
+    .digest('base64'); // bezpośrednio base64 z binarnego HMAC
   
-  // 6. Base64 z HEX stringa (jak PHP: base64_encode(hash_hmac(...)))
-  return Buffer.from(hexSignature).toString('base64');
+  return signature;
 }
 
 function verifyZadarmaSignature(params, signature) {
@@ -654,11 +657,50 @@ app.get('/api/calls/open', async (req, res) => {
   res.json({ calls: openCalls || [] });
 });
 
+// ─── API: Wszystkie połączenia (widok Archiwum) ────────────────────────────────
+// Zwraca połączenia z ostatnich 7 dni, posortowane od najnowszych
+
+app.get('/api/calls', async (req, res) => {
+  const since = new Date();
+  since.setDate(since.getDate() - 7);
+  const calls = await supabase.query('calls', 'GET', null, {
+    'created_at': `gte.${since.toISOString().slice(0,10)}T00:00:00`,
+    'order': 'created_at.desc',
+    'limit': '200',
+  });
+  res.json({ calls: calls || [] });
+});
+
 // ─── API: Zamknięte połączenia (Archiwum) ────────────────────────────────
 
 app.get('/api/calls/closed', async (req, res) => {
   const closedCalls = await supabase.getClosedCalls();
   res.json({ calls: closedCalls || [] });
+});
+
+// ─── API: Debug połączeń ─────────────────────────────────────────────────────
+
+app.get('/api/calls/debug', async (req, res) => {
+  const since = new Date();
+  since.setDate(since.getDate() - 1);
+  const calls = await supabase.query('calls', 'GET', null, {
+    'created_at': `gte.${since.toISOString().slice(0,10)}T00:00:00`,
+    'order': 'created_at.desc',
+    'limit': '20',
+  });
+  res.json({
+    count: (calls || []).length,
+    calls: (calls || []).map(c => ({
+      call_id: c.call_id,
+      direction: c.direction,
+      status: c.status,
+      topic_closed: c.topic_closed,
+      caller_phone: c.caller_phone,
+      called_phone: c.called_phone,
+      created_at: c.created_at,
+      duration_seconds: c.duration_seconds,
+    }))
+  });
 });
 
 // ─── API: Zamknij temat ─────────────────────────────────────────────────────
@@ -1043,7 +1085,32 @@ app.get('/api/webrtc/key', async (req, res) => {
   }
 });
 
-// ─── API: Click-to-Call ────────────────────────────────────────────────────────
+/// ─── API: Test autoryzacji Zadarma ─────────────────────────────────────────────────────
+
+app.get('/api/call/test-auth', async (req, res) => {
+  try {
+    // Test: pobierz listę numerów wewnętrznych (nie inicjuje połączenia)
+    const params = {};
+    const sign = zadarmaSign('/v1/pbx/internal/', params);
+    const response = await axios.get('https://api.zadarma.com/v1/pbx/internal/', {
+      params,
+      headers: { 'Authorization': `${ZADARMA_KEY}:${sign}` },
+      timeout: 10000,
+    });
+    res.json({ ok: true, data: response.data, key: ZADARMA_KEY.slice(0,8) + '...', sign });
+  } catch (err) {
+    const errData = err.response?.data || err.message;
+    res.json({
+      ok: false,
+      status: err.response?.status,
+      error: errData,
+      key: ZADARMA_KEY.slice(0,8) + '...',
+      hint: err.response?.status === 401 ? 'Błąd autoryzacji — sprawdź ZADARMA_KEY i ZADARMA_SECRET w .env' : ''
+    });
+  }
+});
+
+// ─── API: Click-to-Call ─────────────────────────────────────────────────────
 
 app.post('/api/call/dial', async (req, res) => {
   const { toNumber, fromExt } = req.body;
