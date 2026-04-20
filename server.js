@@ -984,8 +984,24 @@ app.post('/api/call/hangup', async (req, res) => {
   }
 });
 
-// ─── API: Nagranie ──────────────────────────────────────────────────────────
+// ─── API: Potwierdź odebranie połączenia (aktualizacja statusu) ────────────────────
+app.post('/api/call/answer', async (req, res) => {
+  const { callId } = req.body;
+  if (!callId) return res.status(400).json({ success: false, error: 'Brak callId' });
+  try {
+    await supabase.updateCall(callId, {
+      status: 'answered',
+      answered_at: new Date().toISOString(),
+    });
+    broadcast({ type: 'CALL_ANSWERED', callId });
+    console.log(`[API] Call answered: ${callId}`);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
+// ─── API: Nagranie ──────────────────────────────────────────────────────
 app.get('/api/call/recording/:callId', async (req, res) => {
   const { callId } = req.params;
   const link = await zadarmaGetRecording(callId);

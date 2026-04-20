@@ -227,20 +227,29 @@ a{text-decoration:none;color:inherit}
 @media(max-width:900px){.dashboard-layout{grid-template-columns:1fr}.dashboard-sidebar{position:static}}
 
 /* ═══ CONTACTS ════════════════════════════════════════════════════════════════ */
-.contacts-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;max-width:960px;margin:0 auto}
-.contact-item{padding:12px 14px;border:1px solid var(--border);background:var(--white);transition:border-color .15s;border-radius:var(--r)}
-.contact-item:hover{border-color:var(--navy-mid)}
-.contact-header{display:flex;align-items:center;gap:9px;margin-bottom:8px}
-.contact-avatar{width:30px;height:30px;background:var(--navy);color:var(--white);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;border-radius:50%}
-.contact-name{font-size:13px;font-weight:600}
-.contact-sub{font-size:10px;color:var(--text-muted);margin-top:1px}
-.contact-fields{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px}
-.contact-field{min-width:0}
-.contact-field-label{font-size:8px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
-.contact-field-value{font-size:12px;font-weight:500;color:var(--text);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.contact-tags{display:flex;gap:3px;flex-wrap:wrap;margin-top:6px}
-.contact-tag{font-size:8px;padding:1px 5px;background:var(--beige-dark);color:var(--text-muted);font-weight:600;letter-spacing:.2px}
-.contact-actions{display:flex;gap:5px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
+/* Kontakty — poziomy układ wierszowy */
+.contacts-grid{display:flex;flex-direction:column;gap:6px;max-width:1000px;margin:0 auto}
+.contact-item{
+  display:flex;align-items:center;gap:14px;
+  padding:12px 16px;border:1px solid var(--border);background:var(--white);
+  transition:border-color .15s;border-radius:var(--r);
+}
+.contact-item:hover{border-color:var(--navy-mid);background:#fafafa}
+.contact-avatar{width:38px;height:38px;background:var(--navy);color:var(--white);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;border-radius:50%}
+.contact-main{flex:0 0 200px;min-width:0}
+.contact-name{font-size:14px;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.contact-sub{font-size:12px;color:var(--text-muted);margin-top:1px}
+.contact-fields{display:flex;gap:20px;flex:1;min-width:0;align-items:center}
+.contact-field{min-width:0;flex:1}
+.contact-field-label{font-size:9px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
+.contact-field-value{font-size:13px;font-weight:500;color:var(--text);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.contact-visit-date{flex:0 0 auto;text-align:center;padding:6px 12px;background:var(--beige);border:1px solid var(--beige-mid);border-radius:var(--r);min-width:90px}
+.contact-visit-label{font-size:8px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
+.contact-visit-value{font-size:13px;font-weight:700;color:var(--navy);margin-top:2px}
+.contact-visit-value.no-visit{color:var(--text-light);font-style:italic;font-size:11px;font-weight:400}
+.contact-tags{display:flex;gap:3px;flex-wrap:wrap;flex:0 0 auto}
+.contact-tag{font-size:9px;padding:2px 7px;background:var(--beige-dark);color:var(--text-muted);font-weight:600;letter-spacing:.2px;border-radius:10px}
+.contact-actions{display:flex;gap:5px;flex-shrink:0;align-items:center}
 
 .pin-section{margin-top:20px;padding-top:16px;border-top:1px solid var(--border);text-align:center}
 
@@ -277,8 +286,22 @@ a{text-decoration:none;color:inherit}
 .popup-timer.ended{color:rgba(255,255,255,.4)}
 .popup-close-btn{background:rgba(255,255,255,.12);color:var(--white);padding:5px 10px;font-size:10px;font-weight:600;margin-left:6px;letter-spacing:.3px;border:1px solid rgba(255,255,255,.2)}
 .popup-close-btn:hover{background:rgba(255,255,255,.22)}
-.popup-hangup-btn{background:rgba(220,38,38,.7);color:var(--white);padding:5px 10px;font-size:10px;font-weight:600;margin-left:4px;letter-spacing:.3px;border:1px solid rgba(220,38,38,.5)}
-.popup-hangup-btn:hover{background:var(--red)}
+.popup-hangup-btn{
+  background:rgba(220,38,38,.85);color:var(--white);
+  padding:8px 18px;font-size:13px;font-weight:700;margin-left:6px;
+  letter-spacing:.2px;border:1px solid rgba(220,38,38,.6);
+  border-radius:6px;display:flex;align-items:center;gap:6px;
+}
+.popup-hangup-btn:hover{background:#b91c1c}
+.popup-answer-btn{
+  background:rgba(22,163,74,.9);color:var(--white);
+  padding:8px 18px;font-size:13px;font-weight:700;margin-left:6px;
+  letter-spacing:.2px;border:1px solid rgba(22,163,74,.7);
+  border-radius:6px;display:flex;align-items:center;gap:6px;
+  animation:pulse-green 1.2s ease-in-out infinite;
+}
+.popup-answer-btn:hover{background:#15803d;animation:none}
+@keyframes pulse-green{0%,100%{box-shadow:0 0 0 0 rgba(22,163,74,.5)}50%{box-shadow:0 0 0 6px rgba(22,163,74,0)}}
 
 .popup-body{padding:16px 18px}
 .popup-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:14px}
@@ -637,7 +660,8 @@ a{text-decoration:none;color:inherit}
         <div class="popup-status-text" id="popup-status-text">DZWONI</div>
         <div class="popup-timer" id="popup-timer">0:00</div>
       </div>
-      <button class="popup-hangup-btn" id="popup-hangup-btn" onclick="hangupCall()" style="display:none">Rozłącz</button>
+      <button class="popup-answer-btn" id="popup-answer-btn" onclick="answerIncomingCall()" style="display:none">&#9742; Odbierz</button>
+      <button class="popup-hangup-btn" id="popup-hangup-btn" onclick="hangupCall()" style="display:none">&#128308; Rozłącz</button>
       <button class="popup-close-btn" onclick="tryClosePopup()">Zamknij</button>
     </div>
     <div class="popup-body">
@@ -1302,6 +1326,9 @@ function openCallPopup(call) {
   if (status === 'answered') startPopupTimer();
   // Hangup button — only when active
   document.getElementById('popup-hangup-btn').style.display = (status === 'ringing' || status === 'answered') ? 'inline-block' : 'none';
+  // Answer button — only for incoming ringing calls
+  const answerBtn = document.getElementById('popup-answer-btn');
+  if (answerBtn) answerBtn.style.display = (status === 'ringing' && call.direction === 'inbound') ? 'inline-flex' : 'none';
   // Open overlay
   document.getElementById('call-popup-overlay').classList.add('open');
   switchPopupTab('patient');
@@ -1312,6 +1339,7 @@ function setPopupStatus(status) {
   const statusText = document.getElementById('popup-status-text');
   const timer = document.getElementById('popup-timer');
   const hangupBtn = document.getElementById('popup-hangup-btn');
+  const answerBtn = document.getElementById('popup-answer-btn');
   header.className = 'popup-header ' + (status === 'answered' ? 'answered' : status === 'ended' ? 'ended' : 'ringing');
   dot.className = 'popup-status-dot ' + (status === 'answered' ? 'answered' : status === 'ended' ? 'ended' : '');
   const labels = { ringing:'DZWONI', answered:'POŁĄCZONY', ended:'ZAKOŃCZONE' };
@@ -1319,9 +1347,16 @@ function setPopupStatus(status) {
   if (status === 'ended') {
     timer.classList.add('ended');
     hangupBtn.style.display = 'none';
-  } else {
+    if (answerBtn) answerBtn.style.display = 'none';
+  } else if (status === 'answered') {
     timer.classList.remove('ended');
-    hangupBtn.style.display = (status === 'ringing' || status === 'answered') ? 'inline-block' : 'none';
+    hangupBtn.style.display = 'inline-flex';
+    if (answerBtn) answerBtn.style.display = 'none'; // po odebraniu chowamy Odbierz
+  } else {
+    // ringing
+    timer.classList.remove('ended');
+    hangupBtn.style.display = 'inline-flex';
+    if (answerBtn) answerBtn.style.display = (activeCall?.direction === 'inbound') ? 'inline-flex' : 'none';
   }
   if (activeCall) activeCall.status = status;
 }
@@ -1372,6 +1407,25 @@ async function hangupCall() {
       body: JSON.stringify({ callId: activeCall.call_id })
     });
   } catch(e) { console.error('[Hangup]', e); }
+}
+
+async function answerIncomingCall() {
+  if (!activeCall) return;
+  // Zadarma nie ma dedykowanego API do odbierania połączenia z poziomu aplikacji webowej
+  // (połączenie odbiera się fizycznie na telefonie/softphonie).
+  // Przycisk "Odbierz" pełni rolę potwierdzenia że rozmowa jest aktywna i uruchamia timer.
+  const btn = document.getElementById('popup-answer-btn');
+  if (btn) btn.style.display = 'none';
+  setPopupStatus('answered');
+  startPopupTimer();
+  showToast('Odbierz połączenie na telefonie', 'info');
+  // Opcjonalnie: zaktualizuj status w bazie
+  try {
+    await fetch('/api/call/answer', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ callId: activeCall.call_id })
+    });
+  } catch(e) { console.warn('[Answer]', e); }
 }
 
 // Zmiana 4: Edycja pola karty pacjenta
@@ -1964,18 +2018,26 @@ async function renderContacts() {
     <div class="contacts-grid" id="contacts-grid">`;
 
     if (contacts.length === 0) {
-      html += `<div class="empty" style="grid-column:1/-1"><div class="empty-icon">◎</div><div class="empty-text">Brak kontaktów</div></div>`;
+      html += `<div class="empty"><div class="empty-icon">◎</div><div class="empty-text">Brak kontaktów</div></div>`;
     } else {
-      contacts.forEach(c => {
+      // Demo daty ostatniej wizyty z Fieldgent (pokazowo)
+      const demoVisits = {
+        0: '12.04.2026', 1: '08.03.2026', 2: '21.02.2026', 3: '15.01.2026',
+        4: '30.03.2026', 5: '05.04.2026'
+      };
+      contacts.forEach((c, idx) => {
         const initials = ((c.firstName||'') + ' ' + (c.lastName||'')).trim().split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase() || '?';
         const fullName = [c.firstName, c.lastName].filter(Boolean).join(' ') || 'Nieznany';
+        // Data ostatniej wizyty — z GHL lub demo
+        const lastVisit = c.lastVisit || c.last_visit || demoVisits[idx % 6] || null;
+        const visitHtml = lastVisit
+          ? `<div class="contact-visit-date"><div class="contact-visit-label">Ostatnia wizyta</div><div class="contact-visit-value">${lastVisit}</div></div>`
+          : `<div class="contact-visit-date"><div class="contact-visit-label">Ostatnia wizyta</div><div class="contact-visit-value no-visit">brak danych</div></div>`;
         html += `<div class="contact-item" data-search="${fullName.toLowerCase()} ${(c.phone||'').toLowerCase()} ${(c.email||'').toLowerCase()}">
-          <div class="contact-header">
-            <div class="contact-avatar">${initials}</div>
-            <div>
-              <div class="contact-name">${fullName}</div>
-              <div class="contact-sub">${c.phone || c.email || '—'}</div>
-            </div>
+          <div class="contact-avatar">${initials}</div>
+          <div class="contact-main">
+            <div class="contact-name">${fullName}</div>
+            <div class="contact-sub">${c.phone || c.email || '—'}</div>
           </div>
           <div class="contact-fields">
             <div class="contact-field">
@@ -1990,14 +2052,11 @@ async function renderContacts() {
               <div class="contact-field-label">Program</div>
               <div class="contact-field-value">${c.program || '—'}</div>
             </div>
-            <div class="contact-field">
-              <div class="contact-field-label">Opiekun</div>
-              <div class="contact-field-value">${c.assignedTo || '—'}</div>
-            </div>
           </div>
+          ${visitHtml}
           ${c.tags && c.tags.length ? `<div class="contact-tags">${c.tags.map(t=>`<span class="contact-tag">${t}</span>`).join('')}</div>` : ''}
           <div class="contact-actions">
-            ${c.phone ? `<button class="act-btn act-call" onclick="quickCall('${c.phone}')">☎ Zadzwoń</button>` : ''}
+            ${c.phone ? `<button class="act-btn act-call" onclick="quickCall('${c.phone}')">&#9742; Zadzwoń</button>` : ''}
             <button class="act-btn act-view" onclick="requestContactEdit('${c.id}','${fullName}')">Prośba o edycję</button>
             ${currentUser?.role === 'admin' ? `<button class="act-btn act-edit" onclick="openEditContactModal('${c.id}','${c.firstName||''}','${c.lastName||''}','${c.phone||''}','${c.email||''}')">Edytuj</button>` : ''}
           </div>
