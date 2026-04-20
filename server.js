@@ -1547,6 +1547,36 @@ wss.on('connection', async (ws) => {
   console.log('[WS] New connection');
   const openCalls = await supabase.getOpenCalls() || [];
   ws.send(JSON.stringify({ type: 'INIT', calls: openCalls }));
+
+  ws.on('message', async (raw) => {
+    try {
+      const msg = JSON.parse(raw);
+      if (msg.type === 'CHAT_MESSAGE') {
+        // Broadcast to all connected clients
+        broadcast({ type: 'CHAT_MESSAGE', text: msg.text, from: msg.from || 'Użytkownik', userId: msg.userId || '' });
+        // Send email notification to Sonia
+        const nodemailer = require('nodemailer');
+        const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+        const smtpPort = parseInt(process.env.SMTP_PORT || '587');
+        const smtpUser = process.env.SMTP_USER || process.env.EMAIL_FROM || '';
+        const smtpPass = process.env.SMTP_PASS || process.env.EMAIL_PASS || '';
+        if (smtpUser && smtpPass) {
+          try {
+            const transporter = nodemailer.createTransport({
+              host: smtpHost, port: smtpPort, secure: smtpPort === 465,
+              auth: { user: smtpUser, pass: smtpPass }
+            });
+            await transporter.sendMail({
+              from: smtpUser,
+              to: 'endoestetica.clinic@gmail.com, sonia.czajewicz.endoestetica@gmail.com',
+              subject: `[Navigator Hub] Wiadomość od ${msg.from || 'Użytkownik'}`,
+              text: `Wiadomość od ${msg.from || 'Użytkownik'}:\n\n${msg.text}\n\n---\nNavigator Hub`
+            });
+          } catch(emailErr) { console.error('[Chat email]', emailErr.message); }
+        }
+      }
+    } catch(e) { /* ignore parse errors */ }
+  });
 });
 
 // ─── Startup ────────────────────────────────────────────────────────────────
