@@ -18,10 +18,11 @@ app.use(express.urlencoded({ extended: true }));
 
 // ─── Konfiguracja ────────────────────────────────────────────────────────────
 
-const GHL_TOKEN = process.env.GHL_TOKEN || 'pit-1ddb3acd-eedb-4a40-bfae-a36188d9c971';
+// Obsługa aliasów zmiennych środowiskowych (kompatybilność z v6 i innymi wersjami)
+const GHL_TOKEN = process.env.GHL_TOKEN || process.env.GHL_API_TOKEN || 'pit-1ddb3acd-eedb-4a40-bfae-a36188d9c971';
 const GHL_LOCATION_ID = process.env.GHL_LOCATION_ID || 'A0NcokQ5ZPxUcHawpRJJ';
-const ZADARMA_KEY = process.env.ZADARMA_KEY || '80fb966e516fd1ac565e';
-const ZADARMA_SECRET = process.env.ZADARMA_SECRET || 'fde11f66f6eb8372080f';
+const ZADARMA_KEY = process.env.ZADARMA_KEY || process.env.ZADARMA_API_KEY || '80fb966e516fd1ac565e';
+const ZADARMA_SECRET = process.env.ZADARMA_SECRET || process.env.ZADARMA_API_SECRET || 'fde11f66f6eb8372080f';
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 const PORT = process.env.PORT || 3000;
@@ -395,49 +396,36 @@ async function getNewLeadsFromGHL() {
     console.log(`[GHL] Pobieranie leadów z Etapu 1 | pipeline=${PIPELINE_ID} | stage=${STAGES.NOWE_ZGLOSZENIE}`);
     let opportunities = [];
 
-    // Próba 1: /opportunities/ z pipelineId i stageId (GHL v2 poprawny parametr dla listy)
+    // Metoda identyczna jak w v6 która działa:
+    // GET /opportunities/search?location_id=...&pipeline_id=...&limit=100
+    // Następnie filtrujemy po stageId po stronie serwera
     try {
-      // GHL v2 API dla szans sprzedaży używa pipelineId i stageId
-      const data = await ghlRequest('get', '/opportunities/', {
-        locationId: GHL_LOCATION_ID,
-        pipelineId: PIPELINE_ID,
-        stageId: STAGES.NOWE_ZGLOSZENIE,
+      const data = await ghlRequest('get', '/opportunities/search', {
+        location_id: GHL_LOCATION_ID,
+        pipeline_id: PIPELINE_ID,
         limit: 100,
       });
-      opportunities = data.opportunities || [];
-      
-      // Jeśli pusto, spróbuj pobrać wszystkie i filtrować po statusie 'open'
-      if (opportunities.length === 0) {
-        const dataAll = await ghlRequest('get', '/opportunities/', {
-          locationId: GHL_LOCATION_ID,
-          pipelineId: PIPELINE_ID,
-          limit: 100,
-        });
-        const all = dataAll.opportunities || [];
-        opportunities = all.filter(o => o.stageId === STAGES.NOWE_ZGLOSZENIE || o.pipelineStageId === STAGES.NOWE_ZGLOSZENIE);
-      }
-      
-      console.log(`[GHL] Próba 1 (list+stage): ${opportunities.length} szans`);
-    } catch(e) {
-      console.error('[GHL] Próba 1 błąd:', e.response?.data || e.message);
-    }
+      const all = data.opportunities || [];
+      console.log(`[GHL] /opportunities/search zwróciło ${all.length} szans w pipeline`);
 
-    // Próba 2: pobierz absolutnie wszystkie szanse z lokalizacji (bez filtrów) aby sprawdzić czy cokolwiek przychodzi
-    if (opportunities.length === 0) {
-      try {
-        const data = await ghlRequest('get', '/opportunities/search', {
-          location_id: GHL_LOCATION_ID,
-          limit: 100,
-        });
-        const all = data.opportunities || [];
-        
-        // Filtrujemy tylko po statusie 'open' (otwarte szanse)
+      // Filtruj po Stage 1 (Nowe Zgłoszenie)
+      opportunities = all.filter(o =>
+        o.stageId === STAGES.NOWE_ZGLOSZENIE ||
+        o.pipelineStageId === STAGES.NOWE_ZGLOSZENIE
+      );
+
+      // Jeśli po filtrowaniu pusto, zaloguj dostępne stageId (diagnostyka)
+      if (opportunities.length === 0 && all.length > 0) {
+        const availableStages = [...new Set(all.map(o => o.stageId).filter(Boolean))];
+        console.warn(`[GHL] Brak szans w Stage 1 (${STAGES.NOWE_ZGLOSZENIE}). Dostępne stageId: ${availableStages.join(', ')}`);
+        // Fallback: pokaż otwarte szanse z całego pipeline
         opportunities = all.filter(o => o.status === 'open' || !o.status);
-        
-        console.log(`[GHL] Próba 2 (all location): ${opportunities.length} szans z ${all.length} wszystkich w lokalizacji`);
-      } catch(e) {
-        console.error('[GHL] Próba 2 błąd:', e.response?.data || e.message);
+        console.log(`[GHL] Fallback: ${opportunities.length} otwartych szans z całego pipeline`);
       }
+
+      console.log(`[GHL] Etap 1: ${opportunities.length} szans`);
+    } catch(e) {
+      console.error('[GHL] /opportunities/search błąd:', e.response?.data || e.message);
     }
 
     console.log(`[GHL] Znaleziono ${opportunities.length} szans sprzedaży w Etapie 1`);
@@ -504,8 +492,10 @@ async function getNewLeadsFromGHL() {
 // ─── Zadarma API ─────────────────────────────────────────────────────────────
 
 function zadarmaSign(method, params) {
-  // Zadarma HMAC-SHA1 signature (zgodnie z oficjalną dokumentacją Zadarma API)
-  // https://zadarma.com/en/support/api/
+  // Zadarma HMAC-SHA1 signature — zweryfikowana implementacja (zgodna z v6 która działa)
+  // Źródło: https://zadarma.com/en/support/api/
+  // Algorytm: base64( hmac_sha1( SECRET, queryString + md5(queryString) ) )
+  // UWAGA: endpoint (method) NIE wchodzi do sygnatury — tylko query string!
   
   // 1. Sortowanie kluczy alfabetycznie
   const sortedKeys = Object.keys(params).sort();
@@ -516,14 +506,13 @@ function zadarmaSign(method, params) {
   // 3. MD5 z query string → HEX
   const md5Hash = crypto.createHash('md5').update(paramString).digest('hex');
   
-  // 4. String do podpisu: endpoint + query_string + md5
-  const signString = `${method}${paramString}${md5Hash}`;
+  // 4. String do podpisu: TYLKO query_string + md5 (bez nazwy endpointu!)
+  const signString = paramString + md5Hash;
   
   // 5. HMAC-SHA1 z SECRET → BINARY → base64
-  // UWAGA: Zadarma oczekuje base64(binary_hmac), NIE base64(hex_hmac)
   const signature = crypto.createHmac('sha1', ZADARMA_SECRET)
     .update(signString)
-    .digest('base64'); // bezpośrednio base64 z binarnego HMAC
+    .digest('base64');
   
   return signature;
 }
