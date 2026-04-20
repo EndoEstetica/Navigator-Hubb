@@ -1405,12 +1405,14 @@ app.post('/api/call/initiate', async (req, res) => {
   const { phone, ext, userId } = req.body;
   if (!phone || !ext) return res.status(400).json({ success: false, error: 'Brak numeru lub ext' });
   try {
-    const result = await zadarmaClickToCall(ext, phone);
-    if (result && result.status === 'error') {
-      return res.status(500).json({ success: false, error: result.message || 'Zadarma error' });
-    }
+    const params = {
+      from: ext,
+      to: phone,
+      predicted: 1,
+    };
+    const zadarmaRes = await zadarmaRequest('/v1/request/callback/', params);
     console.log(`[Zadarma] Outbound call initiated: ext ${ext} -> ${phone}`);
-    res.json({ success: true, data: result });
+    res.json({ success: true, data: zadarmaRes });
   } catch(e) {
     console.error('[Zadarma] Call initiate error:', e.message);
     res.status(500).json({ success: false, error: e.message });
@@ -1531,73 +1533,7 @@ app.post('/webhook/zadarma', async (req, res) => {
   res.json({ status: 'ok' });
 });
 
-// ─// ─── Create contact in GHL ──────────────────────────────────────────────
-
-app.post('/api/contacts/create', async (req, res) => {
-  try {
-    const { firstName, lastName, phone, email, tags } = req.body;
-    const resp = await ghlApi.post('/contacts/', {
-      firstName, lastName,
-      phone: phone ? (phone.startsWith('+') ? phone : '+48'+phone.replace(/^0/,'')) : undefined,
-      email,
-      tags: tags || [],
-      locationId: GHL_LOCATION_ID
-    });
-    await syncGHLContacts();
-    res.json({ success: true, contact: resp.data?.contact });
-  } catch(e) {
-    console.error('[contacts/create]', e.response?.data || e.message);
-    res.json({ success: false, error: e.response?.data?.message || e.message });
-  }
-});
-
-// ─── Chat Pomoc ──────────────────────────────────────────────
-
-const HELP_EMAILS = ['endoestetica.clinic@gmail.com', 'sonia.czajewicz.endoestetica@gmail.com'];
-const chatHistory = [];
-
-app.post('/api/chat/send', async (req, res) => {
-  try {
-    const { from, role, text, time, replyTo, privateTo } = req.body;
-    const msg = {
-      id: Date.now(), from, role,
-      text, time: time || new Date().toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'}),
-      replyTo, private: !!privateTo, to: privateTo
-    };
-    chatHistory.push(msg);
-    if (chatHistory.length > 200) chatHistory.shift();
-    broadcast({ type: 'chat_message', payload: msg });
-    // Email do Soni (tylko gdy nie jest adminem)
-    if (role !== 'admin') {
-      try {
-        const nodemailer = require('nodemailer');
-        if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-          const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
-          });
-          await transporter.sendMail({
-            from: `"Navigator Hub" <${process.env.SMTP_USER}>`,
-            to: HELP_EMAILS.join(','),
-            subject: `[Pomoc] Wiadomość od ${from}`,
-            text: `${from} pisze:\n\n${text}\n\nCzas: ${msg.time}`
-          });
-        }
-      } catch(emailErr) {
-        console.warn('[chat/send] Email failed:', emailErr.message);
-      }
-    }
-    res.json({ success: true });
-  } catch(e) {
-    res.json({ success: false, error: e.message });
-  }
-});
-
-app.get('/api/chat/history', (req, res) => {
-  res.json({ messages: chatHistory });
-});
-
-// ─── Frontend static files ──────────────────────────────────────────────
+// ─── Frontend static files ──────────────────────────────────────────────────
 
 app.use(express.static('public'));
 
