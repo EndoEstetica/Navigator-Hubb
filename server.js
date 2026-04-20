@@ -566,10 +566,44 @@ async function zadarmaGetRecording(callId) {
   }
 }
 
-// ─── WebSocket broadcast ─────────────────────────────────────────────────────
+// ─── Kolejka retry dla nagrań ──────────────────────────────────────────────────────
+// Nagrania w Zadarma pojawiają się z opóźnieniem po zakończeniu rozmowy.
+// Strategia retry: 5s, 30s, 2min, 5min, 10min, 20min
 
-function broadcast(msg) {
-  wss.clients.forEach(client => {
+const RECORDING_RETRY_DELAYS = [5000, 30000, 120000, 300000, 600000, 1200000];
+const recordingQueue = new Map(); // callId -> { pbxCallId, attempt, timer }
+
+function scheduleRecordingFetch(callId, pbxCallId, attempt = 0) {
+  if (attempt >= RECORDING_RETRY_DELAYS.length) {
+    console.log(`[Recording] Max retries reached for ${callId}, giving up.`);
+    recordingQueue.delete(callId);
+    return;
+  }
+  const delay = RECORDING_RETRY_DELAYS[attempt];
+  console.log(`[Recording] Scheduling attempt ${attempt + 1}/${RECORDING_RETRY_DELAYS.length} for ${callId} in ${delay/1000}s`);
+  const timer = setTimeout(async () => {
+    try {
+      const link = await zadarmaGetRecording(pbxCallId);
+      if (link) {
+        console.log(`[Recording] Got recording for ${callId} on attempt ${attempt + 1}: ${link}`);
+        await supabase.updateCall(callId, { recording_url: link });
+        broadcast({ type: 'CALL_RECORDING_READY', callId, recordingUrl: link });
+        recordingQueue.delete(callId);
+      } else {
+        console.log(`[Recording] Not ready yet for ${callId} (attempt ${attempt + 1}), retrying...`);
+        scheduleRecordingFetch(callId, pbxCallId, attempt + 1);
+      }
+    } catch (err) {
+      console.error(`[Recording] Error fetching for ${callId}:`, err.message);
+      scheduleRecordingFetch(callId, pbxCallId, attempt + 1);
+    }
+  }, delay);
+  recordingQueue.set(callId, { pbxCallId, attempt, timer });
+}
+
+// ─── WebSocket broadcast ─────────────────────────────────────────────────────────
+
+function broadcast(msg) { wss.clients.forEach(client => {
     if (client.readyState === 1) client.send(JSON.stringify(msg));
   });
 }
@@ -1465,14 +1499,45 @@ app.post('/api/call/initiate', async (req, res) => {
   const { phone, ext, userId } = req.body;
   if (!phone || !ext) return res.status(400).json({ success: false, error: 'Brak numeru lub ext' });
   try {
-    const params = {
-      from: ext,
-      to: phone,
-      predicted: 1,
+    // Używamy zadarmaClickToCall (GET /v1/request/callback/)
+    const zadarmaRes = await zadarmaClickToCall(ext, phone);
+    if (!zadarmaRes || zadarmaRes.status === 'error') {
+      const errMsg = zadarmaRes?.message || 'Zadarma error';
+      console.error(`[Zadarma] Click-to-call failed: ${errMsg}`);
+      return res.status(500).json({ success: false, error: errMsg });
+    }
+    console.log(`[Zadarma] Outbound call initiated: ext ${ext} -> ${phone}`, zadarmaRes);
+    // Zapisz połączenie wychodzace w Supabase (jako outbound/ringing)
+    const tempCallId = `out_${Date.now()}_${ext}`;
+    const user = Object.values(users).find(u => u.ext === ext);
+    const callData = {
+      call_id: tempCallId,
+      pbx_call_id: null,
+      caller_phone: ext,
+      called_phone: phone,
+      direction: 'outbound',
+      status: 'ringing',
+      duration_seconds: 0,
+      created_at: new Date().toISOString(),
+      ghl_logged: false,
+      ghl_contact_id: null,
+      patient_name: null,
+      z_czym_sie_zglasza: '',
+      topic_closed: false,
+      contact_attempts: 0,
+      initiated_by: userId || (user ? user.id : null),
     };
-    const zadarmaRes = await zadarmaRequest('/v1/request/callback/', params);
-    console.log(`[Zadarma] Outbound call initiated: ext ${ext} -> ${phone}`);
-    res.json({ success: true, data: zadarmaRes });
+    // Wyszukaj kontakt GHL po numerze
+    try {
+      const ghlContact = await getGHLContactByPhone(phone);
+      if (ghlContact) {
+        callData.ghl_contact_id = ghlContact.id;
+        callData.patient_name = ghlContact.name;
+      }
+    } catch(e) { console.warn('[GHL] Contact lookup failed:', e.message); }
+    await supabase.insertCall(callData);
+    broadcast({ type: 'CALL_RINGING', call: callData });
+    res.json({ success: true, data: zadarmaRes, tempCallId });
   } catch(e) {
     console.error('[Zadarma] Call initiate error:', e.message);
     res.status(500).json({ success: false, error: e.message });
@@ -1505,7 +1570,35 @@ app.post('/webhook/zadarma', async (req, res) => {
   const callId = pbx_call_id || call_id || `call_${Date.now()}`;
   console.log(`[Zadarma] Event: ${event}, CallID: ${callId}, From: ${caller_id}, To: ${called_did}`);
   
-  if (event === 'NOTIFY_START') {
+  // NOTIFY_OUT_START — połączenie wychodzace zainicjowane przez PBX
+  if (event === 'NOTIFY_OUT_START') {
+    const ghlContact = await getGHLContactByPhone(called_did);
+    const callData = {
+      call_id: callId,
+      pbx_call_id: pbx_call_id || null,
+      caller_phone: caller_id || internal,
+      called_phone: called_did,
+      direction: 'outbound',
+      status: 'ringing',
+      duration_seconds: 0,
+      created_at: new Date().toISOString(),
+      ghl_logged: false,
+      ghl_contact_id: ghlContact ? ghlContact.id : null,
+      patient_name: ghlContact ? ghlContact.name : null,
+      z_czym_sie_zglasza: '',
+      topic_closed: false,
+      contact_attempts: 0,
+    };
+    // Spróbuj zaktualizować istniejący rekord (z tempCallId) lub utwórz nowy
+    const existing = await supabase.query(`calls?direction=eq.outbound&status=eq.ringing&called_phone=eq.${encodeURIComponent(called_did)}`, 'GET');
+    if (existing && existing.length > 0) {
+      await supabase.updateCall(existing[0].call_id, { pbx_call_id: pbx_call_id || callId, status: 'ringing' });
+      broadcast({ type: 'CALL_RINGING', call: { ...existing[0], pbx_call_id, status: 'ringing', direction: 'outbound' } });
+    } else {
+      await supabase.insertCall(callData);
+      broadcast({ type: 'CALL_RINGING', call: callData });
+    }
+  } else if (event === 'NOTIFY_START') {
     const ghlContact = await getGHLContactByPhone(caller_id);
     
     // Pobierz pole z_czym_si_zgasza z GHL jeśli znamy kontakt
@@ -1566,13 +1659,8 @@ app.post('/webhook/zadarma', async (req, res) => {
     };
     
     if (wasAnswered && pbx_call_id) {
-      setTimeout(async () => {
-        const recordingLink = await zadarmaGetRecording(pbx_call_id);
-        if (recordingLink) {
-          await supabase.updateCall(callId, { recording_url: recordingLink });
-          broadcast({ type: 'CALL_RECORDING_READY', callId, recordingUrl: recordingLink });
-        }
-      }, 5000);
+      // Używamy systemu retry zamiast jednorazowego setTimeout
+      scheduleRecordingFetch(callId, pbx_call_id, 0);
     }
     
     if (status === 'no-answer') {

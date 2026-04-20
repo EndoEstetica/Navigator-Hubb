@@ -1687,16 +1687,24 @@ async function renderDashboard() {
         if (src.includes('smart')) sourceTag = '<span class="source-tag smart-day">Smart Day</span>';
         else if (src.includes('audyt') || src.includes('360')) sourceTag = '<span class="source-tag audyt-360">Audyt 360</span>';
         else if (lead.source) sourceTag = `<span class="source-tag other">${lead.source}</span>`;
+        // Wyciągnij telefon z różnych pól
+        const phone = lead.phone || lead.contactPhone || lead.caller_phone || '';
+        // Spróbuj wyciągnąć telefon z oppName jeśli wygląda jak numer
+        const phoneFromOpp = !phone && /[\d\+]{7,}/.test(lead.oppName) ? lead.oppName.match(/[\+\d][\d\s\-]{6,}/)?.[0]?.trim() : '';
+        const displayPhone = phone || phoneFromOpp || '';
         html += `<div class="call-item">
           <div class="call-avatar">${initials}</div>
           <div class="call-info">
             <div class="call-name">${lead.name || 'Nieznany'} ${sourceTag}</div>
-            <div class="call-sub">${lead.phone || '—'}</div>
+            <div class="call-sub">${displayPhone || (lead.email ? lead.email : '— brak telefonu')}</div>
             ${lead.z_czym_sie_zglasza ? `<div class="lead-problem">„${lead.z_czym_sie_zglasza}”</div>` : ''}
           </div>
           <div class="call-actions">
             <span class="lead-timer ${timerClass}">${timerLabel}</span>
-            ${lead.phone ? `<button class="act-btn act-call" onclick="quickCall('${lead.phone}')">&#9742; Zadzwoń</button>` : ''}
+            ${displayPhone
+              ? `<button class="act-btn act-call" onclick="quickCall('${displayPhone.replace(/'/g,"\'")}')" title="${displayPhone}">&#9742; Zadzwoń</button>`
+              : `<button class="act-btn" style="background:#fef9c3;color:#a16207;border-color:#fde68a;cursor:default" title="Brak numeru w GHL">Brak tel.</button>`
+            }
             ${currentUser?.role === 'admin' ? `<button class="act-btn" style="background:#fee2e2;color:#dc2626;border-color:#fca5a5" onclick="deleteLead('${lead.id}')">&#10005;</button>` : ''}
           </div>
         </div>`;
