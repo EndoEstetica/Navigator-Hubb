@@ -1,2688 +1,531 @@
 <!DOCTYPE html>
 <html lang="pl">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Navigator Hub — EndoEstetica</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<style>
-:root{
-  --navy:#0f1e2e;--navy-mid:#183C63;--navy-light:#1e4a7a;
-  --accent:#D4B896;--accent-light:#F0E6D8;--accent-dark:#B89A78;
-  --beige:#F5F0E8;--beige-dark:#EDE6D8;--beige-mid:#E8E0D0;
-  --white:#FFFFFF;--text:#1a1a2e;--text-muted:#6b7280;--text-light:#9ca3af;
-  --border:#DDD8CE;--border-dark:#C8C0B4;
-  --red:#dc2626;--red-light:#fee2e2;
-  --green:#16a34a;--green-light:#dcfce7;
-  --orange:#ea580c;--orange-light:#ffedd5;
-  --blue:#2563eb;--blue-light:#dbeafe;
-  --purple:#7c3aed;--purple-light:#ede9fe;
-  --shadow-sm:0 1px 3px rgba(0,0,0,.06);
-  --shadow-md:0 4px 12px rgba(0,0,0,.10);
-  --shadow-lg:0 8px 24px rgba(0,0,0,.14);
-  --r:6px;--sidebar-w:210px;
-}
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%;font-family:'Montserrat',sans-serif;font-size:14px;color:var(--text);background:var(--beige)}
-button{font-family:inherit;cursor:pointer;border:none;outline:none}
-input,textarea,select{font-family:inherit;outline:none}
-a{text-decoration:none;color:inherit}
-
-/* ═══ LOGIN ═══════════════════════════════════════════════════════════════════ */
-#login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--navy)}
-.login-card{background:var(--white);padding:36px 32px;width:400px;border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow-lg)}
-.login-logo{text-align:center;margin-bottom:28px;border-bottom:1px solid var(--border);padding-bottom:20px}
-.login-logo h1{font-size:20px;font-weight:800;color:var(--navy);letter-spacing:1px;text-transform:uppercase}
-.login-logo p{font-size:11px;color:var(--text-muted);margin-top:4px;font-weight:500;letter-spacing:.5px;text-transform:uppercase}
-.login-section-label{font-size:11px;font-weight:700;color:var(--text-muted);letter-spacing:.8px;text-transform:uppercase;margin:16px 0 7px;padding-bottom:4px;border-bottom:1px solid var(--border)}
-.user-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.user-btn{padding:10px 12px;font-size:13px;font-weight:600;border:1px solid var(--border);transition:all .15s;text-align:center;letter-spacing:.2px;background:var(--beige);color:var(--navy);border-radius:4px}
-.user-btn:hover,.user-btn.selected{background:var(--navy);color:var(--white);border-color:var(--navy)}
-.user-btn.caretaker{background:#eef2f7;color:var(--navy-mid);border-color:#d0dce8}
-.user-btn.caretaker:hover,.user-btn.caretaker.selected{background:var(--navy-mid);color:var(--white);border-color:var(--navy-mid)}
-.user-btn.admin{background:#f4f1ee;color:var(--navy);border-color:var(--border-dark)}
-.user-btn.admin:hover,.user-btn.admin.selected{background:var(--navy);color:var(--white)}
-.pin-section{margin-top:20px;border-top:1px solid var(--border);padding-top:16px}
-.pin-label{font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:10px;letter-spacing:.3px}
-.pin-display{display:flex;gap:10px;justify-content:center;margin-bottom:14px}
-.pin-dot{width:10px;height:10px;background:var(--border);transition:background .15s}
-.pin-dot.filled{background:var(--navy)}
-.pin-pad{display:none}
-.pin-key{display:none}
-.pin-input{width:100%;padding:14px 16px;font-size:22px;font-weight:700;letter-spacing:8px;text-align:center;border:2px solid var(--border);background:var(--beige);color:var(--navy);border-radius:var(--r);transition:border-color .2s;margin-bottom:8px}
-.pin-input:focus{border-color:var(--navy);outline:none}
-.pin-input::placeholder{letter-spacing:2px;font-size:14px;font-weight:400;color:var(--text-muted)}
-.login-error{color:var(--red);font-size:11px;font-weight:600;text-align:center;margin-top:10px;min-height:16px}
-
-/* ═══ APP SHELL ═══════════════════════════════════════════════════════════════ */
-#app{display:none;height:100vh;overflow:hidden}
-#app.visible{display:flex}
-.sidebar{width:var(--sidebar-w);background:var(--navy);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
-.sidebar-header{padding:18px 16px 14px;border-bottom:1px solid rgba(255,255,255,.08)}
-.sidebar-brand{font-size:14px;font-weight:800;color:var(--white);letter-spacing:1px;text-transform:uppercase}
-.sidebar-user{font-size:12px;color:rgba(255,255,255,.55);margin-top:4px;font-weight:500}
-.sidebar-role{display:inline-block;font-size:9px;font-weight:700;padding:2px 7px;margin-top:6px;letter-spacing:.6px;text-transform:uppercase;border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.5)}
-.nav-section{padding:14px 16px 5px;font-size:9px;font-weight:700;color:rgba(255,255,255,.3);letter-spacing:1px;text-transform:uppercase}
-.nav-item{display:flex;align-items:center;gap:11px;padding:11px 18px;font-size:14px;font-weight:500;color:rgba(255,255,255,.6);cursor:pointer;transition:all .15s;border-left:2px solid transparent;margin:1px 0;letter-spacing:.1px}
-.nav-item:hover{background:rgba(255,255,255,.06);color:var(--white)}
-.nav-item.active{background:rgba(212,184,150,.1);color:var(--accent);border-left-color:var(--accent);font-weight:700}
-.nav-icon{font-size:15px;width:18px;text-align:center;flex-shrink:0}
-.nav-badge{margin-left:auto;background:var(--red);color:var(--white);font-size:8px;font-weight:700;padding:1px 5px;min-width:16px;text-align:center}
-.nav-badge.accent{background:var(--accent);color:var(--navy)}
-.sidebar-footer{margin-top:auto;padding:12px 16px;border-top:1px solid rgba(255,255,255,.08)}
-.logout-btn{width:100%;padding:8px;background:rgba(255,255,255,.05);color:rgba(255,255,255,.4);font-size:10px;font-weight:600;transition:all .15s;letter-spacing:.5px;text-transform:uppercase;border:1px solid rgba(255,255,255,.08)}
-.logout-btn:hover{background:rgba(255,255,255,.1);color:var(--white)}
-
-.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
-.topbar{padding:11px 22px;background:var(--white);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-shrink:0}
-.topbar-title{font-size:13px;font-weight:700;color:var(--navy);flex:1;letter-spacing:.3px;text-transform:uppercase}
-.topbar-date{font-size:10px;color:var(--text-muted);font-weight:500}
-.content{flex:1;overflow-y:auto;padding:18px 22px}
-
-/* ═══ CARDS & LAYOUT ══════════════════════════════════════════════════════════ */
-.card{background:var(--white);padding:16px 18px;border:1px solid var(--border)}
-.card-title{font-size:9px;font-weight:700;color:var(--navy);margin-bottom:12px;text-transform:uppercase;letter-spacing:.8px}
-.section-grid{display:grid;gap:14px}
-.grid-2{grid-template-columns:1fr 1fr}
-.grid-3{grid-template-columns:1fr 1fr 1fr}
-.grid-4{grid-template-columns:repeat(4,1fr)}
-
-/* ═══ KPI TILES ═══════════════════════════════════════════════════════════════ */
-.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
-.kpi-tile{background:var(--white);padding:14px 16px;border:1px solid var(--border)}
-.kpi-value{font-size:28px;font-weight:800;color:var(--navy);line-height:1}
-.kpi-label{font-size:8px;font-weight:700;color:var(--text-muted);margin-top:5px;text-transform:uppercase;letter-spacing:.6px}
-.kpi-tile.accent .kpi-value{color:var(--accent-dark)}
-.kpi-tile.green .kpi-value{color:var(--green)}
-.kpi-tile.red .kpi-value{color:var(--red)}
-
-/* ═══ CALL ITEMS ══════════════════════════════════════════════════════════════ */
-.call-item{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--border);background:var(--white);margin-bottom:6px;transition:border-color .15s;border-radius:var(--r)}
-.call-item:hover{border-color:var(--navy-mid)}
-.call-avatar{width:36px;height:36px;background:var(--navy);color:var(--white);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;border-radius:50%}
-.call-info{flex:1;min-width:0}
-.call-name{font-size:14px;font-weight:600}
-.call-sub{font-size:12px;color:var(--text-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.call-actions{display:flex;gap:5px;flex-shrink:0;align-items:center}
-.act-btn{padding:5px 10px;font-size:10px;font-weight:600;transition:all .15s;letter-spacing:.2px;border:1px solid transparent;border-radius:4px}
-.act-call{background:var(--green-light);color:var(--green);border-color:#bbf7d0}
-.act-call:hover{background:var(--green);color:var(--white)}
-.act-call-lg{background:var(--green);color:var(--white);padding:7px 14px;font-size:11px;font-weight:700}
-.act-call-lg:hover{background:#15803d}
-.act-view{background:var(--beige);color:var(--navy);border-color:var(--border)}
-.act-view:hover{background:var(--navy);color:var(--white)}
-.act-edit{background:var(--blue-light);color:var(--blue);border-color:#bfdbfe}
-.act-edit:hover{background:var(--blue);color:var(--white)}
-.act-play{background:var(--accent-light);color:var(--accent-dark);border-color:var(--accent);padding:5px 10px;font-size:10px;font-weight:600}
-.act-play:hover{background:var(--accent-dark);color:var(--white)}
-
-/* ═══ BADGES ══════════════════════════════════════════════════════════════════ */
-.badge{display:inline-flex;align-items:center;padding:2px 6px;font-size:8px;font-weight:700;letter-spacing:.3px;text-transform:uppercase}
-.badge-ringing{background:#fef3c7;color:#92400e}
-.badge-answered{background:var(--green-light);color:var(--green)}
-.badge-ended{background:var(--beige-dark);color:var(--text-muted)}
-.badge-missed{background:var(--red-light);color:var(--red)}
-.badge-new{background:var(--blue-light);color:var(--blue)}
-.badge-open{background:var(--orange-light);color:var(--orange)}
-.badge-outbound{background:var(--purple-light);color:var(--purple)}
-
-/* ═══ EMPTY STATE ═════════════════════════════════════════════════════════════ */
-.empty{text-align:center;padding:36px 20px;color:var(--text-muted)}
-.empty-icon{font-size:24px;margin-bottom:8px;opacity:.3}
-.empty-text{font-size:11px;font-weight:500;letter-spacing:.2px}
-
-/* ═══ SEARCH ══════════════════════════════════════════════════════════════════ */
-.search-bar{display:flex;gap:8px;margin-bottom:12px}
-.search-input{flex:1;padding:9px 12px;border:1px solid var(--border);background:var(--white);font-size:13px;transition:border-color .15s}
-.search-input:focus{border-color:var(--navy)}
-.search-btn{padding:8px 14px;background:var(--navy);color:var(--white);font-size:11px;font-weight:600;letter-spacing:.3px}
-
-/* ═══ DIALER ══════════════════════════════════════════════════════════════════ */
-.dialer-wrap{max-width:240px;margin:0 auto}
-.dialer-display{width:100%;padding:10px 12px;border:1.5px solid var(--border);font-size:20px;font-weight:600;text-align:center;color:var(--navy);background:var(--white);margin-bottom:10px}
-.dialer-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
-.dialer-key{padding:13px;font-size:16px;font-weight:600;color:var(--navy);border:1px solid var(--border);background:var(--beige);transition:all .15s}
-.dialer-key:hover{background:var(--navy);color:var(--white)}
-.dialer-key.del{background:var(--red-light);color:var(--red)}
-.dialer-key.del:hover{background:var(--red);color:var(--white)}
-.dialer-call{width:100%;margin-top:10px;padding:13px;background:var(--green);color:var(--white);font-size:12px;font-weight:700;letter-spacing:.5px;text-transform:uppercase}
-.dialer-call:hover{background:#15803d}
-
-/* ═══ TASKS ═══════════════════════════════════════════════════════════════════ */
-.task-item{display:flex;align-items:flex-start;gap:9px;padding:10px 12px;border:1px solid var(--border);background:var(--white);margin-bottom:5px;transition:border-color .15s;border-radius:var(--r)}
-.task-item:hover{border-color:var(--navy-mid)}
-.task-item.overdue{border-color:var(--red);background:var(--red-light)}
-.task-check{width:16px;height:16px;border:1.5px solid var(--border);flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-top:1px;transition:all .15s}
-.task-check:hover{border-color:var(--green)}
-.task-check.checked{background:var(--green);border-color:var(--green);color:var(--white);font-size:9px}
-.task-body{flex:1;min-width:0}
-.task-title{font-size:13px;font-weight:600}
-.task-meta{font-size:11px;color:var(--text-muted);margin-top:2px}
-.task-actions{display:flex;gap:4px;flex-shrink:0}
-.task-type-badge{display:inline-flex;align-items:center;padding:1px 5px;font-size:8px;font-weight:700;margin-right:4px;letter-spacing:.3px;text-transform:uppercase}
-.task-type-phone{background:var(--blue-light);color:var(--blue)}
-.task-type-followup{background:var(--orange-light);color:var(--orange)}
-.task-type-email{background:var(--green-light);color:var(--green)}
-.task-type-other{background:var(--purple-light);color:var(--purple)}
-.task-type-overdue{background:var(--red-light);color:var(--red)}
-.task-group-header{font-size:10px;font-weight:700;color:var(--navy);padding:8px 0 5px;border-bottom:1px solid var(--border);margin-bottom:7px;display:flex;align-items:center;gap:8px;text-transform:uppercase;letter-spacing:.5px}
-.task-group-progress{font-size:9px;font-weight:600;color:var(--text-muted);margin-left:auto}
-.pool-section{margin-top:18px;border-top:2px solid var(--accent-light);padding-top:14px}
-.pool-header{font-size:9px;font-weight:700;color:var(--orange);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;display:flex;align-items:center;gap:6px}
-.claim-btn{padding:4px 9px;background:var(--navy);color:var(--white);font-size:9px;font-weight:700;letter-spacing:.3px;text-transform:uppercase}
-.claim-btn:hover{background:var(--navy-mid)}
-
-/* ═══ CALENDAR ════════════════════════════════════════════════════════════════ */
-.cal-header{display:flex;align-items:center;gap:10px;margin-bottom:12px}
-.cal-nav{padding:5px 10px;background:var(--beige);font-size:11px;font-weight:600;color:var(--navy);border:1px solid var(--border);transition:all .15s}
-.cal-nav:hover{background:var(--navy);color:var(--white)}
-.cal-title{font-size:12px;font-weight:700;color:var(--navy);flex:1;text-align:center;text-transform:uppercase;letter-spacing:.5px}
-.cal-today-btn{padding:5px 12px;background:var(--navy);color:var(--white);font-size:10px;font-weight:600;letter-spacing:.3px;text-transform:uppercase}
-.cal-filter-tabs{display:flex;gap:5px;margin-bottom:12px;flex-wrap:wrap}
-.cal-tab{padding:4px 10px;font-size:10px;font-weight:600;border:1px solid var(--border);color:var(--text-muted);background:var(--white);cursor:pointer;transition:all .15s;letter-spacing:.2px}
-.cal-tab.active{background:var(--navy);color:var(--white);border-color:var(--navy)}
-.cal-grid{display:grid;grid-template-columns:44px repeat(7,1fr);border:1px solid var(--border);overflow:hidden;background:var(--white)}
-.cal-day-header{padding:7px 4px;text-align:center;font-size:8px;font-weight:700;color:var(--text-muted);background:var(--beige);border-bottom:1px solid var(--border);border-right:1px solid var(--border);text-transform:uppercase;letter-spacing:.5px}
-.cal-day-header.today{background:var(--navy);color:var(--white)}
-.cal-time-label{padding:3px 6px;font-size:8px;color:var(--text-muted);text-align:right;border-right:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--beige)}
-.cal-cell{border-right:1px solid var(--border);border-bottom:1px solid var(--border);min-height:34px;padding:2px;position:relative}
-.cal-cell.today-col{background:#f8f5f0}
-.cal-pill{padding:2px 5px;font-size:8px;font-weight:600;margin-bottom:2px;cursor:pointer;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;transition:opacity .15s;display:block;letter-spacing:.2px}
-.cal-pill:hover{opacity:.7}
-.cal-pill.phone{background:var(--blue-light);color:var(--blue)}
-.cal-pill.followup{background:var(--orange-light);color:var(--orange)}
-.cal-pill.email{background:var(--green-light);color:var(--green)}
-.cal-pill.other{background:var(--purple-light);color:var(--purple)}
-.cal-pill.overdue{background:var(--red-light);color:var(--red)}
-.cal-legend{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap}
-.cal-legend-item{display:flex;align-items:center;gap:4px;font-size:9px;color:var(--text-muted)}
-.cal-legend-dot{width:8px;height:8px}
-
-/* ═══ STATS ═══════════════════════════════════════════════════════════════════ */
-.stats-table{width:100%;border-collapse:collapse}
-.stats-table th{padding:7px 10px;text-align:left;font-size:8px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.6px;border-bottom:2px solid var(--border)}
-.stats-table td{padding:9px 10px;border-bottom:1px solid var(--border);font-size:13px}
-.stats-table tr:last-child td{border-bottom:none}
-.stats-table tr:hover td{background:var(--beige)}
-.progress-bar{height:2px;background:var(--border);overflow:hidden;margin-top:3px}
-.progress-fill{height:100%;background:var(--navy)}
-.progress-fill.green{background:var(--green)}
-.progress-fill.red{background:var(--red)}
-
-/* ═══ DASHBOARD LAYOUT ═══════════════════════════════════════════════════════ */
-.dashboard-layout{display:grid;grid-template-columns:2fr 1fr;gap:16px;align-items:start}
-.dashboard-main{min-width:0}
-.dashboard-sidebar{display:flex;flex-direction:column;gap:10px;position:sticky;top:0}
-.dash-kpi-card{background:var(--white);border:1px solid var(--border);padding:14px 16px;border-radius:var(--r)}
-.dash-kpi-title{font-size:9px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px}
-.dash-kpi-big{font-size:28px;font-weight:800;color:var(--navy);line-height:1}
-.dash-kpi-big.green{color:var(--green)}
-.dash-kpi-big.orange{color:var(--orange)}
-.dash-kpi-big.red{color:var(--red)}
-.dash-kpi-sub{font-size:10px;color:var(--text-muted);margin-top:4px;line-height:1.4}
-.dash-kpi-bar{height:3px;background:var(--border);margin-top:8px;border-radius:2px;overflow:hidden}
-.dash-kpi-bar-fill{height:100%;transition:width .4s ease;border-radius:2px}
-.dash-kpi-card.accent{border-color:var(--orange);background:#fffbf5}
-@media(max-width:900px){.dashboard-layout{grid-template-columns:1fr}.dashboard-sidebar{position:static}}
-
-/* ═══ CONTACTS ════════════════════════════════════════════════════════════════ */
-/* Kontakty — poziomy układ wierszowy */
-.contacts-grid{display:flex;flex-direction:column;gap:4px;max-width:1200px;margin:0 auto}
-.contact-item{
-  display:grid;
-  grid-template-columns: 42px 220px 1fr 1fr 1fr 110px auto auto;
-  align-items:center;gap:0;
-  padding:10px 16px;border:1px solid var(--border);background:var(--white);
-  transition:border-color .15s,background .15s;border-radius:var(--r);
-  min-height:52px;
-}
-.contact-item:hover{border-color:var(--navy-mid);background:#f8f9fc}
-.contact-avatar{width:36px;height:36px;background:var(--navy);color:var(--white);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;border-radius:50%}
-.contact-main{padding:0 12px 0 10px;min-width:0}
-.contact-name{font-size:14px;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.contact-sub{font-size:12px;color:var(--text-muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.contact-fields{display:contents} /* grid children */
-.contact-field{padding:0 12px;min-width:0;border-left:1px solid var(--border)}
-.contact-field-label{font-size:9px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
-.contact-field-value{font-size:13px;font-weight:500;color:var(--text);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.contact-visit-date{padding:0 12px;text-align:left;border-left:1px solid var(--border)}
-.contact-visit-label{font-size:9px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
-.contact-visit-value{font-size:13px;font-weight:700;color:var(--navy);margin-top:1px}
-.contact-visit-value.no-visit{color:var(--text-light);font-style:italic;font-size:11px;font-weight:400}
-.contact-tags{display:flex;gap:3px;flex-wrap:nowrap;padding:0 8px;border-left:1px solid var(--border)}
-.contact-tag{font-size:9px;padding:2px 7px;background:var(--beige-dark);color:var(--text-muted);font-weight:600;letter-spacing:.2px;border-radius:10px;white-space:nowrap}
-.contact-actions{display:flex;gap:5px;flex-shrink:0;align-items:center;padding-left:10px;border-left:1px solid var(--border)}
-/* Nagłówek kolumn kontaktów */
-.contacts-header{
-  display:grid;
-  grid-template-columns: 42px 220px 1fr 1fr 1fr 110px auto auto;
-  gap:0;padding:6px 16px;
-  font-size:9px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;
-  border-bottom:2px solid var(--border);margin-bottom:2px;
-}
-.contacts-header>div{padding:0 12px}
-
-.pin-section{margin-top:20px;padding-top:16px;border-top:1px solid var(--border);text-align:center}
-
-/* ═══ CALL POPUP ══════════════════════════════════════════════════════════════ */
-#call-popup-overlay{
-  display:none;position:fixed;inset:0;background:rgba(10,20,30,.6);
-  z-index:1000;align-items:flex-start;justify-content:center;padding-top:14px;
-  backdrop-filter:blur(3px);
-}
-#call-popup-overlay.open{display:flex}
-.call-popup{
-  background:var(--white);width:820px;max-width:97vw;
-  border:1px solid var(--border);
-  box-shadow:var(--shadow-lg);max-height:94vh;overflow-y:auto;
-  animation:popup-in .18s ease;border-radius:var(--r);
-}
-@keyframes popup-in{from{transform:translateY(-12px);opacity:0}to{transform:translateY(0);opacity:1}}
-.popup-header{
-  padding:14px 18px;
-  display:flex;align-items:center;gap:10px;
-}
-.popup-header.ringing{background:var(--navy)}
-.popup-header.answered{background:#15803d}
-.popup-header.ended{background:#374151}
-.popup-status-dot{width:8px;height:8px;background:var(--accent);animation:pulse 1.5s infinite;flex-shrink:0}
-.popup-status-dot.answered{background:#86efac}
-.popup-status-dot.ended{background:rgba(255,255,255,.25);animation:none}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.2}}
-.popup-caller{flex:1}
-.popup-caller-name{font-size:16px;font-weight:700;color:var(--white);letter-spacing:.2px}
-.popup-caller-phone{font-size:12px;color:rgba(255,255,255,.6);margin-top:2px}
-.popup-status-text{font-size:9px;font-weight:600;color:rgba(255,255,255,.65);text-transform:uppercase;letter-spacing:.5px}
-.popup-timer{font-size:17px;font-weight:800;color:var(--accent);min-width:52px;text-align:right}
-.popup-timer.ended{color:rgba(255,255,255,.4)}
-.popup-close-btn{background:rgba(255,255,255,.12);color:var(--white);padding:5px 10px;font-size:10px;font-weight:600;margin-left:6px;letter-spacing:.3px;border:1px solid rgba(255,255,255,.2)}
-.popup-close-btn:hover{background:rgba(255,255,255,.22)}
-.popup-hangup-btn{
-  background:rgba(220,38,38,.85);color:var(--white);
-  padding:8px 18px;font-size:13px;font-weight:700;margin-left:6px;
-  letter-spacing:.2px;border:1px solid rgba(220,38,38,.6);
-  border-radius:6px;display:flex;align-items:center;gap:6px;
-}
-.popup-hangup-btn:hover{background:#b91c1c}
-.popup-answer-btn{
-  background:rgba(22,163,74,.9);color:var(--white);
-  padding:8px 18px;font-size:13px;font-weight:700;margin-left:6px;
-  letter-spacing:.2px;border:1px solid rgba(22,163,74,.7);
-  border-radius:6px;display:flex;align-items:center;gap:6px;
-  animation:pulse-green 1.2s ease-in-out infinite;
-}
-.popup-answer-btn:hover{background:#15803d;animation:none}
-@keyframes pulse-green{0%,100%{box-shadow:0 0 0 0 rgba(22,163,74,.5)}50%{box-shadow:0 0 0 6px rgba(22,163,74,0)}}
-
-.popup-body{padding:16px 18px}
-.popup-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:14px}
-.popup-tab{padding:7px 14px;font-size:10px;font-weight:600;color:var(--text-muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s;letter-spacing:.3px;text-transform:uppercase}
-.popup-tab.active{color:var(--navy);border-bottom-color:var(--navy)}
-.popup-tab-content{display:none}
-.popup-tab-content.active{display:block}
-
-.patient-card{background:var(--beige);padding:12px 14px;margin-bottom:12px;border:1px solid var(--beige-mid)}
-.patient-card-row{display:flex;gap:12px;flex-wrap:wrap}
-.patient-field{flex:1;min-width:100px}
-.patient-field-label{font-size:8px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
-.patient-field-value{font-size:12px;font-weight:600;color:var(--text);margin-top:2px;cursor:pointer;border-bottom:1px dashed transparent;transition:border-color .15s}
-.patient-field-value:hover{border-bottom-color:var(--navy)}
-.patient-field-value.empty{color:var(--text-light);font-style:italic;font-weight:400}
-.patient-field-edit{width:100%;padding:3px 6px;font-size:12px;font-weight:600;border:1px solid var(--navy);background:var(--white);border-radius:3px;margin-top:2px}
-.zglosza-box{background:var(--accent-light);padding:9px 12px;margin-bottom:11px;border-left:3px solid var(--accent)}
-.zglosza-label{font-size:8px;font-weight:700;color:var(--accent-dark);text-transform:uppercase;letter-spacing:.5px}
-.zglosza-value{font-size:13px;font-weight:600;color:var(--text);margin-top:2px}
-
-.report-section{margin-bottom:14px}
-.report-section-title{font-size:9px;font-weight:700;color:var(--navy);margin-bottom:8px;text-transform:uppercase;letter-spacing:.6px}
-.status-chips{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.status-chip{padding:14px 18px;font-size:13px;font-weight:700;border:2px solid var(--border);color:var(--text-muted);background:var(--white);cursor:pointer;transition:all .15s;letter-spacing:.2px;text-align:center;border-radius:var(--r)}
-.status-chip:hover{border-color:var(--navy);color:var(--navy)}
-.status-chip.nowy.selected{background:var(--blue);border-color:var(--blue);color:var(--white)}
-.status-chip.staly.selected{background:var(--green);border-color:var(--green);color:var(--white)}
-.status-chip.wizyta.selected{background:var(--orange);border-color:var(--orange);color:var(--white)}
-.status-chip.spam.selected{background:var(--text-muted);border-color:var(--text-muted);color:var(--white)}
-/* 2x2 status tiles */
-.status-grid-2x2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:4px}
-.status-tile{padding:18px 14px;border:2px solid var(--border);background:var(--white);cursor:pointer;transition:all .18s;text-align:center;border-radius:var(--r);user-select:none}
-.status-tile:hover{border-color:var(--navy);transform:translateY(-1px);box-shadow:0 3px 10px rgba(24,60,99,.1)}
-.status-tile-icon{font-size:20px;margin-bottom:6px;line-height:1}
-.status-tile-label{font-size:12px;font-weight:700;letter-spacing:.2px;color:var(--text-muted)}
-.status-tile.selected .status-tile-label{color:var(--white)}
-.status-tile.nowy.selected{background:var(--blue);border-color:var(--blue)}
-.status-tile.staly.selected{background:var(--green);border-color:var(--green)}
-.status-tile.wizyta.selected{background:var(--orange);border-color:var(--orange)}
-.status-tile.spam.selected{background:#6b7280;border-color:#6b7280}
-
-.report-subform{margin-top:12px;padding:12px;background:var(--beige);border:1px solid var(--beige-mid)}
-.form-row{display:flex;gap:9px;margin-bottom:9px;flex-wrap:wrap}
-.form-field{flex:1;min-width:130px}
-.form-label{font-size:8px;font-weight:700;color:var(--text-muted);margin-bottom:4px;display:block;text-transform:uppercase;letter-spacing:.4px}
-.form-input{width:100%;padding:8px 10px;border:1px solid var(--border);font-size:13px;background:var(--white);transition:border-color .15s;border-radius:4px}
-.form-input:focus{border-color:var(--navy)}
-.form-select{width:100%;padding:8px 10px;border:1px solid var(--border);font-size:13px;background:var(--white);appearance:none;border-radius:4px}
-.form-select:focus{border-color:var(--navy)}
-.form-textarea{width:100%;padding:8px 10px;border:1px solid var(--border);font-size:13px;background:var(--white);resize:vertical;min-height:60px;border-radius:4px}
-.form-textarea:focus{border-color:var(--navy)}
-.effect-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px}
-.effect-chip{padding:5px 11px;font-size:10px;font-weight:600;border:1.5px solid var(--border);color:var(--text-muted);cursor:pointer;transition:all .15s;letter-spacing:.2px}
-.effect-chip:hover{border-color:var(--navy)}
-.effect-chip.selected.green{background:var(--green);border-color:var(--green);color:var(--white)}
-.effect-chip.selected.orange{background:var(--orange);border-color:var(--orange);color:var(--white)}
-.effect-chip.selected.red{background:var(--red);border-color:var(--red);color:var(--white)}
-.effect-chip.selected.blue{background:var(--blue);border-color:var(--blue);color:var(--white)}
-.effect-chip.selected{background:var(--navy);border-color:var(--navy);color:var(--white)}
-
-.referral-options{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px}
-.referral-opt{padding:6px 11px;font-size:10px;font-weight:600;border:1.5px solid var(--border);color:var(--text-muted);cursor:pointer;transition:all .15s;letter-spacing:.2px}
-.referral-opt:hover{border-color:var(--navy)}
-.referral-opt.selected{background:var(--navy);color:var(--white);border-color:var(--navy)}
-
-.add-task-section{border-top:1px solid var(--border);padding-top:12px;margin-top:12px}
-.add-task-toggle{font-size:10px;font-weight:600;color:var(--navy);cursor:pointer;display:flex;align-items:center;gap:5px;background:none;border:none;padding:0;letter-spacing:.3px;text-transform:uppercase}
-.add-task-toggle:hover{color:var(--navy-mid)}
-.add-task-form{margin-top:9px;display:none}
-.add-task-form.open{display:block}
-
-.popup-save-btn{width:100%;padding:11px;background:var(--navy);color:var(--white);font-size:11px;font-weight:700;margin-top:14px;transition:background .15s;letter-spacing:.5px;text-transform:uppercase}
-.popup-save-btn:hover{background:var(--navy-mid)}
-.popup-save-btn:disabled{opacity:.5;cursor:not-allowed}
-
-/* ═══ CONFIRM MODAL ═══════════════════════════════════════════════════════════ */
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(10,20,30,.5);z-index:1100;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
-.modal-overlay.open{display:flex}
-.modal-box{background:var(--white);padding:24px;width:400px;max-width:95vw;border:1px solid var(--border);box-shadow:var(--shadow-lg);animation:popup-in .18s ease;border-radius:var(--r)}
-.modal-title{font-size:14px;font-weight:700;color:var(--navy);margin-bottom:10px;letter-spacing:.2px}
-.modal-text{font-size:12px;color:var(--text-muted);margin-bottom:16px;line-height:1.6}
-.modal-field{margin-bottom:10px}
-.modal-label{font-size:8px;font-weight:700;color:var(--text-muted);margin-bottom:4px;display:block;text-transform:uppercase;letter-spacing:.4px}
-.modal-input{width:100%;padding:8px 10px;border:1px solid var(--border);font-size:12px;background:var(--white)}
-.modal-input:focus{border-color:var(--navy)}
-.modal-footer{display:flex;gap:7px;justify-content:flex-end;margin-top:16px}
-.modal-btn{padding:8px 16px;font-size:11px;font-weight:600;letter-spacing:.3px;text-transform:uppercase;border:1px solid transparent}
-.modal-btn-primary{background:var(--navy);color:var(--white)}
-.modal-btn-primary:hover{background:var(--navy-mid)}
-.modal-btn-danger{background:var(--red);color:var(--white)}
-.modal-btn-danger:hover{background:#b91c1c}
-.modal-btn-secondary{background:var(--beige);color:var(--text-muted);border-color:var(--border)}
-.modal-btn-secondary:hover{background:var(--beige-dark)}
-
-/* ═══ TOAST ═══════════════════════════════════════════════════════════════════ */
-#toast-container{position:fixed;bottom:18px;right:18px;z-index:2000;display:flex;flex-direction:column;gap:6px}
-.toast{padding:10px 16px;font-size:11px;font-weight:600;box-shadow:var(--shadow-md);opacity:0;transform:translateY(10px);transition:all .22s;max-width:280px;letter-spacing:.2px;border:1px solid transparent;border-radius:var(--r)}
-.toast.show{opacity:1;transform:translateY(0)}
-.toast.success{background:var(--navy);color:var(--white);border-color:var(--navy-mid)}
-.toast.error{background:var(--red);color:var(--white)}
-.toast.warning{background:var(--accent-light);color:var(--navy);border-color:var(--accent)}
-
-/* ═══ MISC ════════════════════════════════════════════════════════════════════ */
-.section-header{display:flex;align-items:center;gap:10px;margin-bottom:12px}
-.section-header h2{font-size:11px;font-weight:700;color:var(--navy);flex:1;text-transform:uppercase;letter-spacing:.6px}
-.btn-primary{padding:7px 14px;background:var(--navy);color:var(--white);font-size:10px;font-weight:600;transition:background .15s;letter-spacing:.4px;text-transform:uppercase;border:1px solid transparent;border-radius:4px}
-.btn-primary:hover{background:var(--navy-mid)}
-.btn-secondary{padding:7px 14px;background:var(--beige);color:var(--navy);font-size:10px;font-weight:600;border:1px solid var(--border);letter-spacing:.3px;border-radius:4px}
-.btn-secondary:hover{background:var(--beige-dark)}
-.divider{height:1px;background:var(--border);margin:12px 0}
-.loading{text-align:center;padding:28px;color:var(--text-muted);font-size:11px}
-.spinner{display:inline-block;width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--navy);animation:spin .6s linear infinite;margin-right:6px;vertical-align:middle}
-@keyframes spin{to{transform:rotate(360deg)}}
-.tooltip-wrap{position:relative}
-.tooltip-wrap:hover .tooltip-box{display:block}
-.tooltip-box{display:none;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:var(--navy);color:var(--white);font-size:9px;font-weight:500;padding:5px 9px;white-space:nowrap;z-index:100;box-shadow:var(--shadow-md);letter-spacing:.2px}
-.tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:14px}
-.tab{padding:7px 14px;font-size:10px;font-weight:600;color:var(--text-muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s;letter-spacing:.3px;text-transform:uppercase}
-.tab.active{color:var(--navy);border-bottom-color:var(--navy)}
-
-/* ═══ ZADARMA WIDGET ══════════════════════════════════════════════════════════ */
-#zadarma-widget{
-  position:fixed;bottom:20px;right:20px;z-index:800;
-  display:none;
-}
-#zadarma-widget.visible{display:block}
-.widget-toggle{
-  width:48px;height:48px;background:var(--navy);color:var(--white);
-  display:flex;align-items:center;justify-content:center;
-  font-size:20px;cursor:pointer;border:2px solid var(--accent);
-  box-shadow:var(--shadow-lg);transition:all .15s;
-}
-.widget-toggle:hover{background:var(--navy-mid)}
-.widget-panel{
-  position:absolute;bottom:56px;right:0;
-  background:var(--white);border:1px solid var(--border);
-  width:220px;box-shadow:var(--shadow-lg);
-  display:none;
-}
-.widget-panel.open{display:block}
-.widget-header{padding:10px 12px;background:var(--navy);color:var(--white);font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;display:flex;align-items:center;justify-content:space-between}
-.widget-close{background:none;border:none;color:rgba(255,255,255,.6);font-size:14px;cursor:pointer;padding:0}
-.widget-close:hover{color:var(--white)}
-.widget-body{padding:12px}
-.widget-display{width:100%;padding:8px 10px;border:1px solid var(--border);font-size:16px;font-weight:600;text-align:center;color:var(--navy);background:var(--white);margin-bottom:8px}
-.widget-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:8px}
-.widget-key{padding:9px;font-size:14px;font-weight:600;color:var(--navy);border:1px solid var(--border);background:var(--beige);transition:all .15s;text-align:center}
-.widget-key:hover{background:var(--navy);color:var(--white)}
-.widget-key.del{background:var(--red-light);color:var(--red)}
-.widget-key.del:hover{background:var(--red);color:var(--white)}
-.widget-call{width:100%;padding:9px;background:var(--green);color:var(--white);font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase}
-.widget-call:hover{background:#15803d}
-
-/* ═══ CHAT POMOC ══════════════════════════════════════════════════════════════ */
-#chat-panel{
-  position:fixed;bottom:76px;right:20px;z-index:800;
-  width:300px;background:var(--white);border:1px solid var(--border);
-  box-shadow:var(--shadow-lg);display:none;flex-direction:column;
-  max-height:380px;
-}
-#chat-panel.open{display:flex}
-.chat-header{padding:10px 14px;background:var(--navy);color:var(--white);font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
-.chat-close{background:none;border:none;color:rgba(255,255,255,.6);font-size:14px;cursor:pointer;padding:0}
-.chat-close:hover{color:var(--white)}
-.chat-messages{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px}
-.chat-msg{padding:7px 10px;font-size:11px;max-width:85%;line-height:1.5}
-.chat-msg.sent{background:var(--navy);color:var(--white);align-self:flex-end}
-.chat-msg.received{background:var(--beige);color:var(--text);align-self:flex-start;border:1px solid var(--border)}
-.chat-msg-meta{font-size:8px;opacity:.6;margin-top:3px;text-align:right}
-.chat-input-row{display:flex;gap:6px;padding:10px;border-top:1px solid var(--border);flex-shrink:0}
-.chat-input{flex:1;padding:7px 9px;border:1px solid var(--border);font-size:11px;background:var(--white)}
-.chat-input:focus{border-color:var(--navy)}
-.chat-send{padding:7px 12px;background:var(--navy);color:var(--white);font-size:10px;font-weight:700;letter-spacing:.3px}
-.chat-send:hover{background:var(--navy-mid)}
-#chat-toggle{
-  position:fixed;bottom:20px;right:76px;z-index:800;
-  width:48px;height:48px;background:var(--accent-dark);color:var(--white);
-  display:none;align-items:center;justify-content:center;
-  font-size:18px;cursor:pointer;border:2px solid var(--accent-light);
-  box-shadow:var(--shadow-lg);transition:all .15s;
-}
-#chat-toggle.visible{display:flex}
-#chat-toggle:hover{background:var(--accent)}
-.chat-unread{position:absolute;top:-4px;right:-4px;background:var(--red);color:var(--white);font-size:8px;font-weight:700;padding:1px 4px;min-width:14px;text-align:center}
-
-/* ═══ AUDIO PLAYER ════════════════════════════════════════════════════════════ */
-.audio-player{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--beige);border:1px solid var(--border);margin-top:6px}
-.audio-player audio{flex:1;height:28px}
-.audio-duration{font-size:10px;color:var(--text-muted);font-weight:600;white-space:nowrap}
-
-/* ═══ CALL LOG TABS ═══════════════════════════════════════════════════════════ */
-.calls-filter-bar{display:flex;gap:6px;margin-bottom:12px;align-items:center;flex-wrap:wrap}
-.filter-chip{padding:6px 14px;font-size:12px;font-weight:600;border:1px solid var(--border);color:var(--text-muted);background:var(--white);cursor:pointer;transition:all .15s;letter-spacing:.1px;border-radius:20px}
-.filter-chip.active{background:var(--navy);color:var(--white);border-color:var(--navy)}
-
-/* ═══ SECTION DIVIDER ═════════════════════════════════════════════════════════ */
-.section-divider{font-size:9px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px;padding:10px 0 6px;border-bottom:1px solid var(--border);margin-bottom:10px;margin-top:16px}
-.section-divider:first-child{margin-top:0}
-/* Licznik czasu zgłoszenia */
-.lead-timer{font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;flex-shrink:0}
-.lead-timer.ok{background:#dcfce7;color:#15803d}
-.lead-timer.warn{background:#fef9c3;color:#a16207}
-.lead-timer.overdue{background:var(--red-light);color:var(--red)}
-@keyframes pulse-red{0%,100%{opacity:1}50%{opacity:.4}}
-.lead-timer.overdue.blink{animation:pulse-red 1.2s ease-in-out infinite}
-/* Tagi źródła */
-.source-tag{display:inline-block;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:.2px;text-transform:uppercase;margin-right:4px}
-.source-tag.smart-day{background:#e0f2fe;color:#0369a1}
-.source-tag.audyt-360{background:#f3e8ff;color:#7c3aed}
-.source-tag.other{background:var(--beige-dark);color:var(--text-muted)}
-/* Opis problemu w zgłoszeniu */
-.lead-problem{font-size:11px;color:var(--text-muted);margin-top:3px;font-style:italic}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Navigator Call — EndoEstetica</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
+  <div id="app">
+    <!-- Sidebar nawigacja -->
+    <nav class="sidebar" id="sidebar">
+      <div class="sidebar-logo">
+        <div class="logo-icon">NC</div>
+        <span class="logo-text">Navigator Call</span>
+      </div>
+      <ul class="sidebar-menu">
+        <li class="menu-item active" data-view="dashboard" onclick="switchView('dashboard')">
+          <span class="menu-icon">📊</span>
+          <span class="menu-label">Kokpit</span>
+        </li>
+        <li class="menu-item" data-view="calls" onclick="switchView('calls')">
+          <span class="menu-icon">📞</span>
+          <span class="menu-label">Połączenia</span>
+        </li>
+        <li class="menu-item" data-view="contacts" onclick="switchView('contacts')">
+          <span class="menu-icon">👥</span>
+          <span class="menu-label">Kontakty</span>
+        </li>
+        <li class="menu-item" data-view="stats" onclick="switchView('stats')">
+          <span class="menu-icon">📈</span>
+          <span class="menu-label">Statystyki</span>
+        </li>
+      </ul>
+      <div class="sidebar-status">
+        <div class="status-dot online" id="wsStatus"></div>
+        <span id="wsStatusText">Połączono</span>
+      </div>
+    </nav>
 
-<!-- ═══ LOGIN ════════════════════════════════════════════════════════════════ -->
-<div id="login-screen">
-  <div class="login-card">
-    <div class="login-logo">
-      <h1>Navigator Hub</h1>
-      <p>EndoEstetica — Panel Centrali</p>
-    </div>
+    <!-- Główna treść -->
+    <main class="main-content">
+      <!-- WIDOK: KOKPIT -->
+      <div id="view-dashboard" class="view active">
+        <div class="view-header">
+          <h1>Kokpit Recepcji</h1>
+          <div class="header-actions">
+            <span class="current-time" id="currentTime"></span>
+          </div>
+        </div>
 
-    <div class="login-section-label">Recepcja</div>
-    <div class="user-grid">
-      <button class="user-btn reception" onclick="selectUser('kasia')">Kasia</button>
-      <button class="user-btn reception" onclick="selectUser('asia')">Asia</button>
-      <button class="user-btn reception" onclick="selectUser('agata_r')">Agata</button>
-      <button class="user-btn reception" onclick="selectUser('agnieszka')">Agnieszka</button>
-      <button class="user-btn reception" onclick="selectUser('zastepstwo')">Zastępstwo</button>
-    </div>
+        <!-- Karty KPI -->
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-value" id="kpi-calls">—</div>
+            <div class="kpi-label">Połączenia dziś</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-value" id="kpi-new">—</div>
+            <div class="kpi-label">Nowe zgłoszenia</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-value" id="kpi-tasks">—</div>
+            <div class="kpi-label">Zadania na dziś</div>
+          </div>
+          <div class="kpi-card kpi-alert">
+            <div class="kpi-value" id="kpi-missed">—</div>
+            <div class="kpi-label">Nieodebrane</div>
+          </div>
+        </div>
 
-    <div class="login-section-label">Opiekun Pacjenta</div>
-    <div class="user-grid">
-      <button class="user-btn caretaker" onclick="selectUser('aneta')">Aneta</button>
-      <button class="user-btn caretaker" onclick="selectUser('agata_o')">Agata (OP)</button>
-    </div>
+        <!-- Zakładki główne -->
+        <div class="tabs-container">
+          <div class="tabs-header">
+            <button class="tab-btn active" data-tab="new-leads" onclick="switchTab('new-leads')">
+              Nowe zgłoszenia
+              <span class="tab-badge" id="badge-new">0</span>
+            </button>
+            <button class="tab-btn" data-tab="in-progress" onclick="switchTab('in-progress')">
+              W obsłudze
+              <span class="tab-badge" id="badge-progress">0</span>
+            </button>
+            <button class="tab-btn" data-tab="completed" onclick="switchTab('completed')">
+              Zakończone
+              <span class="tab-badge" id="badge-completed">0</span>
+            </button>
+          </div>
 
-    <div class="login-section-label">Administracja</div>
-    <div class="user-grid">
-      <button class="user-btn admin" onclick="selectUser('bartosz')">Bartosz</button>
-      <button class="user-btn admin" onclick="selectUser('sandra')">Sandra</button>
-      <button class="user-btn admin" onclick="selectUser('aneta_a')">Aneta (ADM)</button>
-      <button class="user-btn admin" onclick="selectUser('patrycja')">Patrycja</button>
-      <button class="user-btn admin" onclick="selectUser('sonia')">Sonia</button>
-    </div>
-
-    <div class="pin-section" id="pin-section" style="display:none">
-      <div class="pin-label">PIN dla: <span id="pin-user-name"></span></div>
-      <input class="pin-input" id="pin-input" type="password" maxlength="4" placeholder="Wpisz PIN..." autocomplete="off" inputmode="numeric" oninput="onPinInput(this.value)" onkeydown="if(event.key==='Enter')doLogin()" />
-      <div class="login-error" id="login-error"></div>
-    </div>
-  </div>
-</div>
-
-<!-- ═══ APP ══════════════════════════════════════════════════════════════════ -->
-<div id="app">
-  <!-- SIDEBAR -->
-  <div class="sidebar">
-    <div class="sidebar-header">
-      <div class="sidebar-brand">Navigator Hub</div>
-      <div class="sidebar-user" id="sb-user-name">—</div>
-      <div class="sidebar-role" id="sb-role-badge">—</div>
-    </div>
-
-    <!-- Recepcja nav -->
-    <div id="nav-reception" style="display:none">
-      <div class="nav-section">Recepcja</div>
-      <div class="nav-item active" onclick="showView('dashboard')" id="nav-dashboard">
-        <span class="nav-icon">⊞</span> Kokpit
-        <span class="nav-badge" id="badge-new" style="display:none">0</span>
-      </div>
-      <div class="nav-item" onclick="showView('calls')" id="nav-calls">
-        <span class="nav-icon">☎</span> Połączenia
-        <span class="nav-badge" id="badge-missed" style="display:none">0</span>
-      </div>
-      <div class="nav-item" onclick="showView('tasks')" id="nav-tasks">
-        <span class="nav-icon">✓</span> Zadania
-        <span class="nav-badge accent" id="badge-tasks" style="display:none">0</span>
-      </div>
-      <div class="nav-item" onclick="showView('contacts')" id="nav-contacts">
-        <span class="nav-icon">◎</span> Kontakty
-      </div>
-      <div class="nav-item" onclick="showView('dialer')" id="nav-dialer">
-        <span class="nav-icon">#</span> Klawiatura
-      </div>
-    </div>
-
-    <!-- Opiekun nav -->
-    <div id="nav-caretaker" style="display:none">
-      <div class="nav-section">Opiekun</div>
-      <div class="nav-item active" onclick="showView('ct-calls')" id="nav-ct-calls">
-        <span class="nav-icon">☎</span> Bieżące połączenia
-        <span class="nav-badge" id="badge-ct-open" style="display:none">0</span>
-      </div>
-      <div class="nav-item" onclick="showView('tasks')" id="nav-ct-tasks">
-        <span class="nav-icon">✓</span> Zadania
-        <span class="nav-badge accent" id="badge-ct-tasks" style="display:none">0</span>
-      </div>
-      <div class="nav-item" onclick="showView('contacts')" id="nav-ct-contacts">
-        <span class="nav-icon">◎</span> Kontakty
-      </div>
-      <div class="nav-item" onclick="showView('dialer')" id="nav-ct-dialer">
-        <span class="nav-icon">#</span> Klawiatura
-      </div>
-    </div>
-
-    <!-- Admin nav -->
-    <div id="nav-admin" style="display:none">
-      <div class="nav-section">Administracja</div>
-      <div class="nav-item active" onclick="showView('admin-stats')" id="nav-admin-stats">
-        <span class="nav-icon">◈</span> Statystyki KPI
-      </div>
-      <div class="nav-item" onclick="showView('tasks')" id="nav-admin-tasks">
-        <span class="nav-icon">✓</span> Zadania GHL
-      </div>
-      <div class="nav-item" onclick="showView('calls')" id="nav-admin-calls">
-        <span class="nav-icon">☎</span> Połączenia
-      </div>
-      <div class="nav-item" onclick="showView('contacts')" id="nav-admin-contacts">
-        <span class="nav-icon">◎</span> Kontakty
-      </div>
-      <div class="nav-item" onclick="showView('admin-edit')" id="nav-admin-edit">
-        <span class="nav-icon">✎</span> Edycja kontaktów
-      </div>
-    </div>
-
-    <div class="sidebar-footer">
-      <button class="logout-btn" onclick="logout()">Wyloguj</button>
-    </div>
-  </div>
-
-  <!-- MAIN -->
-  <div class="main">
-    <div class="topbar">
-      <div class="topbar-title" id="topbar-title">Kokpit</div>
-      <div class="topbar-date" id="topbar-date"></div>
-    </div>
-    <div class="content" id="content-area">
-      <div class="loading"><span class="spinner"></span>Ładowanie...</div>
-    </div>
-  </div>
-</div>
-
-<!-- ═══ CALL POPUP ════════════════════════════════════════════════════════════ -->
-<div id="call-popup-overlay">
-  <div class="call-popup">
-    <div class="popup-header ringing" id="popup-header">
-      <div class="popup-status-dot" id="popup-dot"></div>
-      <div class="popup-caller">
-        <div class="popup-caller-name" id="popup-name">Nieznany</div>
-        <div class="popup-caller-phone" id="popup-phone">—</div>
-      </div>
-      <div style="text-align:right">
-        <div class="popup-status-text" id="popup-status-text">DZWONI</div>
-        <div class="popup-timer" id="popup-timer">0:00</div>
-      </div>
-      <button class="popup-answer-btn" id="popup-answer-btn" onclick="answerIncomingCall()" style="display:none">&#9742; Odbierz</button>
-      <button class="popup-hangup-btn" id="popup-hangup-btn" onclick="hangupCall()" style="display:none">&#128308; Rozłącz</button>
-      <button class="popup-close-btn" onclick="tryClosePopup()">Zamknij</button>
-    </div>
-    <div class="popup-body">
-      <div class="popup-tabs">
-        <div class="popup-tab active" onclick="switchPopupTab('patient')">Karta pacjenta</div>
-        <div class="popup-tab" onclick="switchPopupTab('report')">Raport</div>
-        <div class="popup-tab" onclick="switchPopupTab('task')">+ Zadanie</div>
-      </div>
-
-      <!-- TAB: Karta pacjenta -->
-      <div class="popup-tab-content active" id="ptab-patient">
-        <div class="patient-card" id="patient-card-data">
-          <div class="patient-card-row">
-            <div class="patient-field">
-              <div class="patient-field-label">Imię i nazwisko</div>
-              <div class="patient-field-value" id="pc-name" onclick="editPatientField(this,'name')">—</div>
+          <!-- Zakładka: Nowe zgłoszenia -->
+          <div id="tab-new-leads" class="tab-content active">
+            <!-- Moduł Zadania na dziś -->
+            <div class="tasks-today-section" id="tasksTodaySection">
+              <div class="section-header">
+                <h3>📋 Zadania na dziś</h3>
+                <button class="btn-icon" onclick="loadTodayTasks()">↻</button>
+              </div>
+              <div id="tasksTodayList" class="tasks-list">
+                <div class="empty-state">Ładowanie zadań...</div>
+              </div>
             </div>
-            <div class="patient-field">
-              <div class="patient-field-label">Telefon</div>
-              <div class="patient-field-value" id="pc-phone" onclick="editPatientField(this,'phone')">—</div>
+
+            <!-- Filtry źródła (B4) -->
+            <div class="section-header">
+              <h3>Nowe zgłoszenia z GHL</h3>
+              <button class="btn-secondary" onclick="loadNewLeads()">↻ Odśwież</button>
             </div>
-            <div class="patient-field">
-              <div class="patient-field-label">Email</div>
-              <div class="patient-field-value" id="pc-email" onclick="editPatientField(this,'email')">—</div>
+            <div id="sourceFilters" class="source-filters">
+              <button class="source-filter-btn active" data-source="all" onclick="filterBySource('all')">Wszystkie</button>
             </div>
-            <div class="patient-field">
-              <div class="patient-field-label">Preferowany kanał</div>
-              <div class="patient-field-value" id="pc-channel" onclick="editPatientField(this,'channel')">—</div>
+
+            <!-- Lista nowych zgłoszeń -->
+            <div id="newLeadsList" class="leads-list">
+              <div class="loading-state">
+                <div class="spinner"></div>
+                <p>Ładowanie zgłoszeń...</p>
+              </div>
             </div>
           </div>
-          <div class="patient-card-row" style="margin-top:8px">
-            <div class="patient-field">
-              <div class="patient-field-label">Polecenie</div>
-              <div class="patient-field-value" id="pc-referral" onclick="editPatientField(this,'referral')">—</div>
+
+          <!-- Zakładka: W obsłudze -->
+          <div id="tab-in-progress" class="tab-content">
+            <div class="section-header">
+              <h3>Połączenia w trakcie i wymagające raportu</h3>
             </div>
-            <div class="patient-field">
-              <div class="patient-field-label">Osoba polecająca</div>
-              <div class="patient-field-value" id="pc-referral-person" onclick="editPatientField(this,'referral-person')">—</div>
-            </div>
-            <div class="patient-field">
-              <div class="patient-field-label">Program leczenia</div>
-              <div class="patient-field-value" id="pc-program" onclick="editPatientField(this,'program')">—</div>
+            <div id="inProgressList" class="leads-list">
+              <div class="empty-state">Brak aktywnych połączeń</div>
             </div>
           </div>
-          <div class="contact-tags" id="pc-tags" style="margin-top:8px"></div>
-        </div>
-        <div class="zglosza-box" id="zglosza-box" style="display:none">
-          <div class="zglosza-label">Z czym się zgłasza</div>
-          <div class="zglosza-value" id="zglosza-value">—</div>
-        </div>
-        <div id="pc-no-contact" class="empty" style="display:none">
-          <div class="empty-icon">◎</div>
-          <div class="empty-text">Kontakt nieznany w GHL</div>
+
+          <!-- Zakładka: Zakończone -->
+          <div id="tab-completed" class="tab-content">
+            <div class="section-header">
+              <h3>Historia połączeń</h3>
+              <button class="btn-secondary" onclick="loadCompletedCalls()">↻ Odśwież</button>
+            </div>
+            <div id="completedList" class="leads-list">
+              <div class="empty-state">Brak zakończonych połączeń</div>
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- TAB: Raport -->
-      <div class="popup-tab-content" id="ptab-report">
-        <div class="report-section">
-          <div class="report-section-title">Status rozmowy</div>
+      <!-- WIDOK: POŁĄCZENIA (C3/C4/C5) -->
+      <div id="view-calls" class="view">
+        <div class="view-header">
+          <h1>Wszystkie Połączenia</h1>
+          <div class="header-actions">
+            <button class="btn-secondary" onclick="loadCalls()">↻ Odśwież</button>
+          </div>
+        </div>
+        <!-- Filtry połączeń (C5) -->
+        <div class="call-filters">
+          <button class="call-filter-btn active" data-filter="all" onclick="filterCalls('all')">Wszystkie</button>
+          <button class="call-filter-btn" data-filter="inbound" onclick="filterCalls('inbound')">📞 Przychodzące</button>
+          <button class="call-filter-btn" data-filter="outbound" onclick="filterCalls('outbound')">📤 Wychodzące</button>
+          <button class="call-filter-btn" data-filter="missed" onclick="filterCalls('missed')">🔴 Nieodebrane</button>
+          <button class="call-filter-btn" data-filter="connected" onclick="filterCalls('connected')">🟢 Połączone</button>
+        </div>
+        <div id="callsFeed" class="calls-feed">
+          <div class="empty-state">Oczekiwanie na połączenia...</div>
+        </div>
+      </div>
+
+      <!-- WIDOK: KONTAKTY (E1/E3/E4/E5) -->
+      <div id="view-contacts" class="view">
+        <div class="view-header">
+          <h1>Kontakty</h1>
+          <div class="header-actions">
+            <input type="text" id="contactSearch" placeholder="Szukaj po nazwie, tel., email, tagu..." class="search-input" oninput="searchContacts(this.value)">
+            <button class="btn-primary" onclick="loadContacts()">↻ Odśwież</button>
+          </div>
+        </div>
+        <div id="contactsList" class="contacts-list">
+          <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Ładowanie kontaktów...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- WIDOK: STATYSTYKI (G) -->
+      <div id="view-stats" class="view">
+        <div class="stats-page-header">
+          <div class="stats-header-left">
+            <h1>Statystyki Połączeń</h1>
+            <p>Analiza połączeń przychodzących i wychodzących</p>
+          </div>
+          <div class="stats-filters">
+            <select class="filter-select" id="statsRange" onchange="loadAndRenderStats()">
+              <option value="today">Dziś</option>
+              <option value="week">Ten tydzień</option>
+              <option value="month" selected>Ten miesiąc</option>
+            </select>
+            <button class="btn-secondary" onclick="loadAndRenderStats()">↻ Odśwież</button>
+          </div>
+        </div>
+
+        <!-- Metryki główne (zachowane) -->
+        <div class="stats-grid">
+          <div class="stat-card navy">
+            <div class="stat-icon-wrap">📞</div>
+            <div class="stat-value" id="stat-total">1046</div>
+            <div class="stat-label">Suma połączeń</div>
+            <div class="stat-sub">(100%) • Ten miesiąc</div>
+          </div>
+          <div class="stat-card navy">
+            <div class="stat-icon-wrap">👤</div>
+            <div class="stat-value" id="stat-unique">607</div>
+            <div class="stat-label">Unikalni pacjenci</div>
+            <div class="stat-sub">różnych numerów</div>
+          </div>
+          <div class="stat-card navy">
+            <div class="stat-icon-wrap">✅</div>
+            <div class="stat-value" id="stat-answered">74%</div>
+            <div class="stat-label">% Odebranych</div>
+            <div class="stat-sub">776 połączeń</div>
+          </div>
+          <div class="stat-card navy highlight">
+            <div class="stat-icon-wrap">🔄</div>
+            <div class="stat-value" id="stat-callback">90%</div>
+            <div class="stat-label">Oddzwanialność</div>
+            <div class="stat-sub">cel: 90%+</div>
+          </div>
+        </div>
+
+        <!-- Wykresy -->
+        <div class="charts-grid">
+          <div class="chart-card">
+            <h3>Połączenia przychodzące</h3>
+            <canvas id="callsDonutChart" width="300" height="300"></canvas>
+            <div class="chart-legend" id="donutLegend"></div>
+          </div>
+          <div class="chart-card">
+            <h3>Oddzwanialność</h3>
+            <canvas id="callbackGaugeChart" width="300" height="200"></canvas>
+            <div class="gauge-value" id="gaugeValue">90%</div>
+          </div>
+          <div class="chart-card wide">
+            <h3>Rozkład połączeń w czasie</h3>
+            <canvas id="callsBarChart" width="600" height="200"></canvas>
+          </div>
+        </div>
+
+        <!-- Statystyki dynamiczne (G — admin) -->
+        <div id="statsContent" class="stats-dynamic-section">
+          <div class="loading-state"><div class="spinner"></div><p>Ładowanie statystyk...</p></div>
+        </div>
+
+        <!-- Tabela szczegółowa (zachowana) -->
+        <div class="stats-detail-card">
+          <h3>Szczegółowe statystyki</h3>
+          <table class="stats-table">
+            <thead>
+              <tr><th>Metryka</th><th>Wartość</th><th>%</th><th>Trend</th></tr>
+            </thead>
+            <tbody id="statsTableBody">
+              <tr><td>Odebrane</td><td>776</td><td>74.19%</td><td class="trend-up">↑</td></tr>
+              <tr><td>Nieodebrane</td><td>118</td><td>11.28%</td><td class="trend-down">↓</td></tr>
+              <tr><td>Rozłączenia na zapowiedzi (godz. pracy)</td><td>129</td><td>12.33%</td><td class="trend-neutral">→</td></tr>
+              <tr><td>Rozłączenia na zapowiedzi (poza godz.)</td><td>23</td><td>2.2%</td><td class="trend-neutral">→</td></tr>
+              <tr><td>Zgłoszenia do oddzwonienia</td><td>129</td><td>—</td><td class="trend-up">↑</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ==================== POP-UP: AKTYWNE POŁĄCZENIE ==================== -->
+  <div id="callPopup" class="call-popup hidden">
+    <div class="popup-overlay" onclick="closeCallPopup()"></div>
+    <div class="popup-content">
+      <div class="popup-header">
+        <div class="call-status-indicator" id="popupCallStatus">
+          <span class="pulse-dot"></span>
+          <span id="popupStatusText">Połączenie przychodzące</span>
+        </div>
+        <div class="popup-header-right">
+          <span class="call-tag hidden" id="popupCallTag"></span>
+          <div class="call-timer" id="callTimer">00:00</div>
+          <!-- Przyciski Odbierz / Rozłącz (C6) -->
+          <button class="btn-answer" id="popupAnswerBtn" onclick="answerCall()" style="display:none">
+            📞 Odbierz
+          </button>
+          <button class="btn-hangup" id="popupHangupBtn" onclick="hangupCall()">
+            🔴 Rozłącz
+          </button>
+          <button class="popup-close" onclick="closeCallPopup()">✕</button>
+        </div>
+      </div>
+
+      <!-- Dane pacjenta -->
+      <div class="popup-patient-info">
+        <div class="patient-avatar" id="popupAvatar">P</div>
+        <div class="patient-details">
+          <h2 id="popupPatientName">Pacjent</h2>
+          <p id="popupPatientPhone">+48 000 000 000</p>
+          <div id="popupZCzymSieZglasza" class="zglosza-info hidden">
+            <span class="zglosza-label">Z czym się zgłasza:</span>
+            <span class="zglosza-value" id="popupZglosza">—</span>
+          </div>
+        </div>
+        <div class="popup-actions-top">
+          <button class="btn-call-action" onclick="initiateCall(currentContact?.phone, currentContact?.name, currentContact?.id)" title="Zadzwoń">
+            📞 Zadzwoń
+          </button>
+          <button class="btn-edit-request" onclick="requestEditForCurrentContact()" title="Prośba o edycję">
+            ✏️ Prośba o edycję
+          </button>
+        </div>
+      </div>
+
+      <!-- Formularz raportu -->
+      <div class="popup-report">
+        <h3>Raport z rozmowy</h3>
+
+        <!-- Wybór statusu — 2x2 kafelki (C7) -->
+        <div class="status-selector">
+          <label>Status pacjenta:</label>
           <div class="status-grid-2x2">
-            <div class="status-tile nowy" onclick="selectStatus('nowy')"><div class="status-tile-icon">👤</div><div class="status-tile-label">Nowy Pacjent</div></div>
-            <div class="status-tile staly" onclick="selectStatus('staly')"><div class="status-tile-icon">★</div><div class="status-tile-label">Stały Pacjent</div></div>
-            <div class="status-tile wizyta" onclick="selectStatus('wizyta')"><div class="status-tile-icon">📅</div><div class="status-tile-label">Wizyta Bieżąca</div></div>
-            <div class="status-tile spam" onclick="selectStatus('spam')"><div class="status-tile-icon">✕</div><div class="status-tile-label">Nie Pacjent</div></div>
+            <button class="status-tile" data-status="NOWY_PACJENT" onclick="selectStatus('NOWY_PACJENT')">
+              <span class="status-tile-icon">🆕</span>
+              <span class="status-tile-label">NOWY PACJENT</span>
+            </button>
+            <button class="status-tile" data-status="STALY_PACJENT" onclick="selectStatus('STALY_PACJENT')">
+              <span class="status-tile-icon">👤</span>
+              <span class="status-tile-label">STAŁY PACJENT</span>
+            </button>
+            <button class="status-tile" data-status="WIZYTA_BIEZACA" onclick="selectStatus('WIZYTA_BIEZACA')">
+              <span class="status-tile-icon">📅</span>
+              <span class="status-tile-label">WIZYTA BIEŻĄCA</span>
+            </button>
+            <button class="status-tile" data-status="SPAM" onclick="selectStatus('SPAM')">
+              <span class="status-tile-icon">🚫</span>
+              <span class="status-tile-label">SPAM</span>
+            </button>
           </div>
         </div>
 
-        <!-- NOWY PACJENT -->
-        <div class="report-subform" id="form-nowy" style="display:none">
-          <div class="form-row">
-            <div class="form-field">
-              <label class="form-label">Program leczenia</label>
-              <select class="form-select" id="f-program">
-                <option value="">— wybierz —</option>
-                <option>TFI™ — Time For Implants</option>
-                <option>DSD — Digital Smile Design</option>
-                <option>Ortodoncja</option>
-                <option>Protetyka</option>
-                <option>Inne</option>
-              </select>
-            </div>
-            <div class="form-field">
-              <label class="form-label">Preferowany kanał</label>
-              <select class="form-select" id="f-channel">
-                <option value="">— wybierz —</option>
-                <option>Telefon</option>
-                <option>SMS</option>
-                <option>WhatsApp</option>
-                <option>Email</option>
-              </select>
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-field" style="flex:2">
-              <label class="form-label">Polecenie</label>
-              <div class="referral-options">
-                <div class="referral-opt" onclick="selectReferral('nie')">NIE</div>
-                <div class="referral-opt" onclick="selectReferral('lekarz')">TAK — Lekarz</div>
-                <div class="referral-opt" onclick="selectReferral('znajomy')">TAK — Znajomy/Rodzina</div>
-              </div>
-            </div>
-          </div>
-          <div class="form-row" id="f-referral-person-row" style="display:none">
-            <div class="form-field">
-              <label class="form-label">Dane osoby polecającej</label>
-              <input type="text" class="form-input" id="f-referral-person" placeholder="Imię, nazwisko lub nazwa">
-            </div>
-          </div>
-          <div class="divider"></div>
-          <div class="report-section-title">Efekt rozmowy</div>
-          <div class="effect-chips">
-            <div class="effect-chip green" onclick="selectEffect('umowil')">Umówił się</div>
-            <div class="effect-chip orange" onclick="selectEffect('followup')">Kolejny kontakt</div>
-            <div class="effect-chip red" onclick="selectEffect('rezygnacja')">Rezygnacja</div>
-            <div class="effect-chip blue" onclick="selectEffect('niekwal')">Nie kwalifikuje się</div>
-          </div>
-          <div id="f-umowil-row" style="display:none;margin-top:9px">
-            <label class="form-label">Data W0 (termin wizyty)</label>
-            <input type="datetime-local" class="form-input" id="f-w0-date">
-          </div>
-          <div id="f-followup-row" style="display:none;margin-top:9px">
-            <div class="form-row">
-              <div class="form-field">
-                <label class="form-label">Kiedy zadzwonić</label>
-                <input type="datetime-local" class="form-input" id="f-followup-date">
-              </div>
-              <div class="form-field">
-                <label class="form-label">Notatka</label>
-                <input type="text" class="form-input" id="f-followup-note" placeholder="Opcjonalnie">
-              </div>
-            </div>
-          </div>
-          <div id="f-rezygnacja-row" style="display:none;margin-top:9px">
-            <label class="form-label">Powód rezygnacji</label>
-            <input type="text" class="form-input" id="f-rezygnacja-reason" placeholder="Podaj powód">
-          </div>
-          <div id="f-niekwal-row" style="display:none;margin-top:9px">
-            <label class="form-label">Powód niekwalifikacji</label>
-            <input type="text" class="form-input" id="f-niekwal-reason" placeholder="Podaj powód">
-          </div>
-        </div>
-
-        <!-- STAŁY PACJENT -->
-        <div class="report-subform" id="form-staly" style="display:none">
-          <div class="form-row">
-            <div class="form-field">
-              <label class="form-label">Opis rozmowy</label>
-              <textarea class="form-textarea" id="f-staly-notes" placeholder="Treść rozmowy — zostanie uzupełniona przez AI..."></textarea>
-            </div>
-          </div>
-          <div class="divider"></div>
-          <div class="report-section-title">Efekt rozmowy</div>
-          <div class="effect-chips">
-            <div class="effect-chip green" onclick="selectEffect('umowil')">Umówił się</div>
-            <div class="effect-chip orange" onclick="selectEffect('followup')">Kolejny kontakt</div>
-            <div class="effect-chip red" onclick="selectEffect('rezygnacja')">Rezygnacja</div>
-            <div class="effect-chip blue" onclick="selectEffect('niekwal')">Nie kwalifikuje się</div>
-          </div>
-          <div id="f-staly-umowil-row" style="display:none;margin-top:9px">
-            <label class="form-label">Data W0 (termin wizyty)</label>
-            <input type="datetime-local" class="form-input" id="f-staly-w0-date">
-          </div>
-          <div id="f-staly-followup-row" style="display:none;margin-top:9px">
-            <div class="form-row">
-              <div class="form-field">
-                <label class="form-label">Kiedy zadzwonić</label>
-                <input type="datetime-local" class="form-input" id="f-staly-followup-date">
-              </div>
-              <div class="form-field">
-                <label class="form-label">Notatka</label>
-                <input type="text" class="form-input" id="f-staly-followup-note" placeholder="Opcjonalnie">
-              </div>
-            </div>
-          </div>
-          <div id="f-staly-rezygnacja-row" style="display:none;margin-top:9px">
-            <label class="form-label">Powód rezygnacji</label>
-            <input type="text" class="form-input" id="f-staly-rezygnacja-reason" placeholder="Podaj powód">
-          </div>
-          <div id="f-staly-niekwal-row" style="display:none;margin-top:9px">
-            <label class="form-label">Powód niekwalifikacji</label>
-            <input type="text" class="form-input" id="f-staly-niekwal-reason" placeholder="Podaj powód">
-          </div>
-        </div>
-
-        <!-- WIZYTA BIEŻĄCA -->
-        <div class="report-subform" id="form-wizyta" style="display:none">
-          <div class="report-section-title">Akcja</div>
-          <div class="effect-chips">
-            <div class="effect-chip green" onclick="selectVisitAction('potwierdzenie')">Potwierdzenie</div>
-            <div class="effect-chip orange" onclick="selectVisitAction('zmiana')">Zmiana terminu</div>
-            <div class="effect-chip red" onclick="selectVisitAction('odwolanie')">Odwołanie</div>
-            <div class="effect-chip" onclick="selectVisitAction('inne')">Inne</div>
-          </div>
-          <div id="f-zmiana-row" style="display:none;margin-top:9px">
-            <div class="form-row">
-              <div class="form-field">
-                <label class="form-label">Powód zmiany</label>
-                <input type="text" class="form-input" id="f-zmiana-reason" placeholder="Podaj powód">
-              </div>
-              <div class="form-field">
-                <label class="form-label">Nowy termin</label>
-                <input type="datetime-local" class="form-input" id="f-new-date">
-              </div>
-            </div>
-          </div>
-          <div id="f-odwolanie-row" style="display:none;margin-top:9px">
-            <label class="form-label">Powód odwołania</label>
-            <input type="text" class="form-input" id="f-odwolanie-reason" placeholder="Podaj powód">
-          </div>
-        </div>
-
-        <div class="form-row" style="margin-top:10px">
-          <div class="form-field">
-            <label class="form-label">Notatka ogólna</label>
-            <textarea class="form-textarea" id="f-notes" placeholder="Opcjonalna notatka do połączenia..." style="min-height:45px"></textarea>
-          </div>
-        </div>
-
-        <button class="popup-save-btn" onclick="saveReport()" id="popup-save-btn">Zapisz raport</button>
-      </div>
-
-      <!-- TAB: Zadanie -->
-      <div class="popup-tab-content" id="ptab-task">
-        <div class="report-section-title" style="margin-bottom:10px">Dodaj zadanie do połączenia</div>
-        <div class="form-row">
-          <div class="form-field">
-            <label class="form-label">Tytuł zadania</label>
-            <input type="text" class="form-input" id="f-task-title" placeholder="Np. Oddzwonienie, Wysyłka oferty...">
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-field">
-            <label class="form-label">Termin</label>
-            <input type="datetime-local" class="form-input" id="f-task-due">
-          </div>
-          <div class="form-field">
-            <label class="form-label">Przypisz do</label>
-            <select class="form-select" id="f-task-assignee">
-              <option value="">Pula recepcji</option>
-              <option value="aneta">Aneta (OP)</option>
-              <option value="agata_o">Agata (OP)</option>
-              <option value="sonia">Sonia (ADM)</option>
+        <!-- Formularz: NOWY PACJENT -->
+        <div id="form-NOWY_PACJENT" class="report-form hidden">
+          <div class="form-group">
+            <label>Program leczenia:</label>
+            <select class="form-select" id="programLeczenia">
+              <option value="">-- Wybierz program --</option>
+              <option value="DSD">DSD</option>
+              <option value="Licówki">Licówki</option>
+              <option value="Flow/Bondingi">Flow/Bondingi</option>
+              <option value="Wybielanie">Wybielanie</option>
+              <option value="Higiena">Higiena</option>
+              <option value="Implanty">Implanty</option>
+              <option value="POVER Endo">POVER Endo</option>
+              <option value="SMART DAY">SMART DAY</option>
             </select>
           </div>
-        </div>
-        <button class="popup-save-btn" onclick="addTaskFromPopup()" style="margin-top:8px">Dodaj zadanie</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ═══ CONFIRM CLOSE MODAL ══════════════════════════════════════════════════ -->
-<div class="modal-overlay" id="confirm-close-modal">
-  <div class="modal-box">
-    <div class="modal-title">Zamknąć bez raportu?</div>
-    <div class="modal-text">Raport nie został jeszcze uzupełniony. Czy na pewno chcesz zamknąć okno połączenia? Dane rozmowy mogą zostać utracone.</div>
-    <div class="modal-footer">
-      <button class="modal-btn modal-btn-secondary" onclick="closeModal('confirm-close-modal')">Wróć do raportu</button>
-      <button class="modal-btn modal-btn-danger" onclick="forceClosePopup()">Zamknij bez raportu</button>
-    </div>
-  </div>
-</div>
-
-<!-- ═══ EDIT TASK MODAL ═══════════════════════════════════════════════════════ -->
-<div class="modal-overlay" id="edit-task-modal">
-  <div class="modal-box">
-    <div class="modal-title">Edytuj zadanie</div>
-    <div class="modal-field">
-      <label class="modal-label">Tytuł</label>
-      <input type="text" class="modal-input" id="et-title">
-    </div>
-    <div class="modal-field">
-      <label class="modal-label">Termin</label>
-      <input type="datetime-local" class="modal-input" id="et-due">
-    </div>
-    <input type="hidden" id="et-task-id">
-    <input type="hidden" id="et-contact-id">
-    <div class="modal-footer">
-      <button class="modal-btn modal-btn-secondary" onclick="closeModal('edit-task-modal')">Anuluj</button>
-      <button class="modal-btn modal-btn-primary" onclick="saveTaskEdit()">Zapisz</button>
-    </div>
-  </div>
-</div>
-
-<!-- ═══ EDIT CONTACT MODAL ════════════════════════════════════════════════════ -->
-<div class="modal-overlay" id="edit-contact-modal">
-  <div class="modal-box">
-    <div class="modal-title">Edytuj kontakt</div>
-    <div class="modal-field">
-      <label class="modal-label">Imię</label>
-      <input type="text" class="modal-input" id="ec-first">
-    </div>
-    <div class="modal-field">
-      <label class="modal-label">Nazwisko</label>
-      <input type="text" class="modal-input" id="ec-last">
-    </div>
-    <div class="modal-field">
-      <label class="modal-label">Telefon</label>
-      <input type="text" class="modal-input" id="ec-phone">
-    </div>
-    <div class="modal-field">
-      <label class="modal-label">Email</label>
-      <input type="text" class="modal-input" id="ec-email">
-    </div>
-    <input type="hidden" id="ec-contact-id">
-    <div class="modal-footer">
-      <button class="modal-btn modal-btn-secondary" onclick="closeModal('edit-contact-modal')">Anuluj</button>
-      <button class="modal-btn modal-btn-primary" onclick="saveContactEdit()">Zapisz</button>
-    </div>
-  </div>
-</div>
-
-<!-- ═══ TOAST ════════════════════════════════════════════════════════════════ -->
-<div id="toast-container"></div>
-
-<!-- ═══ ZADARMA WIDGET ════════════════════════════════════════════════════════ -->
-<div id="zadarma-widget">
-  <div class="widget-panel" id="widget-panel">
-    <div class="widget-header">
-      Klawiatura
-      <button class="widget-close" onclick="toggleWidget()">✕</button>
-    </div>
-    <div class="widget-body">
-      <div style="display:flex;gap:4px;margin-bottom:8px">
-        <button class="widget-key" style="flex-shrink:0;padding:8px 10px;font-size:13px;font-weight:700" onclick="widgetAddPrefix('+48')">+48</button>
-        <input type="text" class="widget-display" id="widget-display" placeholder="Numer..." style="flex:1;margin-bottom:0" value="+48">
-        <button class="widget-key del" style="flex-shrink:0;padding:8px 10px" onclick="widgetDel()">&#9003;</button>
-      </div>
-      <div class="widget-grid">
-        <button class="widget-key" onclick="widgetKey('1')">1</button>
-        <button class="widget-key" onclick="widgetKey('2')">2</button>
-        <button class="widget-key" onclick="widgetKey('3')">3</button>
-        <button class="widget-key" onclick="widgetKey('4')">4</button>
-        <button class="widget-key" onclick="widgetKey('5')">5</button>
-        <button class="widget-key" onclick="widgetKey('6')">6</button>
-        <button class="widget-key" onclick="widgetKey('7')">7</button>
-        <button class="widget-key" onclick="widgetKey('8')">8</button>
-        <button class="widget-key" onclick="widgetKey('9')">9</button>
-        <button class="widget-key" onclick="widgetKey('+')">+</button>
-        <button class="widget-key" onclick="widgetKey('0')">0</button>
-        <button class="widget-key" onclick="widgetKey('#')">#</button>
-      </div>
-      <button class="widget-call" onclick="widgetCall()">&#9742; Zadzwoń</button>
-    </div>
-  </div>
-  <div class="widget-toggle" onclick="toggleWidget()">☎</div>
-</div>
-
-<!-- ═══ CHAT TOGGLE ═══════════════════════════════════════════════════════════ -->
-<div id="chat-toggle" onclick="toggleChat()" style="position:relative">
-  💬
-  <div class="chat-unread" id="chat-unread" style="display:none">0</div>
-</div>
-
-<!-- ═══ CHAT PANEL ════════════════════════════════════════════════════════════ -->
-<div id="chat-panel">
-  <div class="chat-header">
-    Pomoc — Sonia
-    <button class="chat-close" onclick="toggleChat()">✕</button>
-  </div>
-  <div class="chat-messages" id="chat-messages">
-    <div class="chat-msg received">
-      Cześć! Tu Sonia. Napisz jeśli potrzebujesz pomocy.
-      <div class="chat-msg-meta">Sonia</div>
-    </div>
-  </div>
-  <div class="chat-input-row">
-    <input type="text" class="chat-input" id="chat-input" placeholder="Napisz wiadomość..." onkeydown="if(event.key==='Enter')sendChatMsg()">
-    <button class="chat-send" onclick="sendChatMsg()">Wyślij</button>
-  </div>
-</div>
-
-<script>
-// ═══════════════════════════════════════════════════════════════════════════════
-// KONFIGURACJA UŻYTKOWNIKÓW
-// ═══════════════════════════════════════════════════════════════════════════════
-const USERS = {
-  kasia:      { id:'kasia',     name:'Kasia',       role:'reception', ext:'101', pin:'1101', ghlId:'' },
-  asia:       { id:'asia',      name:'Asia',        role:'reception', ext:'102', pin:'1102', ghlId:'' },
-  agata_r:    { id:'agata_r',   name:'Agata',       role:'reception', ext:'103', pin:'1103', ghlId:'' },
-  agnieszka:  { id:'agnieszka', name:'Agnieszka',   role:'reception', ext:'104', pin:'1104', ghlId:'' },
-  zastepstwo: { id:'zastepstwo',name:'Zastępstwo',  role:'reception', ext:'105', pin:'1105', ghlId:'' },
-  aneta:      { id:'aneta',     name:'Aneta',       role:'caretaker', ext:'101', pin:'2201', ghlId:'' },
-  agata_o:    { id:'agata_o',   name:'Agata (OP)',  role:'caretaker', ext:'102', pin:'2202', ghlId:'' },
-  bartosz:    { id:'bartosz',   name:'Bartosz',     role:'admin',     ext:null,  pin:'3301', ghlId:'' },
-  sandra:     { id:'sandra',    name:'Sandra',      role:'admin',     ext:null,  pin:'3302', ghlId:'' },
-  aneta_a:    { id:'aneta_a',   name:'Aneta (ADM)', role:'admin',     ext:null,  pin:'3303', ghlId:'' },
-  patrycja:   { id:'patrycja',  name:'Patrycja',    role:'admin',     ext:null,  pin:'3304', ghlId:'' },
-  sonia:      { id:'sonia',     name:'Sonia',       role:'admin',     ext:null,  pin:'3305', ghlId:'MPfq6I0r42R3P50ZqJ3V' },
-};
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// STATE
-// ═══════════════════════════════════════════════════════════════════════════════
-let currentUser = null;
-let currentView = '';
-let pinBuffer = '';
-let selectedUserId = '';
-let ws = null;
-let wsReconnectTimer = null;
-
-// Popup state
-let activeCall = null;        // call currently ringing/answered
-let popupTimerInterval = null;
-let popupTimerSeconds = 0;
-let popupReportSaved = false;
-let selectedStatus = '';
-let selectedEffect = '';
-let selectedVisitAction = '';
-let selectedReferral = '';
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// LOGIN
-// ═══════════════════════════════════════════════════════════════════════════════
-function selectUser(id) {
-  selectedUserId = id;
-  pinBuffer = '';
-  document.querySelectorAll('.user-btn').forEach(b => b.classList.remove('selected'));
-  event.target.classList.add('selected');
-  const pinSection = document.getElementById('pin-section');
-  pinSection.style.display = 'block';
-  document.getElementById('pin-user-name').textContent = USERS[id].name;
-  document.getElementById('login-error').textContent = '';
-  const pinInput = document.getElementById('pin-input');
-  if (pinInput) { pinInput.value = ''; setTimeout(() => pinInput.focus(), 50); }
-}
-function onPinInput(val) {
-  pinBuffer = val.replace(/\D/g,'').slice(0,4);
-  const pinInput = document.getElementById('pin-input');
-  if (pinInput) pinInput.value = pinBuffer;
-  if (pinBuffer.length === 4) setTimeout(doLogin, 120);
-}
-function pinKey(k) { /* legacy — not used */ }
-function pinDel() { /* legacy — not used */ }
-function updatePinDots() { /* legacy — not used */ }
-function doLogin() {
-  const u = USERS[selectedUserId];
-  if (!u) return;
-  if (pinBuffer !== u.pin) {
-    document.getElementById('login-error').textContent = 'Nieprawidłowy PIN';
-    pinBuffer = '';
-    const pinInput = document.getElementById('pin-input');
-    if (pinInput) { pinInput.value = ''; pinInput.style.borderColor='var(--red)'; setTimeout(()=>{ pinInput.style.borderColor=''; pinInput.focus(); }, 600); }
-    return;
-  }
-  currentUser = u;
-  document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('app').classList.add('visible');
-  document.getElementById('sb-user-name').textContent = u.name;
-  document.getElementById('sb-role-badge').textContent = { reception:'Recepcja', caretaker:'Opiekun', admin:'Administracja' }[u.role];
-  document.getElementById('sb-role-badge').className = 'sidebar-role ' + u.role;
-  showNavForRole(u.role);
-  // Widget Zadarma tylko dla recepcji i opiekunów
-  if (u.role !== 'admin') {
-    document.getElementById('zadarma-widget').classList.add('visible');
-  }
-  // Chat do Soni — widoczny dla WSZYSTKICH ról (recepcja, opiekun, admin)
-  const chatToggle = document.getElementById('chat-toggle');
-  if (chatToggle) {
-    chatToggle.style.display = 'flex';
-    chatToggle.classList.add('visible');
-  }
-  updateTopbarDate();
-  connectWS();
-  const defaultView = { reception:'dashboard', caretaker:'ct-calls', admin:'admin-stats' }[u.role];
-  showView(defaultView);
-}
-function logout() {
-  currentUser = null;
-  if (ws) ws.close();
-  document.getElementById('app').classList.remove('visible');
-  document.getElementById('login-screen').style.display = 'flex';
-  document.querySelectorAll('.user-btn').forEach(b => b.classList.remove('selected'));
-  document.getElementById('pin-section').style.display = 'none';
-  pinBuffer = '';
-  selectedUserId = '';
-  document.getElementById('zadarma-widget').classList.remove('visible');
-  document.getElementById('chat-toggle').classList.remove('visible');
-}
-function showNavForRole(role) {
-  document.getElementById('nav-reception').style.display = role === 'reception' ? 'block' : 'none';
-  document.getElementById('nav-caretaker').style.display = role === 'caretaker' ? 'block' : 'none';
-  document.getElementById('nav-admin').style.display = role === 'admin' ? 'block' : 'none';
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// TOPBAR DATE
-// ═══════════════════════════════════════════════════════════════════════════════
-function updateTopbarDate() {
-  const now = new Date();
-  const opts = { weekday:'long', year:'numeric', month:'long', day:'numeric' };
-  document.getElementById('topbar-date').textContent = now.toLocaleDateString('pl-PL', opts);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// NAVIGATION
-// ═══════════════════════════════════════════════════════════════════════════════
-const VIEW_TITLES = {
-  dashboard: 'Kokpit', calls: 'Połączenia', tasks: 'Zadania',
-  contacts: 'Kontakty', dialer: 'Klawiatura', 'ct-calls': 'Bieżące połączenia',
-  'admin-stats': 'Statystyki KPI', 'admin-edit': 'Edycja kontaktów',
-};
-function showView(view) {
-  currentView = view;
-  document.getElementById('topbar-title').textContent = VIEW_TITLES[view] || view;
-  // Update active nav
-  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-  const navId = 'nav-' + view.replace('admin-', 'admin-').replace('ct-', 'ct-');
-  const navEl = document.getElementById(navId);
-  if (navEl) navEl.classList.add('active');
-  // Render view
-  const area = document.getElementById('content-area');
-  area.innerHTML = '<div class="loading"><span class="spinner"></span>Ładowanie...</div>';
-  switch(view) {
-    case 'dashboard': renderDashboard(); break;
-    case 'calls': renderCalls(); break;
-    case 'tasks': renderTasks(); break;
-    case 'contacts': renderContacts(); break;
-    case 'dialer': renderDialer(); break;
-    case 'ct-calls': renderCtCalls(); break;
-    case 'admin-stats': renderAdminStats(); break;
-    case 'admin-edit': renderAdminEdit(); break;
-    default: area.innerHTML = '<div class="empty"><div class="empty-icon">◎</div><div class="empty-text">Widok w budowie</div></div>';
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// WEBSOCKET
-// ═══════════════════════════════════════════════════════════════════════════════
-let pollInterval = null;
-function startPolling() {
-  if (pollInterval) clearInterval(pollInterval);
-  pollInterval = setInterval(() => {
-    // Polling fallback — odświeża aktywny widok co 30s niezależnie od WebSocket
-    if (currentView === 'calls') renderCalls();
-    if (currentView === 'dashboard') renderDashboard();
-    if (currentView === 'ct-calls') renderCtCalls();
-  }, 30000);
-}
-function connectWS() {
-  if (ws) ws.close();
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}`);
-  ws.onopen = () => {
-    console.log('[WS] Connected');
-    clearTimeout(wsReconnectTimer);
-    startPolling(); // Uruchom polling jako fallback
-  };
-  ws.onmessage = (e) => {
-    try { handleWSMessage(JSON.parse(e.data)); } catch(err) { console.error('[WS] Parse error', err); }
-  };
-  ws.onclose = () => {
-    console.log('[WS] Disconnected, reconnecting in 3s...');
-    wsReconnectTimer = setTimeout(connectWS, 3000);
-    // Przy braku WS — polling co 10s
-    if (pollInterval) clearInterval(pollInterval);
-    pollInterval = setInterval(() => {
-      if (currentView === 'calls') renderCalls();
-      if (currentView === 'dashboard') renderDashboard();
-      if (currentView === 'ct-calls') renderCtCalls();
-    }, 10000);
-  };
-  ws.onerror = (err) => {
-    console.warn('[WS] Error:', err);
-  };
-}
-function handleWSMessage(msg) {
-  console.log('[WS]', msg.type);
-  switch(msg.type) {
-    case 'INIT':
-      // Filter out stale calls (older than 8h with ringing status)
-      const validCalls = (msg.calls || []).filter(c => {
-        if (c.status === 'ringing') {
-          const age = Date.now() - new Date(c.created_at).getTime();
-          return age < 8 * 3600 * 1000;
-        }
-        return c.status === 'answered'; // Only show active calls
-      });
-      if (validCalls.length > 0 && currentUser && currentUser.role !== 'admin') {
-        openCallPopup(validCalls[0]);
-      }
-      updateBadges(msg.calls || []);
-      break;
-    case 'CALL_RINGING':
-      if (currentUser && currentUser.role !== 'admin') {
-        openCallPopup(msg.call);
-      }
-      updateBadges([msg.call]);
-      break;
-    case 'CALL_ANSWERED':
-      if (activeCall && activeCall.call_id === msg.callId) {
-        activeCall._wasAnswered = true;
-        setPopupStatus('answered');
-        startPopupTimer();
-      }
-      if (currentView === 'calls') renderCalls();
-      if (currentView === 'ct-calls') renderCtCalls();
-      break;
-    case 'CALL_ENDED':
-      if (activeCall && activeCall.call_id === msg.callId) {
-        const wasAnswered = activeCall._wasAnswered;
-        const direction = activeCall.direction || 'inbound';
-        setPopupStatus('ended');
-        stopPopupTimer();
-        // Auto-close if call was never answered (missed)
-        if (!wasAnswered) {
-          // Add tag to call in local state
-          const tagLabel = direction === 'outbound' ? 'Nieskuteczne' : 'Nieodebrane';
-          const tagClass = direction === 'outbound' ? 'warning' : 'missed';
-          activeCall._autoTag = { label: tagLabel, cls: tagClass };
-          setTimeout(() => {
-            forceClosePopup();
-            if (currentView === 'calls') renderCalls();
-            if (currentView === 'dashboard') renderDashboard();
-          }, 800);
-        }
-        // If answered — keep popup open for report
-      }
-      updateBadges([]);
-      if (currentView === 'calls') renderCalls();
-      if (currentView === 'dashboard') renderDashboard();
-      break;
-    case 'CALL_RECORDING_READY':
-      if (currentView === 'calls') renderCalls();
-      break;
-    case 'CHAT_MESSAGE':
-      receiveChatMsg(msg);
-      break;
-  }
-}
-function updateBadges(calls) {
-  const missed = calls.filter(c => c.status === 'no-answer' || c.status === 'missed').length;
-  const open = calls.filter(c => c.status === 'ringing' || c.status === 'answered').length;
-  const setBadge = (id, val) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.textContent = val;
-    el.style.display = val > 0 ? 'inline' : 'none';
-  };
-  setBadge('badge-missed', missed);
-  setBadge('badge-ct-open', open);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// CALL POPUP
-// ═══════════════════════════════════════════════════════════════════════════════
-function openCallPopup(call) {
-  activeCall = call;
-  popupReportSaved = false;
-  selectedStatus = '';
-  selectedEffect = '';
-  selectedVisitAction = '';
-  selectedReferral = '';
-  // Reset form
-  resetReportForm();
-  // Fill header
-  document.getElementById('popup-name').textContent = call.patient_name || 'Nieznany kontakt';
-  document.getElementById('popup-phone').textContent = call.caller_phone || call.called_phone || '—';
-  document.getElementById('pc-name').textContent = call.patient_name || '—';
-  document.getElementById('pc-phone').textContent = call.caller_phone || '—';
-  document.getElementById('pc-email').textContent = call.email || '—';
-  document.getElementById('pc-channel').textContent = call.preferowany_kanal || '—';
-  document.getElementById('pc-referral').textContent = call.typ_polecenia || '—';
-  document.getElementById('pc-referral-person').textContent = call.dane_osoby_polecajacej || '—';
-  document.getElementById('pc-program').textContent = call.program || '—';
-  // Tags
-  const tagsEl = document.getElementById('pc-tags');
-  tagsEl.innerHTML = '';
-  if (call.tags && call.tags.length) {
-    call.tags.forEach(t => {
-      const span = document.createElement('span');
-      span.className = 'contact-tag';
-      span.textContent = t;
-      tagsEl.appendChild(span);
-    });
-  }
-  // Z czym się zgłasza — only for pipeline contacts
-  const zglosza = call.z_czym_sie_zglasza;
-  if (zglosza && call.in_pipeline) {
-    document.getElementById('zglosza-box').style.display = 'block';
-    document.getElementById('zglosza-value').textContent = zglosza;
-  } else {
-    document.getElementById('zglosza-box').style.display = 'none';
-  }
-  // No contact
-  document.getElementById('pc-no-contact').style.display = call.ghl_contact_id ? 'none' : 'block';
-  // Status
-  const status = call.status;
-  setPopupStatus(status);
-  if (status === 'answered') startPopupTimer();
-  // Hangup button — only when active
-  document.getElementById('popup-hangup-btn').style.display = (status === 'ringing' || status === 'answered') ? 'inline-block' : 'none';
-  // Answer button — only for incoming ringing calls
-  const answerBtn = document.getElementById('popup-answer-btn');
-  if (answerBtn) answerBtn.style.display = (status === 'ringing' && call.direction === 'inbound') ? 'inline-flex' : 'none';
-  // Open overlay
-  document.getElementById('call-popup-overlay').classList.add('open');
-  switchPopupTab('patient');
-}
-function setPopupStatus(status) {
-  const header = document.getElementById('popup-header');
-  const dot = document.getElementById('popup-dot');
-  const statusText = document.getElementById('popup-status-text');
-  const timer = document.getElementById('popup-timer');
-  const hangupBtn = document.getElementById('popup-hangup-btn');
-  const answerBtn = document.getElementById('popup-answer-btn');
-  header.className = 'popup-header ' + (status === 'answered' ? 'answered' : status === 'ended' ? 'ended' : 'ringing');
-  dot.className = 'popup-status-dot ' + (status === 'answered' ? 'answered' : status === 'ended' ? 'ended' : '');
-  const labels = { ringing:'DZWONI', answered:'POŁĄCZONY', ended:'ZAKOŃCZONE' };
-  statusText.textContent = labels[status] || status.toUpperCase();
-  if (status === 'ended') {
-    timer.classList.add('ended');
-    hangupBtn.style.display = 'none';
-    if (answerBtn) answerBtn.style.display = 'none';
-  } else if (status === 'answered') {
-    timer.classList.remove('ended');
-    hangupBtn.style.display = 'inline-flex';
-    if (answerBtn) answerBtn.style.display = 'none'; // po odebraniu chowamy Odbierz
-  } else {
-    // ringing
-    timer.classList.remove('ended');
-    hangupBtn.style.display = 'inline-flex';
-    if (answerBtn) answerBtn.style.display = (activeCall?.direction === 'inbound') ? 'inline-flex' : 'none';
-  }
-  if (activeCall) activeCall.status = status;
-}
-function startPopupTimer() {
-  popupTimerSeconds = 0;
-  clearInterval(popupTimerInterval);
-  popupTimerInterval = setInterval(() => {
-    popupTimerSeconds++;
-    const m = Math.floor(popupTimerSeconds / 60);
-    const s = popupTimerSeconds % 60;
-    document.getElementById('popup-timer').textContent = m + ':' + String(s).padStart(2, '0');
-  }, 1000);
-}
-function stopPopupTimer() {
-  clearInterval(popupTimerInterval);
-}
-function switchPopupTab(tab) {
-  document.querySelectorAll('.popup-tab').forEach((el, i) => {
-    const tabs = ['patient', 'report', 'task'];
-    el.classList.toggle('active', tabs[i] === tab);
-  });
-  document.querySelectorAll('.popup-tab-content').forEach(el => el.classList.remove('active'));
-  document.getElementById('ptab-' + tab).classList.add('active');
-}
-function tryClosePopup() {
-  // If call is still active or report not saved, confirm
-  if (activeCall && (activeCall.status === 'ringing' || activeCall.status === 'answered')) {
-    showConfirmModal('confirm-close-modal');
-    return;
-  }
-  if (!popupReportSaved && selectedStatus === '') {
-    showConfirmModal('confirm-close-modal');
-    return;
-  }
-  forceClosePopup();
-}
-function forceClosePopup() {
-  closeModal('confirm-close-modal');
-  document.getElementById('call-popup-overlay').classList.remove('open');
-  stopPopupTimer();
-  activeCall = null;
-}
-async function hangupCall() {
-  if (!activeCall) return;
-  try {
-    await fetch('/api/call/hangup', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ callId: activeCall.call_id })
-    });
-  } catch(e) { console.error('[Hangup]', e); }
-}
-
-async function answerIncomingCall() {
-  if (!activeCall) return;
-  // Zadarma nie ma dedykowanego API do odbierania połączenia z poziomu aplikacji webowej
-  // (połączenie odbiera się fizycznie na telefonie/softphonie).
-  // Przycisk "Odbierz" pełni rolę potwierdzenia że rozmowa jest aktywna i uruchamia timer.
-  const btn = document.getElementById('popup-answer-btn');
-  if (btn) btn.style.display = 'none';
-  setPopupStatus('answered');
-  startPopupTimer();
-  showToast('Odbierz połączenie na telefonie', 'info');
-  // Opcjonalnie: zaktualizuj status w bazie
-  try {
-    await fetch('/api/call/answer', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ callId: activeCall.call_id })
-    });
-  } catch(e) { console.warn('[Answer]', e); }
-}
-
-// Zmiana 4: Edycja pola karty pacjenta
-function editPatientField(el, field) {
-  const current = el.textContent.trim();
-  if (current === '—') return editPatientFieldInput(el, field, '');
-  editPatientFieldInput(el, field, current);
-}
-function editPatientFieldInput(el, field, current) {
-  const input = document.createElement('input');
-  input.className = 'patient-field-edit';
-  input.value = current;
-  input.dataset.field = field;
-  el.replaceWith(input);
-  input.focus();
-  input.select();
-  const save = async () => {
-    const newVal = input.value.trim();
-    const span = document.createElement('span');
-    span.className = 'patient-field-value' + (newVal ? '' : ' empty');
-    span.textContent = newVal || '—';
-    span.setAttribute('onclick', `editPatientField(this,'${field}')`);
-    input.replaceWith(span);
-    if (!activeCall || !activeCall.ghl_contact_id) return;
-    try {
-      await fetch('/api/contacts/update', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ contactId: activeCall.ghl_contact_id, field, value: newVal })
-      });
-      showToast('Zapisano', 'success');
-    } catch(e) { showToast('Błąd zapisu', 'error'); }
-  };
-  input.addEventListener('blur', save);
-  input.addEventListener('keydown', e => { if(e.key==='Enter') input.blur(); if(e.key==='Escape') { input.value=current; input.blur(); } });
-}
-
-// Zmiana 1: Podgląd raportu przy kliknięciu w połączenie
-function openCallReport(callId) {
-  // Fetch call data and open popup in read-only mode
-  fetch('/api/calls')
-    .then(r => r.json())
-    .then(data => {
-      const call = (data.calls || []).find(c => c.call_id === callId || c.id === callId);
-      if (!call) { showToast('Nie znaleziono połączenia', 'error'); return; }
-      openCallPopup(call);
-      // If call has saved report, fill it in
-      if (call.report) {
-        const r = call.report;
-        if (r.status) {
-          const chip = document.querySelector(`.status-chip.${r.status}`);
-          if (chip) { selectedStatus = r.status; chip.classList.add('selected'); selectStatus(r.status); }
-        }
-        if (r.effect) {
-          const chip = document.querySelector(`.effect-chip[data-effect='${r.effect}']`);
-          if (chip) { selectedEffect = r.effect; chip.classList.add('selected'); }
-        }
-        if (r.notes) { const el = document.getElementById('f-notes'); if(el) el.value = r.notes; }
-        if (r.staly_notes) { const el = document.getElementById('f-staly-notes'); if(el) el.value = r.staly_notes; }
-      }
-      // Switch to report tab
-      switchPopupTab('report');
-    })
-    .catch(() => showToast('Błąd ładowania', 'error'));
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// REPORT FORM
-// ═══════════════════════════════════════════════════════════════════════════════
-function resetReportForm() {
-  document.querySelectorAll('.status-chip,.status-tile').forEach(c => c.classList.remove('selected'));
-  document.querySelectorAll('.effect-chip').forEach(c => c.classList.remove('selected'));
-  document.querySelectorAll('.referral-opt').forEach(c => c.classList.remove('selected'));
-  ['form-nowy','form-staly','form-wizyta'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.style.display = 'none';
-  });
-  const hideRows = ['f-umowil-row','f-followup-row','f-rezygnacja-row','f-niekwal-row',
-    'f-staly-umowil-row','f-staly-followup-row','f-staly-rezygnacja-row','f-staly-niekwal-row',
-    'f-zmiana-row','f-odwolanie-row','f-referral-person-row'];
-  hideRows.forEach(id => { const el = document.getElementById(id); if(el) el.style.display='none'; });
-  selectedStatus = '';
-  selectedEffect = '';
-  selectedVisitAction = '';
-  selectedReferral = '';
-}
-function selectStatus(s) {
-  selectedStatus = s;
-  document.querySelectorAll('.status-chip,.status-tile').forEach(c => c.classList.remove('selected'));
-  const tile = document.querySelector('.status-tile.' + s) || document.querySelector('.status-chip.' + s);
-  if (tile) tile.classList.add('selected');
-  ['form-nowy','form-staly','form-wizyta'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.style.display = 'none';
-  });
-  selectedEffect = '';
-  selectedVisitAction = '';
-  document.querySelectorAll('.effect-chip').forEach(c => c.classList.remove('selected'));
-  if (s === 'nowy') document.getElementById('form-nowy').style.display = 'block';
-  else if (s === 'staly') document.getElementById('form-staly').style.display = 'block';
-  else if (s === 'wizyta') document.getElementById('form-wizyta').style.display = 'block';
-}
-function selectEffect(e) {
-  selectedEffect = e;
-  document.querySelectorAll('#form-nowy .effect-chip, #form-staly .effect-chip').forEach(c => c.classList.remove('selected'));
-  event.target.classList.add('selected');
-  const prefix = selectedStatus === 'staly' ? 'f-staly-' : 'f-';
-  const rows = ['umowil-row','followup-row','rezygnacja-row','niekwal-row'];
-  rows.forEach(r => {
-    const el = document.getElementById(prefix + r) || document.getElementById('f-' + r);
-    if (el) el.style.display = 'none';
-  });
-  const show = { umowil: prefix+'umowil-row', followup: prefix+'followup-row',
-    rezygnacja: prefix+'rezygnacja-row', niekwal: prefix+'niekwal-row' };
-  const showId = show[e];
-  if (showId) {
-    const el = document.getElementById(showId) || document.getElementById('f-'+e+'-row');
-    if (el) el.style.display = 'block';
-  }
-}
-function selectVisitAction(a) {
-  selectedVisitAction = a;
-  document.querySelectorAll('#form-wizyta .effect-chip').forEach(c => c.classList.remove('selected'));
-  event.target.classList.add('selected');
-  document.getElementById('f-zmiana-row').style.display = a === 'zmiana' ? 'block' : 'none';
-  document.getElementById('f-odwolanie-row').style.display = a === 'odwolanie' ? 'block' : 'none';
-}
-function selectReferral(r) {
-  selectedReferral = r;
-  document.querySelectorAll('.referral-opt').forEach(c => c.classList.remove('selected'));
-  event.target.classList.add('selected');
-  document.getElementById('f-referral-person-row').style.display = (r === 'lekarz' || r === 'znajomy') ? 'block' : 'none';
-}
-async function saveReport() {
-  if (!selectedStatus) { showToast('Wybierz status rozmowy', 'warning'); return; }
-  const btn = document.getElementById('popup-save-btn');
-  btn.disabled = true;
-  btn.textContent = 'Zapisywanie...';
-  const body = {
-    callId: activeCall?.call_id || '',
-    contactId: activeCall?.ghl_contact_id || '',
-    phone: activeCall?.caller_phone || '',
-    status: selectedStatus,
-    effect: selectedEffect,
-    visitAction: selectedVisitAction,
-    referral: selectedReferral,
-    referralPerson: document.getElementById('f-referral-person')?.value || '',
-    program: document.getElementById('f-program')?.value || '',
-    channel: document.getElementById('f-channel')?.value || '',
-    w0Date: document.getElementById('f-w0-date')?.value || document.getElementById('f-staly-w0-date')?.value || '',
-    followupDate: document.getElementById('f-followup-date')?.value || document.getElementById('f-staly-followup-date')?.value || '',
-    followupNote: document.getElementById('f-followup-note')?.value || document.getElementById('f-staly-followup-note')?.value || '',
-    rezygnacjaReason: document.getElementById('f-rezygnacja-reason')?.value || document.getElementById('f-staly-rezygnacja-reason')?.value || '',
-    niekwalReason: document.getElementById('f-niekwal-reason')?.value || document.getElementById('f-staly-niekwal-reason')?.value || '',
-    visitChangeReason: document.getElementById('f-zmiana-reason')?.value || '',
-    visitNewDate: document.getElementById('f-new-date')?.value || '',
-    visitCancelReason: document.getElementById('f-odwolanie-reason')?.value || '',
-    notes: document.getElementById('f-notes')?.value || '',
-    stalyNotes: document.getElementById('f-staly-notes')?.value || '',
-    savedBy: currentUser?.name || '',
-  };
-  try {
-    const res = await fetch('/api/report/save', {
-      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
-    });
-    const data = await res.json();
-    if (data.success) {
-      popupReportSaved = true;
-      showToast('Raport zapisany', 'success');
-      setTimeout(() => forceClosePopup(), 600);
-    } else {
-      showToast('Błąd zapisu: ' + (data.error || ''), 'error');
-    }
-  } catch(e) {
-    showToast('Błąd połączenia', 'error');
-  }
-  btn.disabled = false;
-  btn.textContent = 'Zapisz raport';
-}
-async function addTaskFromPopup() {
-  const title = document.getElementById('f-task-title').value.trim();
-  if (!title) { showToast('Podaj tytuł zadania', 'warning'); return; }
-  const body = {
-    contactId: activeCall?.ghl_contact_id || '',
-    title,
-    dueDate: document.getElementById('f-task-due').value || '',
-    assignedTo: document.getElementById('f-task-assignee').value || '',
-    createdBy: currentUser?.name || '',
-  };
-  try {
-    const res = await fetch('/api/tasks/create', {
-      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast('Zadanie dodane', 'success');
-      document.getElementById('f-task-title').value = '';
-    } else {
-      showToast('Błąd: ' + (data.error || ''), 'error');
-    }
-  } catch(e) {
-    showToast('Błąd połączenia', 'error');
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// VIEWS
-// ═══════════════════════════════════════════════════════════════════════════════
-async function renderDashboard() {
-  const area = document.getElementById('content-area');
-  area.innerHTML = '<div class="loading"><span class="spinner"></span>Ładowanie...</div>';
-  try {
-    const [leadsRes, callsRes, tasksRes] = await Promise.all([
-      fetch('/api/leads/new').then(r => r.json()).catch(() => ({ leads:[] })),
-      fetch('/api/calls/open').then(r => r.json()).catch(() => ({ calls:[] })),
-      fetch('/api/tasks').then(r => r.json()).catch(() => ({ tasks:[], pool:[] })),
-    ]);
-    const leads = leadsRes.leads || [];
-    const calls = callsRes.calls || [];
-    const tasks = tasksRes.tasks || [];
-    const pool = tasksRes.pool || [];
-    const missed = calls.filter(c => c.status === 'no-answer' || c.status === 'missed');
-    const todayTasks = tasks.filter(t => {
-      if (!t.dueDate) return false;
-      const d = new Date(t.dueDate);
-      const today = new Date();
-      return d.toDateString() === today.toDateString();
-    });
-
-    // Oblicz KPI dla mini-panelu
-    const targetAnswerRate = 90; // cel odbieralnosci %
-    const totalCalls = calls.length || 1;
-    const answeredCalls = calls.filter(c => c.status === 'answered' || c.duration_seconds > 0).length;
-    const answerRate = Math.round((answeredCalls / totalCalls) * 100);
-    const toTarget = Math.max(0, targetAnswerRate - answerRate);
-    const notCalledBack = missed.filter(c => !c._calledBack).length;
-    const newPatients = leads.filter(l => l.isNew).length;
-
-    let html = `<div class="dashboard-layout">
-      <div class="dashboard-main">`;
-
-    // Nowe zgłoszenia
-    html += `<div class="section-divider">Nowe zgłoszenia (${leads.length})</div>`;
-    if (leads.length === 0) {
-      html += `<div class="empty"><div class="empty-icon">◎</div><div class="empty-text">Brak nowych zgłoszeń</div></div>`;
-    } else {
-      const now = Date.now();
-      leads.slice(0, 20).forEach(lead => {
-        const initials = (lead.name || '?').split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
-        // Licznik czasu od zgłoszenia
-        const createdMs = lead.createdAt ? new Date(lead.createdAt).getTime() : now;
-        const diffMin = Math.floor((now - createdMs) / 60000);
-        let timerClass = 'ok', timerLabel = '';
-        if (diffMin < 15) { timerClass = 'ok'; timerLabel = diffMin + ' min'; }
-        else if (diffMin < 120) { timerClass = 'warn'; timerLabel = diffMin + ' min'; }
-        else { timerClass = 'overdue blink'; timerLabel = Math.floor(diffMin/60) + 'h ' + (diffMin%60) + 'min'; }
-        // Tag źródła
-        const src = (lead.source || '').toLowerCase();
-        let sourceTag = '';
-        if (src.includes('smart')) sourceTag = '<span class="source-tag smart-day">Smart Day</span>';
-        else if (src.includes('audyt') || src.includes('360')) sourceTag = '<span class="source-tag audyt-360">Audyt 360</span>';
-        else if (lead.source) sourceTag = `<span class="source-tag other">${lead.source}</span>`;
-        // Wyciągnij telefon z różnych pól
-        const phone = lead.phone || lead.contactPhone || lead.caller_phone || '';
-        // Spróbuj wyciągnąć telefon z oppName jeśli wygląda jak numer
-        const phoneFromOpp = !phone && /[\d\+]{7,}/.test(lead.oppName) ? lead.oppName.match(/[\+\d][\d\s\-]{6,}/)?.[0]?.trim() : '';
-        const displayPhone = phone || phoneFromOpp || '';
-        html += `<div class="call-item">
-          <div class="call-avatar">${initials}</div>
-          <div class="call-info">
-            <div class="call-name">${lead.name || 'Nieznany'} ${sourceTag}</div>
-            <div class="call-sub">${displayPhone || (lead.email ? lead.email : '— brak telefonu')}</div>
-            ${lead.z_czym_sie_zglasza ? `<div class="lead-problem">„${lead.z_czym_sie_zglasza}”</div>` : ''}
-          </div>
-          <div class="call-actions">
-            <span class="lead-timer ${timerClass}">${timerLabel}</span>
-            ${displayPhone
-              ? `<button class="act-btn act-call" onclick="quickCall('${displayPhone.replace(/'/g,"\'")}')" title="${displayPhone}">&#9742; Zadzwoń</button>`
-              : `<button class="act-btn" style="background:#fef9c3;color:#a16207;border-color:#fde68a;cursor:default" title="Brak numeru w GHL">Brak tel.</button>`
-            }
-            ${currentUser?.role === 'admin' ? `<button class="act-btn" style="background:#fee2e2;color:#dc2626;border-color:#fca5a5" onclick="deleteLead('${lead.id}')">&#10005;</button>` : ''}
-          </div>
-        </div>`;
-      });
-    }
-
-    // Nieodebrane
-    html += `<div class="section-divider">Połączenia nieodebrane (${missed.length})</div>`;
-    if (missed.length === 0) {
-      html += `<div class="empty"><div class="empty-icon">✓</div><div class="empty-text">Brak nieodebranych</div></div>`;
-    } else {
-      missed.slice(0, 8).forEach(c => {
-        const initials = (c.patient_name || c.caller_phone || '?').slice(0,2).toUpperCase();
-        const time = c.created_at ? new Date(c.created_at).toLocaleTimeString('pl-PL', {hour:'2-digit',minute:'2-digit'}) : '';
-        const calledBack = c._calledBack ? '<span class="badge badge-answered" style="font-size:9px">ODDZWONIONO</span>' : '';
-        html += `<div class="call-item">
-          <div class="call-avatar" style="background:var(--red)">${initials}</div>
-          <div class="call-info">
-            <div class="call-name">${c.patient_name || c.caller_phone || 'Nieznany'}</div>
-            <div class="call-sub">${c.caller_phone || '—'} ${time ? '· ' + time : ''}</div>
-          </div>
-          <div class="call-actions">
-            ${calledBack}<span class="badge badge-missed">NIEODEBRANE</span>
-            ${c.caller_phone ? `<button class="act-btn act-call" onclick="quickCall('${c.caller_phone}')">&#9742; Oddzwoń</button>` : ''}
-          </div>
-        </div>`;
-      });
-    }
-
-    // Zadania na dziś
-    html += `<div class="section-divider">Zadania na dziś (${todayTasks.length})</div>`;
-    if (todayTasks.length === 0) {
-      html += `<div class="empty"><div class="empty-icon">✓</div><div class="empty-text">Brak zadań na dziś</div></div>`;
-    } else {
-      todayTasks.slice(0, 10).forEach(t => {
-        const typeClass = t.taskType === 'phone' ? 'task-type-phone' : t.taskType === 'followup' ? 'task-type-followup' : t.taskType === 'email' ? 'task-type-email' : 'task-type-other';
-        const typeLabel = t.taskType === 'phone' ? 'Telefon' : t.taskType === 'followup' ? 'Follow-up' : t.taskType === 'email' ? 'Email' : 'Inne';
-        const overdue = t.overdue ? ' overdue' : '';
-        const time = t.dueDate ? new Date(t.dueDate).toLocaleTimeString('pl-PL', {hour:'2-digit',minute:'2-digit'}) : '';
-        html += `<div class="task-item${overdue}">
-          <div class="task-check ${t.completed ? 'checked' : ''}" onclick="completeTask('${t.id}','${t.contactId}',this)">
-            ${t.completed ? '✓' : ''}
-          </div>
-          <div class="task-body">
-            <div class="task-title">
-              <span class="task-type-badge ${overdue ? 'task-type-overdue' : typeClass}">${overdue ? 'PRZETERMINOWANE' : typeLabel}</span>
-              ${t.title}
+          <div class="form-group">
+            <label>Wynik rozmowy:</label>
+            <div class="outcome-buttons">
+              <button class="outcome-btn" data-outcome="umowil_sie" onclick="selectOutcome('umowil_sie')">✅ Umówił się</button>
+              <button class="outcome-btn" data-outcome="prosi_kontakt" onclick="selectOutcome('prosi_kontakt')">📱 Prosi o kontakt</button>
+              <button class="outcome-btn" data-outcome="rezygnacja" onclick="selectOutcome('rezygnacja')">❌ Rezygnacja</button>
             </div>
-            <div class="task-meta">${t.contactName || '—'} ${t.contactPhone ? '· ' + t.contactPhone : ''} ${time ? '· ' + time : ''}</div>
           </div>
-          <div class="task-actions">
-            ${t.contactPhone ? `<button class="act-btn act-call" onclick="quickCall('${t.contactPhone}')">&#9742;</button>` : ''}
-            <button class="act-btn act-view" onclick="openEditTaskModal('${t.id}','${t.contactId}','${(t.title||'').replace(/'/g,'')}','${t.dueDate||''}')">&#9998;</button>
+          <div id="outcome-umowil_sie" class="outcome-fields hidden">
+            <div class="form-group">
+              <label>Data wizyty W0:</label>
+              <input type="datetime-local" id="dataW0" class="form-input">
+            </div>
           </div>
-        </div>`;
-      });
-    }
-
-    html += `</div>
-      <div class="dashboard-sidebar">
-        <div class="dash-kpi-card">
-          <div class="dash-kpi-title">Odbieralność dziś</div>
-          <div class="dash-kpi-big ${answerRate >= 90 ? 'green' : answerRate >= 70 ? 'orange' : 'red'}">${answerRate}%</div>
-          <div class="dash-kpi-sub">${toTarget > 0 ? `Brakuje <strong>${toTarget}%</strong> do celu 90%` : '<strong>Cel osiągnięty!</strong>'}</div>
-          <div class="dash-kpi-bar"><div class="dash-kpi-bar-fill" style="width:${Math.min(answerRate,100)}%;background:${answerRate>=90?'var(--green)':answerRate>=70?'var(--orange)':'var(--red)'}"></div></div>
-        </div>
-        <div class="dash-kpi-card">
-          <div class="dash-kpi-title">Do oddzwonienia</div>
-          <div class="dash-kpi-big ${notCalledBack > 0 ? 'red' : 'green'}">${notCalledBack}</div>
-          <div class="dash-kpi-sub">nieodebranych bez oddzwonienia</div>
-        </div>
-        <div class="dash-kpi-card">
-          <div class="dash-kpi-title">Zadania na dziś</div>
-          <div class="dash-kpi-big">${todayTasks.length}</div>
-          <div class="dash-kpi-sub">${todayTasks.filter(t=>t.completed).length} wykonanych z ${todayTasks.length}</div>
-        </div>
-        <div class="dash-kpi-card">
-          <div class="dash-kpi-title">Nowi pacjenci</div>
-          <div class="dash-kpi-big">${leads.length}</div>
-          <div class="dash-kpi-sub">w lejku Nowe Zgłoszenia</div>
-        </div>
-        ${pool.length > 0 ? `<div class="dash-kpi-card accent">
-          <div class="dash-kpi-title">Pula recepcji</div>
-          <div class="dash-kpi-big">${pool.length}</div>
-          <div class="dash-kpi-sub">zadań bez wykonawcy</div>
-        </div>` : ''}
-      </div>
-    </div>`;
-
-    area.innerHTML = html;
-  } catch(e) {
-    area.innerHTML = `<div class="empty"><div class="empty-text">Błąd ładowania: ${e.message}</div></div>`;
-  }
-}
-
-async function renderCalls() {
-  const area = document.getElementById('content-area');
-  area.innerHTML = '<div class="loading"><span class="spinner"></span>Ładowanie...</div>';
-  try {
-    // /api/calls zwraca WSZYSTKIE połączenia z 7 dni (niezależnie od topic_closed)
-    const res = await fetch('/api/calls').then(r => r.json()).catch(() => ({ calls:[] }));
-    const allCalls = (res.calls || []).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
-
-    let activeFilter = 'all';
-    const renderList = (filter) => {
-      activeFilter = filter;
-      let filtered = allCalls;
-      if (filter === 'missed') filtered = allCalls.filter(c => c.status === 'no-answer' || c.status === 'missed');
-      else if (filter === 'answered') filtered = allCalls.filter(c => c.status === 'answered' || c.duration_seconds > 0);
-      else if (filter === 'outbound') filtered = allCalls.filter(c => c.direction === 'outbound');
-
-      let html = `<div class="calls-filter-bar">
-        <div class="filter-chip ${filter==='all'?'active':''}" onclick="callsFilter('all')">Wszystkie (${allCalls.length})</div>
-        <div class="filter-chip ${filter==='missed'?'active':''}" onclick="callsFilter('missed')">Nieodebrane</div>
-        <div class="filter-chip ${filter==='answered'?'active':''}" onclick="callsFilter('answered')">Odebrane</div>
-        <div class="filter-chip ${filter==='outbound'?'active':''}" onclick="callsFilter('outbound')">Wychodzące</div>
-      </div>`;
-
-      if (filtered.length === 0) {
-        html += `<div class="empty"><div class="empty-icon">☎</div><div class="empty-text">Brak połączeń</div></div>`;
-      } else {
-        filtered.forEach(c => {
-          const initials = (c.patient_name || c.caller_phone || '?').slice(0,2).toUpperCase();
-          const time = c.created_at ? new Date(c.created_at).toLocaleString('pl-PL', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
-          const dur = c.duration_seconds > 0 ? Math.floor(c.duration_seconds/60) + 'm ' + (c.duration_seconds%60) + 's' : '';
-          let statusBadge = '';
-          if (c.status === 'answered' || c.duration_seconds > 0) statusBadge = '<span class="badge badge-answered">ODEBRANE</span>';
-          else if (c.status === 'no-answer' || c.status === 'missed') statusBadge = '<span class="badge badge-missed">NIEODEBRANE</span>';
-          else if (c.direction === 'outbound') statusBadge = '<span class="badge badge-outbound">WYCHODZĄCE</span>';
-          else statusBadge = '<span class="badge badge-ended">—</span>';
-
-          const hasRecording = c.recording_url;
-          const callId = c.call_id || c.id || '';
-          html += `<div class="call-item" onclick="openCallReport('${callId}')" style="cursor:pointer">
-            <div class="call-avatar" style="background:${c.status==='no-answer'?'var(--red)':c.direction==='outbound'?'var(--purple)':'var(--navy)'}">${initials}</div>
-            <div class="call-info">
-              <div class="call-name">${c.patient_name || c.caller_phone || 'Nieznany'}</div>
-              <div class="call-sub">${c.caller_phone || '—'} ${time ? '· ' + time : ''} ${dur ? '· ' + dur : ''}</div>
-              ${hasRecording ? `<div class="audio-player" onclick="event.stopPropagation()"><audio controls src="${c.recording_url}" preload="none" style="flex:1;height:30px"></audio><a href="${c.recording_url}" download target="_blank" style="font-size:10px;color:var(--navy);font-weight:600;white-space:nowrap;text-decoration:none;padding:4px 8px;border:1px solid var(--border);border-radius:4px">&#8681; Pobierz</a></div>` : (callId && !callId.startsWith('demo') ? `<button class="act-btn" style="font-size:9px;color:var(--text-muted)" onclick="event.stopPropagation();fetchRecording('${callId}',this)">&#9654; Nagranie</button>` : '')}
-            </div>
-            <div class="call-actions" onclick="event.stopPropagation()">
-              ${statusBadge}
-              ${c.caller_phone ? `<button class="act-btn act-call" onclick="event.stopPropagation();quickCall('${c.caller_phone}')">☎ Oddzwoń</button>` : ''}
-            </div>
-          </div>`;
-        });
-      }
-      document.getElementById('content-area').innerHTML = html;
-    };
-    window.callsFilter = renderList;
-    renderList('all');
-  } catch(e) {
-    area.innerHTML = `<div class="empty"><div class="empty-text">Błąd: ${e.message}</div></div>`;
-  }
-}
-
-async function renderTasks() {
-  const area = document.getElementById('content-area');
-  area.innerHTML = '<div class="loading"><span class="spinner"></span>Ładowanie...</div>';
-  try {
-    const res = await fetch('/api/tasks').then(r => r.json()).catch(() => ({ tasks:[], pool:[] }));
-    const tasks = res.tasks || [];
-    const pool = res.pool || [];
-    let activeTab = 'list';
-
-    const renderTab = (tab) => {
-      activeTab = tab;
-      let html = `<div class="tabs">
-        <div class="tab ${tab==='list'?'active':''}" onclick="tasksTab('list')">Lista</div>
-        <div class="tab ${tab==='cal'?'active':''}" onclick="tasksTab('cal')">Kalendarz</div>
-        <div class="tab ${tab==='mine'?'active':''}" onclick="tasksTab('mine')">Tylko moje</div>
-      </div>`;
-
-      if (tab === 'list' || tab === 'mine') {
-        const filtered = tab === 'mine' ? tasks.filter(t => t.assignedToName === currentUser?.name || t.assignedToId === currentUser?.ghlId) : tasks;
-        // Group by assignee
-        const groups = {};
-        filtered.forEach(t => {
-          const key = t.assignedToName || 'Nieprzypisane';
-          if (!groups[key]) groups[key] = [];
-          groups[key].push(t);
-        });
-        if (Object.keys(groups).length === 0) {
-          html += `<div class="empty"><div class="empty-icon">✓</div><div class="empty-text">Brak zadań</div></div>`;
-        } else {
-          Object.entries(groups).forEach(([name, gtasks]) => {
-            const done = gtasks.filter(t => t.completed).length;
-            html += `<div class="task-group-header">${name}<span class="task-group-progress">${done}/${gtasks.length}</span></div>`;
-            gtasks.forEach(t => {
-              const typeClass = t.taskType === 'phone' ? 'task-type-phone' : t.taskType === 'followup' ? 'task-type-followup' : t.taskType === 'email' ? 'task-type-email' : 'task-type-other';
-              const typeLabel = t.taskType === 'phone' ? 'Telefon' : t.taskType === 'followup' ? 'Follow-up' : t.taskType === 'email' ? 'Email' : 'Inne';
-              const overdue = t.overdue ? ' overdue' : '';
-              const time = t.dueDate ? new Date(t.dueDate).toLocaleString('pl-PL', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
-              html += `<div class="task-item${overdue}" title="${t.contactName||''} · ${t.contactPhone||''}">
-                <div class="task-check ${t.completed?'checked':''}" onclick="completeTask('${t.id}','${t.contactId}',this)">
-                  ${t.completed ? '✓' : ''}
-                </div>
-                <div class="task-body">
-                  <div class="task-title">
-                    <span class="task-type-badge ${overdue ? 'task-type-overdue' : typeClass}">${overdue ? 'PRZETERMINOWANE' : typeLabel}</span>
-                    ${t.title}
-                  </div>
-                  <div class="task-meta">${t.contactName||'—'} ${t.contactPhone ? '· '+t.contactPhone : ''} ${time ? '· '+time : ''}</div>
-                </div>
-                <div class="task-actions">
-                  ${t.contactPhone ? `<button class="act-btn act-call" onclick="quickCall('${t.contactPhone}')">☎</button>` : ''}
-                  <button class="act-btn act-view" onclick="openEditTaskModal('${t.id}','${t.contactId}','${(t.title||'').replace(/'/g,'')}','${t.dueDate||''}')">✎</button>
-                </div>
-              </div>`;
-            });
-          });
-        }
-        // Pool
-        if (pool.length > 0) {
-          html += `<div class="pool-section">
-            <div class="pool-header">Pula recepcji — ${pool.length} zadań oczekuje</div>`;
-          pool.forEach(t => {
-            const time = t.dueDate ? new Date(t.dueDate).toLocaleString('pl-PL', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
-            html += `<div class="task-item">
-              <div class="task-body">
-                <div class="task-title">${t.title}</div>
-                <div class="task-meta">${t.contactName||'—'} ${t.contactPhone ? '· '+t.contactPhone : ''} ${time ? '· '+time : ''}</div>
+          <div id="outcome-prosi_kontakt" class="outcome-fields hidden">
+            <div class="form-group">
+              <label>Kiedy oddzwonić:</label>
+              <div class="contact-time-buttons">
+                <button class="time-btn" onclick="setContactTime(1)">Jutro</button>
+                <button class="time-btn" onclick="setContactTime(2)">+2 dni</button>
+                <button class="time-btn" onclick="setContactTime(3)">+3 dni</button>
+                <button class="time-btn" onclick="setContactTime(5)">+5 dni</button>
+                <button class="time-btn" onclick="setContactTime(7)">+7 dni</button>
               </div>
-              <div class="task-actions">
-                <button class="claim-btn" onclick="claimTask('${t.id}','${t.contactId}',this)">Biorę to</button>
+              <input type="datetime-local" id="contactDateTime" class="form-input" style="margin-top:8px">
+            </div>
+          </div>
+          <div id="outcome-rezygnacja" class="outcome-fields hidden">
+            <div class="form-group">
+              <label>Powód rezygnacji:</label>
+              <textarea id="powodRezygnacji" class="form-textarea" placeholder="Opisz powód rezygnacji/niekwalifikacji..."></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- Formularz: STAŁY PACJENT -->
+        <div id="form-STALY_PACJENT" class="report-form hidden">
+          <div class="form-group">
+            <label>Notatka z rozmowy:</label>
+            <textarea id="stalyNotatka" class="form-textarea" placeholder="Opisz przebieg rozmowy..."></textarea>
+          </div>
+          <div class="form-group">
+            <label>Akcja:</label>
+            <div class="outcome-buttons">
+              <button class="outcome-btn" data-outcome="staly_umowil" onclick="selectOutcome('staly_umowil')">✅ Umówił się</button>
+              <button class="outcome-btn" data-outcome="staly_kontakt" onclick="selectOutcome('staly_kontakt')">📱 Prosi o kontakt</button>
+            </div>
+          </div>
+          <div id="outcome-staly_umowil" class="outcome-fields hidden">
+            <div class="form-group">
+              <label>Data wizyty:</label>
+              <input type="datetime-local" id="stalyDataWizyty" class="form-input">
+            </div>
+          </div>
+          <div id="outcome-staly_kontakt" class="outcome-fields hidden">
+            <div class="form-group">
+              <label>Termin oddzwonienia:</label>
+              <div class="contact-time-buttons">
+                <button class="time-btn" onclick="setContactTimeSt(1)">Jutro</button>
+                <button class="time-btn" onclick="setContactTimeSt(2)">+2 dni</button>
+                <button class="time-btn" onclick="setContactTimeSt(3)">+3 dni</button>
+                <button class="time-btn" onclick="setContactTimeSt(5)">+5 dni</button>
+                <button class="time-btn" onclick="setContactTimeSt(7)">+7 dni</button>
               </div>
-            </div>`;
-          });
-          html += `</div>`;
-        }
-      } else if (tab === 'cal') {
-        html += renderCalendar(tasks);
-      }
-
-      document.getElementById('content-area').innerHTML = html;
-    };
-
-    window.tasksTab = renderTab;
-    renderTab('list');
-  } catch(e) {
-    area.innerHTML = `<div class="empty"><div class="empty-text">Błąd: ${e.message}</div></div>`;
-  }
-}
-
-function renderCalendar(tasks) {
-  const today = new Date();
-  const weekStart = new Date(today);
-  weekStart.setDate(today.getDate() - today.getDay() + 1); // Monday
-
-  const days = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(weekStart);
-    d.setDate(weekStart.getDate() + i);
-    days.push(d);
-  }
-  const hours = [];
-  for (let h = 8; h <= 17; h++) hours.push(h);
-
-  const dayNames = ['Pon', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob', 'Nd'];
-  const todayStr = today.toDateString();
-
-  let html = `<div class="cal-header">
-    <button class="cal-nav" onclick="calWeek(-1)">←</button>
-    <div class="cal-title" id="cal-title">${weekStart.toLocaleDateString('pl-PL',{day:'2-digit',month:'long'})} — ${days[6].toLocaleDateString('pl-PL',{day:'2-digit',month:'long',year:'numeric'})}</div>
-    <button class="cal-nav" onclick="calWeek(1)">→</button>
-    <button class="cal-today-btn" onclick="calToday()">Dziś</button>
-  </div>
-  <div class="cal-legend">
-    <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--blue)"></div>Telefon</div>
-    <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--orange)"></div>Follow-up</div>
-    <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--green)"></div>Email/SMS</div>
-    <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--purple)"></div>Inne</div>
-    <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--red)"></div>Przeterminowane</div>
-  </div>
-  <div class="cal-grid" style="margin-top:10px">
-    <div class="cal-day-header"></div>`;
-
-  days.forEach((d, i) => {
-    const isToday = d.toDateString() === todayStr;
-    html += `<div class="cal-day-header ${isToday ? 'today' : ''}">${dayNames[i]}<br>${d.getDate()}.${String(d.getMonth()+1).padStart(2,'0')}</div>`;
-  });
-
-  hours.forEach(h => {
-    html += `<div class="cal-time-label">${h}:00</div>`;
-    days.forEach(d => {
-      const isToday = d.toDateString() === todayStr;
-      const cellTasks = tasks.filter(t => {
-        if (!t.dueDate) return false;
-        const td = new Date(t.dueDate);
-        return td.toDateString() === d.toDateString() && td.getHours() === h;
-      });
-      html += `<div class="cal-cell ${isToday ? 'today-col' : ''}">`;
-      cellTasks.forEach(t => {
-        const typeClass = t.overdue ? 'overdue' : t.taskType === 'phone' ? 'phone' : t.taskType === 'followup' ? 'followup' : t.taskType === 'email' ? 'email' : 'other';
-        html += `<div class="cal-pill ${typeClass}" title="${t.contactName||''} · ${t.contactPhone||''} · ${t.assignedToName||''}" onclick="openEditTaskModal('${t.id}','${t.contactId}','${(t.title||'').replace(/'/g,'')}','${t.dueDate||''}')">${t.title}</div>`;
-      });
-      html += `</div>`;
-    });
-  });
-
-  html += `</div>`;
-  return html;
-}
-
-window.calWeek = function(dir) { showToast('Nawigacja kalendarza — wkrótce', 'warning'); };
-window.calToday = function() { showView('tasks'); };
-
-async function renderContacts() {
-  const area = document.getElementById('content-area');
-  area.innerHTML = '<div class="loading"><span class="spinner"></span>Ładowanie...</div>';
-  try {
-    const res = await fetch('/api/contacts').then(r => r.json()).catch(() => ({ contacts:[] }));
-    const contacts = res.contacts || [];
-    let html = `<div style="max-width:1200px;margin:0 auto">
-    <div class="search-bar" style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-      <input type="text" class="search-input" id="contact-search" placeholder="Szukaj po nazwisku, telefonie, emailu..." oninput="filterContacts()" style="flex:1">
-      ${currentUser?.role === 'admin' ? '<button class="btn-primary" onclick="openAddContactModal()" style="white-space:nowrap">+ Dodaj kontakt</button>' : ''}
-    </div>
-    <div class="contacts-header">
-      <div></div>
-      <div>Pacjent</div>
-      <div>Telefon</div>
-      <div>Email</div>
-      <div>Program</div>
-      <div>Ostatnia wizyta</div>
-      <div>Tagi</div>
-      <div>Akcje</div>
-    </div>
-    <div class="contacts-grid" id="contacts-grid">`;
-
-    if (contacts.length === 0) {
-      html += `<div class="empty"><div class="empty-icon">◎</div><div class="empty-text">Brak kontaktów</div></div>`;
-    } else {
-      // Demo daty ostatniej wizyty z Fieldgent (pokazowo)
-      const demoVisits = {
-        0: '12.04.2026', 1: '08.03.2026', 2: '21.02.2026', 3: '15.01.2026',
-        4: '30.03.2026', 5: '05.04.2026'
-      };
-      contacts.forEach((c, idx) => {
-        const initials = ((c.firstName||'') + ' ' + (c.lastName||'')).trim().split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase() || '?';
-        const fullName = [c.firstName, c.lastName].filter(Boolean).join(' ') || 'Nieznany';
-        // Data ostatniej wizyty — z GHL lub demo
-        const lastVisit = c.lastVisit || c.last_visit || demoVisits[idx % 6] || null;
-        const visitHtml = lastVisit
-          ? `<div class="contact-visit-date"><div class="contact-visit-label">Ostatnia wizyta</div><div class="contact-visit-value">${lastVisit}</div></div>`
-          : `<div class="contact-visit-date"><div class="contact-visit-label">Ostatnia wizyta</div><div class="contact-visit-value no-visit">brak danych</div></div>`;
-        html += `<div class="contact-item" data-search="${fullName.toLowerCase()} ${(c.phone||'').toLowerCase()} ${(c.email||'').toLowerCase()}">
-          <div class="contact-avatar">${initials}</div>
-          <div class="contact-main">
-            <div class="contact-name">${fullName}</div>
-            <div class="contact-sub">${c.tags && c.tags.length ? c.tags.slice(0,2).join(', ') : (c.assignedTo || '')}</div>
+              <input type="datetime-local" id="stalyContactDateTime" class="form-input" style="margin-top:8px">
+            </div>
           </div>
-          <div class="contact-field">
-            <div class="contact-field-label">Telefon</div>
-            <div class="contact-field-value">${c.phone || '—'}</div>
-          </div>
-          <div class="contact-field">
-            <div class="contact-field-label">Email</div>
-            <div class="contact-field-value">${c.email || '—'}</div>
-          </div>
-          <div class="contact-field">
-            <div class="contact-field-label">Program</div>
-            <div class="contact-field-value">${c.program || '—'}</div>
-          </div>
-          ${visitHtml}
-          <div class="contact-tags">${c.tags && c.tags.length ? c.tags.map(t=>`<span class="contact-tag">${t}</span>`).join('') : '<span style="color:var(--text-light);font-size:11px">—</span>'}</div>
-          <div class="contact-actions">
-            ${c.phone ? `<button class="act-btn act-call" onclick="quickCall('${c.phone}')">&#9742;</button>` : ''}
-            ${currentUser?.role === 'admin'
-              ? `<button class="act-btn act-edit" onclick="openEditContactModal('${c.id}','${c.firstName||''}','${c.lastName||''}','${c.phone||''}','${c.email||''}')">Edytuj</button>`
-              : `<button class="act-btn act-view" onclick="requestContactEdit('${c.id}','${fullName}')">Prośba o edycję</button>`
-            }
-          </div>
-        </div>`;
-      });
-    }
-    html += `</div></div>`;
-    area.innerHTML = html;
-    window._allContacts = contacts;
-  } catch(e) {
-    area.innerHTML = `<div class="empty"><div class="empty-text">Błąd: ${e.message}</div></div>`;
-  }
-}
-
-window.filterContacts = function() {
-  const q = document.getElementById('contact-search').value.toLowerCase();
-  document.querySelectorAll('#contacts-grid .contact-item').forEach(el => {
-    el.style.display = el.dataset.search.includes(q) ? '' : 'none';
-  });
-};
-
-function renderDialer() {
-  document.getElementById('content-area').innerHTML = `
-    <div class="card" style="max-width:280px;margin:0 auto">
-      <div class="card-title">Klawiatura</div>
-      <div class="dialer-wrap">
-        <input type="text" class="dialer-display" id="dialer-num" placeholder="Numer..." readonly>
-        <div class="dialer-grid">
-          <button class="dialer-key" onclick="dialKey('1')">1</button>
-          <button class="dialer-key" onclick="dialKey('2')">2</button>
-          <button class="dialer-key" onclick="dialKey('3')">3</button>
-          <button class="dialer-key" onclick="dialKey('4')">4</button>
-          <button class="dialer-key" onclick="dialKey('5')">5</button>
-          <button class="dialer-key" onclick="dialKey('6')">6</button>
-          <button class="dialer-key" onclick="dialKey('7')">7</button>
-          <button class="dialer-key" onclick="dialKey('8')">8</button>
-          <button class="dialer-key" onclick="dialKey('9')">9</button>
-          <button class="dialer-key" onclick="dialKey('0')" style="grid-column:2">0</button>
-          <button class="dialer-key del" onclick="dialDel()">⌫</button>
         </div>
-        <button class="dialer-call" onclick="dialCall()">Zadzwoń</button>
+
+        <!-- Formularz: WIZYTA BIEŻĄCA -->
+        <div id="form-WIZYTA_BIEZACA" class="report-form hidden">
+          <div class="form-group">
+            <label>Akcja:</label>
+            <div class="outcome-buttons">
+              <button class="outcome-btn" data-outcome="zmiana_terminu" onclick="selectOutcome('zmiana_terminu')">🔄 Zmiana terminu</button>
+              <button class="outcome-btn" data-outcome="odwolanie" onclick="selectOutcome('odwolanie')">❌ Odwołanie</button>
+            </div>
+          </div>
+          <div id="outcome-zmiana_terminu" class="outcome-fields hidden">
+            <div class="form-group">
+              <label>Powód zmiany/odwołania:</label>
+              <textarea id="powodZmiany" class="form-textarea" placeholder="Opisz powód zmiany terminu..."></textarea>
+            </div>
+            <div class="form-group">
+              <label>Nowy termin wizyty:</label>
+              <input type="datetime-local" id="nowyTermin" class="form-input">
+            </div>
+          </div>
+          <div id="outcome-odwolanie" class="outcome-fields hidden">
+            <div class="form-group">
+              <label>Powód odwołania:</label>
+              <textarea id="powodOdwolania" class="form-textarea" placeholder="Opisz powód odwołania..."></textarea>
+            </div>
+            <div class="form-group">
+              <label>Kiedy oddzwonić:</label>
+              <div class="contact-time-buttons">
+                <button class="time-btn" onclick="setContactTimeWizyta(1)">Jutro</button>
+                <button class="time-btn" onclick="setContactTimeWizyta(2)">+2 dni</button>
+                <button class="time-btn" onclick="setContactTimeWizyta(3)">+3 dni</button>
+                <button class="time-btn" onclick="setContactTimeWizyta(5)">+5 dni</button>
+                <button class="time-btn" onclick="setContactTimeWizyta(7)">+7 dni</button>
+              </div>
+              <input type="datetime-local" id="wizytaContactDateTime" class="form-input" style="margin-top:8px">
+            </div>
+          </div>
+        </div>
+
+        <!-- Formularz: SPAM -->
+        <div id="form-SPAM" class="report-form hidden">
+          <div class="form-group">
+            <label>Notatka (opcjonalnie):</label>
+            <textarea id="spamNotatka" class="form-textarea" placeholder="Opcjonalna notatka..."></textarea>
+          </div>
+        </div>
+
+        <!-- Przyciski zapisu -->
+        <div class="popup-footer">
+          <button class="btn-secondary" onclick="closeCallPopup()">Anuluj</button>
+          <button class="btn-primary" onclick="saveReport()">💾 Zapisz raport</button>
+        </div>
       </div>
-    </div>`;
-}
-window.dialKey = k => { const el = document.getElementById('dialer-num'); if(el) el.value += k; };
-window.dialDel = () => { const el = document.getElementById('dialer-num'); if(el) el.value = el.value.slice(0,-1); };
-window.dialCall = () => { const el = document.getElementById('dialer-num'); if(el && el.value) quickCall(el.value); };
-
-async function renderCtCalls() {
-  const area = document.getElementById('content-area');
-  area.innerHTML = '<div class="loading"><span class="spinner"></span>Ładowanie...</div>';
-  try {
-    const res = await fetch('/api/calls/open').then(r => r.json()).catch(() => ({ calls:[] }));
-    const calls = res.calls || [];
-    let html = `<div class="section-header"><h2>Bieżące połączenia (${calls.length})</h2></div>`;
-    if (calls.length === 0) {
-      html += `<div class="empty"><div class="empty-icon">☎</div><div class="empty-text">Brak aktywnych połączeń</div></div>`;
-    } else {
-      calls.forEach(c => {
-        const initials = (c.patient_name || c.caller_phone || '?').slice(0,2).toUpperCase();
-        html += `<div class="call-item">
-          <div class="call-avatar" style="background:var(--green)">${initials}</div>
-          <div class="call-info">
-            <div class="call-name">${c.patient_name || c.caller_phone || 'Nieznany'}</div>
-            <div class="call-sub">${c.caller_phone || '—'}</div>
-          </div>
-          <div class="call-actions">
-            <span class="badge badge-answered">AKTYWNE</span>
-            ${c.caller_phone ? `<button class="act-btn act-call-lg" onclick="quickCall('${c.caller_phone}')">☎ Oddzwoń</button>` : ''}
-          </div>
-        </div>`;
-      });
-    }
-    area.innerHTML = html;
-  } catch(e) {
-    area.innerHTML = `<div class="empty"><div class="empty-text">Błąd: ${e.message}</div></div>`;
-  }
-}
-
-async function renderAdminStats() {
-  const area = document.getElementById('content-area');
-  area.innerHTML = '<div class="loading"><span class="spinner"></span>Ładowanie...</div>';
-  try {
-    const res = await fetch('/api/stats').then(r => r.json()).catch(() => null);
-    if (!res) {
-      area.innerHTML = `<div class="empty"><div class="empty-icon">◎</div><div class="empty-text">Brak danych — nie można połączyć się z serwerem</div></div>`;
-      return;
-    }
-
-    const totals = res.totals || {};
-    const kpi = res.kpi || {};
-    const perUserObj = res.perUser || {};
-    const coaching = res.coaching || [];
-    const typeCounts = res.typeCounts || {};
-
-    const total = totals.total || 0;
-    const answered = totals.answered || 0;
-    const missed = totals.missed || 0;
-    const booked = totals.booked || 0;
-
-    const noData = total === 0;
-
-    // Helper: format KPI value
-    const kpiVal = (k) => {
-      const v = kpi[k]?.value;
-      if (v === null || v === undefined) return '<span style="color:var(--text-muted)">brak danych</span>';
-      return v + (kpi[k]?.unit || '');
-    };
-    const kpiColor = (k) => {
-      const v = kpi[k]?.value;
-      const t = kpi[k]?.target;
-      const hib = kpi[k]?.higher_is_better;
-      if (v === null || v === undefined || t === null) return '';
-      if (hib) return v >= t ? 'green' : v >= t * 0.8 ? '' : 'red';
-      return v <= t ? 'green' : v <= t * 1.2 ? '' : 'red';
-    };
-
-    let html = `<div style="max-width:1100px;margin:0 auto">`;
-
-    // KPI tiles
-    html += `<div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px">`;
-    html += `<div class="kpi-tile"><div class="kpi-value">${total}</div><div class="kpi-label">Połączenia dziś</div></div>`;
-    html += `<div class="kpi-tile green"><div class="kpi-value">${answered}</div><div class="kpi-label">Odebrane</div></div>`;
-    html += `<div class="kpi-tile red"><div class="kpi-value">${missed}</div><div class="kpi-label">Nieodebrane</div></div>`;
-    html += `<div class="kpi-tile accent"><div class="kpi-value">${booked}</div><div class="kpi-label">Umówione W0</div></div>`;
-    html += `<div class="kpi-tile ${kpiColor('pickupRate')}"><div class="kpi-value">${kpiVal('pickupRate')}</div><div class="kpi-label">Odbieralność</div></div>`;
-    html += `<div class="kpi-tile ${kpiColor('fastPickupRate')}"><div class="kpi-value">${kpiVal('fastPickupRate')}</div><div class="kpi-label">Odebrane ≤35s</div></div>`;
-    html += `<div class="kpi-tile ${kpiColor('callbackRate')}"><div class="kpi-value">${kpiVal('callbackRate')}</div><div class="kpi-label">Oddzwanialność</div></div>`;
-    html += `<div class="kpi-tile ${kpiColor('avgPickupSeconds')}"><div class="kpi-value">${kpiVal('avgPickupSeconds')}</div><div class="kpi-label">Śr. czas odebrania</div></div>`;
-    html += `</div>`;
-
-    if (noData) {
-      html += `<div class="empty" style="margin:20px 0"><div class="empty-icon">◎</div><div class="empty-text">Brak połączeń z dziś — statystyki zostaną uzupełnione po pierwszych rozmowach</div></div>`;
-    }
-
-    // Tabela per osoba
-    html += `<div class="card" style="margin-bottom:16px">`;
-    html += `<div class="card-title">Statystyki per osoba (dziś)</div>`;
-    const perUserArr = Object.values(perUserObj).filter(u => u.role !== 'admin');
-    if (perUserArr.length === 0 || noData) {
-      html += `<div style="padding:20px;text-align:center;color:var(--text-muted)">Brak danych — brak połączeń dziś</div>`;
-    } else {
-      html += `<table class="stats-table"><thead><tr>
-        <th>Osoba</th><th>Ogółem</th><th>Odebrane</th><th>Nieodebrane</th><th>Umówione</th><th>Follow-up</th><th>Konwersja</th>
-      </tr></thead><tbody>`;
-      perUserArr.forEach(u => {
-        const conv = u.total > 0 ? Math.round(((u.booked || 0)/u.total)*100) : 0;
-        html += `<tr>
-          <td style="font-weight:600">${u.name}</td>
-          <td>${u.total}</td>
-          <td style="color:#16a34a">${u.answered}</td>
-          <td style="color:#dc2626">${u.missed}</td>
-          <td style="color:#7c3aed">${u.booked || 0}</td>
-          <td>${u.followup || 0}</td>
-          <td>
-            <span style="font-weight:700">${conv}%</span>
-            <div class="progress-bar"><div class="progress-fill ${conv >= 30 ? 'green' : conv >= 15 ? '' : 'red'}" style="width:${Math.min(conv,100)}%"></div></div>
-          </td>
-        </tr>`;
-      });
-      html += `</tbody></table>`;
-    }
-    html += `</div>`;
-
-    // Typy kontaktów
-    html += `<div class="card" style="margin-bottom:16px">`;
-    html += `<div class="card-title">Typy kontaktów dziś</div>`;
-    const typeLabels = { nowy:'Nowy pacjent', staly:'Stały pacjent', wizyta:'Bieżąca wizyta', nie_pacjent:'Spam/Inne' };
-    const typeColors = { nowy:'#7c3aed', staly:'#2563eb', wizyta:'#16a34a', nie_pacjent:'#9ca3af' };
-    const typeTotal = Object.values(typeCounts).reduce((a,b) => a+b, 0);
-    if (typeTotal === 0) {
-      html += `<div style="padding:16px;text-align:center;color:var(--text-muted)">Brak danych</div>`;
-    } else {
-      html += `<div style="display:flex;gap:12px;flex-wrap:wrap;padding:12px">`;
-      Object.entries(typeLabels).forEach(([k,label]) => {
-        const cnt = typeCounts[k] || 0;
-        const pct = typeTotal > 0 ? Math.round((cnt/typeTotal)*100) : 0;
-        html += `<div style="flex:1;min-width:120px;background:${typeColors[k]}18;border:1px solid ${typeColors[k]}44;border-radius:8px;padding:12px;text-align:center">`;
-        html += `<div style="font-size:22px;font-weight:800;color:${typeColors[k]}">${cnt}</div>`;
-        html += `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${label}</div>`;
-        html += `<div style="font-size:11px;font-weight:600;color:${typeColors[k]}">${pct}%</div>`;
-        html += `</div>`;
-      });
-      html += `</div>`;
-    }
-    html += `</div>`;
-
-    // Coaching tips
-    if (coaching && coaching.length > 0) {
-      html += `<div class="card" style="margin-bottom:16px">`;
-      html += `<div class="card-title">💡 Wskazówki coachingowe</div>`;
-      coaching.forEach(tip => {
-        const bg = tip.priority === 'high' ? '#fee2e2' : tip.priority === 'medium' ? '#fef9c3' : '#f0fdf4';
-        const border = tip.priority === 'high' ? '#fca5a5' : tip.priority === 'medium' ? '#fde68a' : '#86efac';
-        html += `<div style="background:${bg};border:1px solid ${border};border-radius:8px;padding:12px 14px;margin-bottom:8px">`;
-        html += `<div style="font-weight:700;font-size:13px">${tip.icon || ''} ${tip.title}</div>`;
-        html += `<div style="font-size:12px;color:var(--text-muted);margin-top:4px">${tip.desc}</div>`;
-        html += `</div>`;
-      });
-      html += `</div>`;
-    }
-
-    html += `</div>`; // max-width wrapper
-    area.innerHTML = html;
-  } catch(e) {
-    area.innerHTML = `<div class="empty"><div class="empty-icon">⚠</div><div class="empty-text">Błąd ładowania statystyk: ${e.message}</div></div>`;
-  }
-}
-
-async function renderAdminEdit() {
-  const area = document.getElementById('content-area');
-  area.innerHTML = '<div class="loading"><span class="spinner"></span>Ładowanie...</div>';
-  try {
-    const res = await fetch('/api/contacts').then(r => r.json()).catch(() => ({ contacts:[] }));
-    const contacts = res.contacts || [];
-    let html = `<div class="search-bar">
-      <input type="text" class="search-input" id="admin-contact-search" placeholder="Szukaj kontaktu..." oninput="filterAdminContacts()">
     </div>
-    <div id="admin-contacts-list">`;
-    contacts.forEach(c => {
-      const fullName = [c.firstName, c.lastName].filter(Boolean).join(' ') || 'Nieznany';
-      html += `<div class="call-item" data-search="${fullName.toLowerCase()} ${(c.phone||'').toLowerCase()}">
-        <div class="call-avatar">${fullName.slice(0,2).toUpperCase()}</div>
-        <div class="call-info">
-          <div class="call-name">${fullName}</div>
-          <div class="call-sub">${c.phone || '—'} · ${c.email || '—'}</div>
+  </div>
+
+  <!-- ==================== POP-UP: PROŚBA O EDYCJĘ ==================== -->
+  <div id="editRequestPopup" class="modal-popup hidden">
+    <div class="popup-overlay" onclick="closeEditRequest()"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>✏️ Prośba o edycję kontaktu</h3>
+        <button class="popup-close" onclick="closeEditRequest()">✕</button>
+      </div>
+      <div class="modal-body">
+        <p>Zadanie zostanie przypisane do <strong>Soni</strong> w GoHighLevel.</p>
+        <div class="form-group">
+          <label>Opis zmian do wprowadzenia:</label>
+          <textarea id="editRequestNotes" class="form-textarea" placeholder="Opisz jakie dane należy zmienić/uzupełnić..."></textarea>
         </div>
-        <div class="call-actions">
-          <button class="act-btn act-edit" onclick="openEditContactModal('${c.id}','${(c.firstName||'').replace(/'/g,'')}','${(c.lastName||'').replace(/'/g,'')}','${c.phone||''}','${c.email||''}')">Edytuj</button>
-        </div>
-      </div>`;
-    });
-    html += `</div>`;
-    area.innerHTML = html;
-  } catch(e) {
-    area.innerHTML = `<div class="empty"><div class="empty-text">Błąd: ${e.message}</div></div>`;
-  }
-}
-window.filterAdminContacts = function() {
-  const q = document.getElementById('admin-contact-search').value.toLowerCase();
-  document.querySelectorAll('#admin-contacts-list .call-item').forEach(el => {
-    el.style.display = el.dataset.search.includes(q) ? '' : 'none';
-  });
-};
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeEditRequest()">Anuluj</button>
+        <button class="btn-primary" onclick="submitEditRequest()">📤 Wyślij do Soni</button>
+      </div>
+    </div>
+  </div>
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// ACTIONS
-// ═══════════════════════════════════════════════════════════════════════════════
-async function quickCall(phone) {
-  if (!currentUser || !currentUser.ext) {
-    showToast('Brak numeru wewnętrznego', 'warning');
-    return;
-  }
-  try {
-    const res = await fetch('/api/call/initiate', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ phone, ext: currentUser.ext, userId: currentUser.id })
-    });
-    const data = await res.json();
-    if (data.success) showToast('Inicjowanie połączenia...', 'success');
-    else showToast('Błąd: ' + (data.error || ''), 'error');
-  } catch(e) {
-    showToast('Błąd połączenia', 'error');
-  }
-}
+  <!-- ==================== CHAT DO SONI (H1/H3) ==================== -->
+  <button id="chatToggle" class="chat-toggle-btn" onclick="toggleChat()" title="Chat — Sonia">
+    💬
+  </button>
+  <div id="chatPanel" class="chat-panel hidden">
+    <div class="chat-header">
+      <span>💬 Pomoc — Sonia</span>
+      <button onclick="toggleChat()">✕</button>
+    </div>
+    <div id="chatMessages" class="chat-messages">
+      <div class="chat-msg chat-msg-other">
+        <div class="chat-msg-from">Sonia</div>
+        <div class="chat-msg-text">Cześć! Jak mogę pomóc? 😊</div>
+        <div class="chat-msg-time">teraz</div>
+      </div>
+    </div>
+    <div class="chat-input-row">
+      <input type="text" id="chatInput" class="chat-input" placeholder="Napisz wiadomość..." onkeydown="if(event.key==='Enter') sendChatMessage()">
+      <button class="btn-primary" onclick="sendChatMessage()">Wyślij</button>
+    </div>
+  </div>
 
-async function fetchRecording(callId, btn) {
-  btn.textContent = 'Pobieranie...';
-  btn.disabled = true;
-  try {
-    const res = await fetch(`/api/call/recording/${callId}`);
-    const data = await res.json();
-    if (data.success && data.link) {
-      const container = btn.closest('.call-info');
-      const player = document.createElement('div');
-      player.className = 'audio-player';
-      player.innerHTML = `<audio controls src="${data.link}" preload="none" style="flex:1;height:30px"></audio><a href="${data.link}" download target="_blank" style="font-size:10px;color:var(--navy);font-weight:600;white-space:nowrap;text-decoration:none;padding:4px 8px;border:1px solid var(--border);border-radius:4px">↓ Pobierz</a>`;
-      btn.replaceWith(player);
-    } else {
-      btn.textContent = 'Brak nagrania';
-      btn.disabled = false;
-    }
-  } catch(e) {
-    btn.textContent = 'Błąd';
-    btn.disabled = false;
-  }
-}
+  <!-- ==================== TOAST NOTIFICATIONS ==================== -->
+  <div id="toastContainer" class="toast-container"></div>
 
-async function deleteLead(oppId) {
-  if (!confirm('Usunąć to zgłoszenie z GHL? Tej operacji nie można cofnąć.')) return;
-  try {
-    const res = await fetch(`/api/leads/${oppId}`, { method: 'DELETE' });
-    const data = await res.json();
-    if (data.success) { showToast('Zgłoszenie usunięte', 'success'); renderDashboard(); }
-    else showToast('Błąd: ' + (data.error || ''), 'error');
-  } catch(e) { showToast('Błąd usuwania', 'error'); }
-}
-
-async function completeTask(taskId, contactId, el) {
-  if (!taskId || !contactId) return;
-  try {
-    const res = await fetch('/api/tasks/complete', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ taskId, contactId, completedBy: currentUser?.name || '' })
-    });
-    const data = await res.json();
-    if (data.success) {
-      el.classList.add('checked');
-      el.innerHTML = '✓';
-      showToast('Zadanie wykonane', 'success');
-    } else {
-      showToast('Błąd: ' + (data.error || ''), 'error');
-    }
-  } catch(e) {
-    showToast('Błąd połączenia', 'error');
-  }
-}
-
-async function claimTask(taskId, contactId, btn) {
-  if (!taskId || !contactId) return;
-  btn.disabled = true;
-  btn.textContent = 'Przejmuję...';
-  try {
-    const res = await fetch('/api/tasks/claim', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ taskId, contactId, userId: currentUser?.ghlId || '', userName: currentUser?.name || '' })
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast('Zadanie przejęte', 'success');
-      setTimeout(() => renderTasks(), 500);
-    } else {
-      showToast('Błąd: ' + (data.error || ''), 'error');
-      btn.disabled = false;
-      btn.textContent = 'Biorę to';
-    }
-  } catch(e) {
-    showToast('Błąd połączenia', 'error');
-    btn.disabled = false;
-    btn.textContent = 'Biorę to';
-  }
-}
-
-async function requestContactEdit(contactId, contactName) {
-  // Tworzymy zadanie dla Soni z domyślnym opisem (recepcja może dopisać szczegóły)
-  const changeRequest = `Prośba o weryfikację i aktualizację danych kontaktu: ${contactName}`;
-  try {
-    const res = await fetch('/api/contacts/edit-request', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        contactId,
-        contactName,
-        changeRequest,
-        requestedBy: currentUser?.name || 'Recepcja'
-      })
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      showToast('Błąd serwera: ' + text.slice(0,80), 'error');
-      return;
-    }
-    const data = await res.json();
-    if (data.success) showToast('✅ Zadanie dla Soni utworzone w GHL i aplikacji', 'success');
-    else showToast('Błąd: ' + (data.error || 'nieznany'), 'error');
-  } catch(e) {
-    showToast('Błąd połączenia: ' + e.message, 'error');
-  }
-}
-
-function openEditTaskModal(taskId, contactId, title, dueDate) {
-  document.getElementById('et-task-id').value = taskId;
-  document.getElementById('et-contact-id').value = contactId;
-  document.getElementById('et-title').value = title;
-  if (dueDate) {
-    const d = new Date(dueDate);
-    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0,16);
-    document.getElementById('et-due').value = local;
-  }
-  showModal('edit-task-modal');
-}
-async function saveTaskEdit() {
-  const taskId = document.getElementById('et-task-id').value;
-  const contactId = document.getElementById('et-contact-id').value;
-  const title = document.getElementById('et-title').value;
-  const dueDate = document.getElementById('et-due').value;
-  try {
-    const res = await fetch('/api/tasks/update', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ taskId, contactId, title, dueDate })
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast('Zadanie zaktualizowane', 'success');
-      closeModal('edit-task-modal');
-      if (currentView === 'tasks') renderTasks();
-      if (currentView === 'dashboard') renderDashboard();
-    } else {
-      showToast('Błąd: ' + (data.error || ''), 'error');
-    }
-  } catch(e) {
-    showToast('Błąd połączenia', 'error');
-  }
-}
-
-function openEditContactModal(id, first, last, phone, email) {
-  document.getElementById('ec-contact-id').value = id;
-  document.getElementById('ec-first').value = first;
-  document.getElementById('ec-last').value = last;
-  document.getElementById('ec-phone').value = phone;
-  document.getElementById('ec-email').value = email;
-  showModal('edit-contact-modal');
-}
-async function saveContactEdit() {
-  const id = document.getElementById('ec-contact-id').value;
-  const body = {
-    contactId: id,
-    firstName: document.getElementById('ec-first').value,
-    lastName: document.getElementById('ec-last').value,
-    phone: document.getElementById('ec-phone').value,
-    email: document.getElementById('ec-email').value,
-  };
-  try {
-    const res = await fetch('/api/contacts/update', {
-      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast('Kontakt zaktualizowany', 'success');
-      closeModal('edit-contact-modal');
-      if (currentView === 'contacts') renderContacts();
-      if (currentView === 'admin-edit') renderAdminEdit();
-    } else {
-      showToast('Błąd: ' + (data.error || ''), 'error');
-    }
-  } catch(e) {
-    showToast('Błąd połączenia', 'error');
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// WIDGET ZADARMA
-// ═══════════════════════════════════════════════════════════════════════════════
-function toggleWidget() {
-  const panel = document.getElementById('widget-panel');
-  panel.classList.toggle('open');
-}
-function widgetKey(k) {
-  const el = document.getElementById('widget-display');
-  if (el) el.value += k;
-}
-function widgetDel() {
-  const el = document.getElementById('widget-display');
-  if (el) el.value = el.value.slice(0,-1);
-}
-function widgetAddPrefix(prefix) {
-  const el = document.getElementById('widget-display');
-  if (!el) return;
-  if (!el.value.startsWith(prefix)) el.value = prefix + el.value.replace(/^\+\d{0,3}/,'');
-}
-function widgetCall() {
-  const el = document.getElementById('widget-display');
-  if (el && el.value && el.value !== '+48') {
-    quickCall(el.value);
-    document.getElementById('widget-panel').classList.remove('open');
-  } else {
-    showToast('Wpisz numer telefonu', 'warning');
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// CHAT POMOC
-// ═══════════════════════════════════════════════════════════════════════════════
-let chatUnread = 0;
-function toggleChat() {
-  const panel = document.getElementById('chat-panel');
-  panel.classList.toggle('open');
-  if (panel.classList.contains('open')) {
-    chatUnread = 0;
-    updateChatBadge();
-    document.getElementById('chat-input').focus();
-    scrollChatToBottom();
-  }
-}
-function scrollChatToBottom() {
-  const msgs = document.getElementById('chat-messages');
-  if (msgs) msgs.scrollTop = msgs.scrollHeight;
-}
-function sendChatMsg() {
-  const input = document.getElementById('chat-input');
-  const text = input.value.trim();
-  if (!text) return;
-  input.value = '';
-  appendChatMsg({ text, from: currentUser?.name || 'Użytkownik', sent: true });
-  // Send via WS
-  if (ws && ws.readyState === 1) {
-    ws.send(JSON.stringify({ type:'CHAT_MESSAGE', text, from: currentUser?.name || '', userId: currentUser?.id || '' }));
-  }
-}
-function receiveChatMsg(msg) {
-  appendChatMsg({ text: msg.text, from: msg.from, sent: false });
-  const panel = document.getElementById('chat-panel');
-  if (!panel.classList.contains('open')) {
-    chatUnread++;
-    updateChatBadge();
-  }
-}
-function appendChatMsg({ text, from, sent }) {
-  const msgs = document.getElementById('chat-messages');
-  if (!msgs) return;
-  const div = document.createElement('div');
-  div.className = 'chat-msg ' + (sent ? 'sent' : 'received');
-  div.innerHTML = text + `<div class="chat-msg-meta">${from}</div>`;
-  msgs.appendChild(div);
-  scrollChatToBottom();
-}
-function updateChatBadge() {
-  const badge = document.getElementById('chat-unread');
-  if (!badge) return;
-  badge.textContent = chatUnread;
-  badge.style.display = chatUnread > 0 ? 'block' : 'none';
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// MODALS
-// ═══════════════════════════════════════════════════════════════════════════════
-function showModal(id) {
-  document.getElementById(id).classList.add('open');
-}
-function closeModal(id) {
-  document.getElementById(id).classList.remove('open');
-}
-function showConfirmModal(id) {
-  document.getElementById(id).classList.add('open');
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// TOAST
-// ═══════════════════════════════════════════════════════════════════════════════
-function showToast(msg, type = 'success') {
-  const container = document.getElementById('toast-container');
-  const toast = document.createElement('div');
-  toast.className = 'toast ' + type;
-  toast.textContent = msg;
-  container.appendChild(toast);
-  requestAnimationFrame(() => { toast.classList.add('show'); });
-  setTimeout(() => {
-    toast.classList.remove('show');
-    setTimeout(() => toast.remove(), 300);
-  }, 3000);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// INIT
-// ═══════════════════════════════════════════════════════════════════════════════
-document.addEventListener('DOMContentLoaded', () => {
-  updateTopbarDate();
-  // Close modals on overlay click
-  document.querySelectorAll('.modal-overlay').forEach(overlay => {
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) overlay.classList.remove('open');
-    });
-  });
-  // Close popup on overlay click (not popup itself)
-  document.getElementById('call-popup-overlay').addEventListener('click', (e) => {
-    if (e.target === document.getElementById('call-popup-overlay')) tryClosePopup();
-  });
-});
-</script>
+  <script src="app.js"></script>
 </body>
 </html>
