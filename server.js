@@ -6,6 +6,16 @@ const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
 const crypto = require('crypto');
+const { createClient } = require('@supabase/supabase-js');
+
+// ─── Supabase ────────────────────────────────────────────────────────────────
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
+const supabase = (SUPABASE_URL && SUPABASE_KEY)
+  ? createClient(SUPABASE_URL, SUPABASE_KEY)
+  : null;
+if (supabase) console.log('[Supabase] Połączono');
+else console.warn('[Supabase] Brak kluczy — dane w pamięci RAM (znikną po restarcie)');
 
 const app = express();
 const server = http.createServer(app);
@@ -44,6 +54,7 @@ const callsStore = [];
 const MAX_CALLS = 500;
 
 function storeCall(callObj) {
+  // In-memory (szybkie)
   const idx = callsStore.findIndex(c => c.callId === callObj.callId);
   if (idx >= 0) {
     callsStore[idx] = { ...callsStore[idx], ...callObj };
@@ -51,11 +62,76 @@ function storeCall(callObj) {
     callsStore.unshift(callObj);
     if (callsStore.length > MAX_CALLS) callsStore.pop();
   }
+  // Supabase (trwałe) — async, nie blokuje
+  if (supabase) {
+    const merged = idx >= 0 ? callsStore[idx] : callObj;
+    supabase.from('calls').upsert({
+      call_id: merged.callId,
+      pbx_call_id: merged.pbxCallId || null,
+      caller_phone: merged.from || null,
+      called_phone: merged.to || null,
+      direction: merged.direction || 'inbound',
+      status: merged.status || 'ringing',
+      duration_seconds: merged.duration || 0,
+      recording_url: merged.recordingUrl || null,
+      patient_name: merged.contactName || null,
+      ghl_contact_id: merged.contactId || null,
+      user_id: merged.userId || null,
+      contact_type: merged.tag || null,
+      created_at: merged.timestamp || new Date().toISOString(),
+      answered_at: merged.answeredAt || null,
+      ended_at: merged.endedAt || null,
+    }, { onConflict: 'call_id' }).then(({ error }) => {
+      if (error) console.error('[Supabase] storeCall error:', error.message);
+    });
+  }
 }
 
 function getRecentCalls(days = 7) {
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
   return callsStore.filter(c => new Date(c.timestamp).getTime() > cutoff);
+}
+
+// Ładuj historię połączeń z Supabase przy starcie
+async function loadCallsFromSupabase() {
+  if (!supabase) return;
+  try {
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(); // ostatnie 30 dni
+    const { data, error } = await supabase
+      .from('calls')
+      .select('*')
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(MAX_CALLS);
+    if (error) { console.error('[Supabase] loadCalls error:', error.message); return; }
+    if (data && data.length > 0) {
+      data.forEach(row => {
+        const exists = callsStore.find(c => c.callId === row.call_id);
+        if (!exists) {
+          callsStore.push({
+            callId: row.call_id,
+            pbxCallId: row.pbx_call_id,
+            from: row.caller_phone,
+            to: row.called_phone,
+            direction: row.direction,
+            status: row.status,
+            duration: row.duration_seconds,
+            recordingUrl: row.recording_url,
+            contactName: row.patient_name,
+            contactId: row.ghl_contact_id,
+            userId: row.user_id,
+            tag: row.contact_type,
+            timestamp: row.created_at,
+            answeredAt: row.answered_at,
+            endedAt: row.ended_at,
+          });
+        }
+      });
+      console.log(`[Supabase] Załadowano ${data.length} połączeń z historii`);
+    }
+  } catch(e) {
+    console.error('[Supabase] loadCalls exception:', e.message);
+  }
 }
 
 // ─── Kolejka retry nagrań (D2) ────────────────────────────────────────────────
@@ -902,33 +978,55 @@ app.post('/api/opportunity/:id/move-stage', async (req, res) => {
 });
 
 // ─── CHAT DO SONI (prywatny per użytkownik) ──────────────────────────────────
-// In-memory store: chatMessages[conversationKey] = [{ from, to, text, ts }]
 const chatMessages = {};
 const SONIA_ID = 'sonia';
 
-app.post('/api/chat/send', (req, res) => {
+app.post('/api/chat/send', async (req, res) => {
   const { fromUserId, toUserId, text } = req.body;
   if (!fromUserId || !toUserId || !text) return res.status(400).json({ error: 'Missing fields' });
   const convKey = [fromUserId, toUserId].sort().join(':');
   if (!chatMessages[convKey]) chatMessages[convKey] = [];
   const fromUser = USERS[fromUserId];
   const msg = {
-    from: fromUserId,
-    fromName: fromUser?.name || fromUserId,
-    to: toUserId,
-    text,
-    ts: new Date().toISOString(),
+    from: fromUserId, fromName: fromUser?.name || fromUserId,
+    to: toUserId, text, ts: new Date().toISOString(),
     id: `msg_${Date.now()}_${Math.random().toString(36).slice(2,6)}`
   };
   chatMessages[convKey].push(msg);
   if (chatMessages[convKey].length > 500) chatMessages[convKey] = chatMessages[convKey].slice(-500);
   broadcast({ type: 'CHAT_PRIVATE', convKey, msg });
+  // Supabase
+  if (supabase) {
+    supabase.from('chat_messages').insert({
+      conv_key: convKey, from_user: fromUserId,
+      from_name: fromUser?.name || fromUserId,
+      to_user: toUserId, text, created_at: msg.ts
+    }).then(({ error }) => { if (error) console.error('[Supabase] chat error:', error.message); });
+  }
   res.json({ success: true, msg });
 });
 
-app.get('/api/chat/history/:convKey', (req, res) => {
-  const msgs = chatMessages[req.params.convKey] || [];
-  res.json({ messages: msgs });
+app.get('/api/chat/history/:convKey', async (req, res) => {
+  const convKey = req.params.convKey;
+  if (chatMessages[convKey] && chatMessages[convKey].length > 0) {
+    return res.json({ messages: chatMessages[convKey] });
+  }
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.from('chat_messages')
+        .select('*').eq('conv_key', convKey)
+        .order('created_at', { ascending: true }).limit(200);
+      if (!error && data) {
+        const msgs = data.map(r => ({
+          from: r.from_user, fromName: r.from_name, to: r.to_user,
+          text: r.text, ts: r.created_at, id: String(r.id)
+        }));
+        chatMessages[convKey] = msgs;
+        return res.json({ messages: msgs });
+      }
+    } catch(e) { /* fallback */ }
+  }
+  res.json({ messages: [] });
 });
 
 // Lista konwersacji Soni (z liczbą nieprzeczytanych)
@@ -964,6 +1062,7 @@ app.get('*', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`Navigator Call v6 running on port ${PORT}`);
+  await loadCallsFromSupabase();
 });

@@ -63,3 +63,22 @@ CREATE INDEX idx_calls_contact_type ON calls(contact_type);
 -- RLS
 ALTER TABLE calls ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all" ON calls FOR ALL USING (true) WITH CHECK (true);
+
+-- ─── Tabela wiadomości czatu ─────────────────────────────────────────────────
+DROP TABLE IF EXISTS chat_messages;
+
+CREATE TABLE chat_messages (
+  id BIGSERIAL PRIMARY KEY,
+  conv_key TEXT NOT NULL,        -- klucz konwersacji: sorted user1:user2
+  from_user TEXT NOT NULL,
+  from_name TEXT,
+  to_user TEXT NOT NULL,
+  text TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_chat_conv_key ON chat_messages(conv_key);
+CREATE INDEX idx_chat_created_at ON chat_messages(created_at);
+
+ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all chat" ON chat_messages FOR ALL USING (true) WITH CHECK (true);
