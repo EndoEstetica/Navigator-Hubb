@@ -62,18 +62,38 @@ function getRecentCalls(days = 7) {
 const recordingRetryQueue = new Map(); // callId → { attempts, pbxCallId, contactName }
 const RETRY_DELAYS = [5000, 30000, 120000, 300000, 600000, 1200000]; // 5s, 30s, 2min, 5min, 10min, 20min
 
-// ─── Zadarma — podpis API (oficjalny algorytm PHP SDK Zadarmy) ────────────────
-// Wzór: base64( hex( hmac_sha1( SECRET, METHOD + paramString + md5(paramString) ) ) )
-// Źródło: oficjalne SDK zadarma/user-api-v1 PHP
-// PHP: base64_encode( hash_hmac('sha1', method+params+md5, secret) )
-// W PHP hash_hmac zwraca hex string (nie binary), więc base64 koduje hex → base64(hex_hmac)
+// ─── Zadarma — podpis API (oficjalny algorytm z supportu Zadarmy) ─────────────
+// Źródło: odpowiedź supportu Zadarma
+//
+// PHP reference:
+//   $paramsStr = http_build_query($params, null, '&', PHP_QUERY_RFC1738);
+//   $sign = base64_encode(hash_hmac('sha1', $method.$paramsStr.md5($paramsStr), $secret));
+//   $header = 'Authorization: ' . $key . ':' . $sign;
+//
+// PHP http_build_query RFC1738: encodes + jako %2B, spacja jako +, inne jako %XX
+// PHP hash_hmac bez raw_output zwraca hex string → base64_encode koduje hex string
+//
+function phpQueryEncode(str) {
+  // Odpowiednik PHP http_build_query z PHP_QUERY_RFC1738
+  // encodeURIComponent + zamień %20 na +
+  return encodeURIComponent(String(str)).replace(/%20/g, '+');
+}
+
 function zadarmaSign(method, params) {
   const sortedKeys = Object.keys(params).sort();
-  const paramString = sortedKeys.map(k => `${k}=${params[k]}`).join('&');
+  const paramString = sortedKeys
+    .map(k => `${phpQueryEncode(k)}=${phpQueryEncode(params[k])}`)
+    .join('&');
   const md5Hash = crypto.createHash('md5').update(paramString).digest('hex');
   const signString = method + paramString + md5Hash;
+  // PHP hash_hmac zwraca hex (nie binary), base64_encode koduje ten hex
   const hmacHex = crypto.createHmac('sha1', ZADARMA_SECRET).update(signString).digest('hex');
   return Buffer.from(hmacHex).toString('base64');
+}
+
+// Nagłówek autoryzacji (zgodnie z supportem: Authorization: KEY:SIGN)
+function zadarmaAuthHeader(sign) {
+  return `${ZADARMA_KEY}:${sign}`;
 }
 
 // Weryfikacja podpisu webhooków Zadarma (inny wzór: tylko md5, bez method)
@@ -93,12 +113,12 @@ async function fetchRecordingFromZadarma(pbxCallId) {
   try {
     const params = { call_id: pbxCallId };
     const sign = zadarmaSign('/v1/pbx/record/request/', params);
+    const qs = Object.keys(params).sort().map(k => `${phpQueryEncode(k)}=${phpQueryEncode(params[k])}`).join('&');
     const response = await axios.get(
-      `https://api.zadarma.com/v1/pbx/record/request/`,
-      { params: { ...params, user_key: ZADARMA_KEY, sign }, timeout: 10000 }
+      `https://api.zadarma.com/v1/pbx/record/request/?${qs}`,
+      { headers: { 'Authorization': zadarmaAuthHeader(sign) }, timeout: 10000 }
     );
-    const url = response.data?.links?.[0] || response.data?.link || null;
-    return url;
+    return response.data?.links?.[0] || response.data?.link || null;
   } catch (e) {
     return null;
   }
@@ -532,17 +552,20 @@ app.post('/api/call/initiate', async (req, res) => {
     // Zadarma Click-to-Call API — callback mode
     // 'from' = numer wewnętrzny recepcji (np. '103'), Zadarma najpierw tu zadzwoni
     // 'to'   = numer pacjenta
-    // 'predicted: 1' = tryb callback (najpierw dzwoni do recepcji, potem łączy z pacjentem)
+    // 'predicted: 1' = tryb callback
     const from = agentPhone || process.env.ZADARMA_DEFAULT_EXT || '103';
     const to   = phoneNumber;
     const callParams = { from, to, predicted: '1' };
     const sign = zadarmaSign('/v1/request/callback/', callParams);
+    // Buduj URL ręcznie z tym samym kodowaniem co podpis
+    const qs = Object.keys(callParams).sort()
+      .map(k => `${phpQueryEncode(k)}=${phpQueryEncode(callParams[k])}`).join('&');
 
     console.log(`[Click-to-Call] Próba: from=${from} to=${to}`);
 
     const response = await axios.get(
-      `https://api.zadarma.com/v1/request/callback/`,
-      { params: { ...callParams, user_key: ZADARMA_KEY, sign }, timeout: 10000 }
+      `https://api.zadarma.com/v1/request/callback/?${qs}`,
+      { headers: { 'Authorization': zadarmaAuthHeader(sign) }, timeout: 10000 }
     );
 
     console.log(`[Click-to-Call] Odpowiedź Zadarma:`, JSON.stringify(response.data));
@@ -590,7 +613,7 @@ app.get('/api/call/diagnose', async (req, res) => {
   try {
     const sign = zadarmaSign('/v1/info/balance/', {});
     const r = await axios.get('https://api.zadarma.com/v1/info/balance/', {
-      params: { user_key: ZADARMA_KEY, sign }, timeout: 10000
+      headers: { 'Authorization': zadarmaAuthHeader(sign) }, timeout: 10000
     });
     result.auth = { ok: true, balance: r.data };
   } catch (e) {
@@ -601,7 +624,7 @@ app.get('/api/call/diagnose', async (req, res) => {
   try {
     const sign = zadarmaSign('/v1/pbx/internal/', {});
     const r = await axios.get('https://api.zadarma.com/v1/pbx/internal/', {
-      params: { user_key: ZADARMA_KEY, sign }, timeout: 10000
+      headers: { 'Authorization': zadarmaAuthHeader(sign) }, timeout: 10000
     });
     result.extensions = { ok: true, data: r.data };
   } catch (e) {
@@ -618,44 +641,38 @@ app.get('/api/call/diagnose', async (req, res) => {
   res.json(result);
 });
 
-// Endpoint do testowania podpisu — sprawdza balance żeby potwierdzić autentykację
+// Endpoint do testowania podpisu — sprawdza balance z Authorization header (zgodnie ze supportem)
 app.get('/api/call/test-sign', async (req, res) => {
   if (!ZADARMA_KEY || !ZADARMA_SECRET) {
     return res.json({ ok: false, reason: 'Brak kluczy' });
   }
   const results = {};
 
-  // Metoda A: method + paramString + md5 → base64(hex_hmac) — oficjalny PHP SDK
+  // Metoda A: oficjalny support PHP — Authorization header + base64(hex_hmac) + RFC1738 encoding
   try {
-    const method = '/v1/info/balance/';
-    const paramString = '';
-    const md5Hash = crypto.createHash('md5').update(paramString).digest('hex');
-    const signString = method + paramString + md5Hash;
-    const hmacHex = crypto.createHmac('sha1', ZADARMA_SECRET).update(signString).digest('hex');
-    const sign = Buffer.from(hmacHex).toString('base64');
+    const sign = zadarmaSign('/v1/info/balance/', {});
     const r = await axios.get('https://api.zadarma.com/v1/info/balance/', {
-      params: { user_key: ZADARMA_KEY, sign }, timeout: 10000
+      headers: { 'Authorization': zadarmaAuthHeader(sign) }, timeout: 10000
     });
-    results.methodA = { ok: true, data: r.data, desc: 'method+params+md5 → base64(hex_hmac)' };
+    results.methodA = { ok: true, data: r.data, desc: 'Authorization header + base64(hex_hmac) RFC1738 [oficjalny]' };
   } catch(e) {
-    results.methodA = { ok: false, error: e.response?.data || e.message, desc: 'method+params+md5 → base64(hex_hmac)' };
+    results.methodA = { ok: false, error: e.response?.data || e.message, desc: 'Authorization header + base64(hex_hmac) RFC1738 [oficjalny]' };
   }
 
-  // Metoda B: method + md5 → base64(binary_hmac) — stare TypeScript repo
+  // Metoda B: stare TypeScript repo — Authorization header + base64(binary_hmac) + method+md5 only
   try {
-    const method = '/v1/info/balance/';
     const paramString = '';
     const md5Hash = crypto.createHash('md5').update(paramString).digest('hex');
-    const sign = crypto.createHmac('sha1', ZADARMA_SECRET).update(`${method}${md5Hash}`).digest('base64');
+    const sign = crypto.createHmac('sha1', ZADARMA_SECRET).update(`/v1/info/balance/${md5Hash}`).digest('base64');
     const r = await axios.get('https://api.zadarma.com/v1/info/balance/', {
-      params: { user_key: ZADARMA_KEY, sign }, timeout: 10000
+      headers: { 'Authorization': `${ZADARMA_KEY}:${sign}` }, timeout: 10000
     });
-    results.methodB = { ok: true, data: r.data, desc: 'method+md5 → base64(binary_hmac)' };
+    results.methodB = { ok: true, data: r.data, desc: 'Authorization header + base64(binary_hmac) method+md5 [stare repo]' };
   } catch(e) {
-    results.methodB = { ok: false, error: e.response?.data || e.message, desc: 'method+md5 → base64(binary_hmac)' };
+    results.methodB = { ok: false, error: e.response?.data || e.message, desc: 'Authorization header + base64(binary_hmac) method+md5 [stare repo]' };
   }
 
-  res.json({ key: ZADARMA_KEY?.slice(0, 8) + '...', ...results });
+  res.json({ key: ZADARMA_KEY?.slice(0, 8) + '...', secret: ZADARMA_SECRET?.slice(0, 4) + '...', ...results });
 });
 
 app.get('/api/call/test-auth', async (req, res) => {
@@ -666,7 +683,7 @@ app.get('/api/call/test-auth', async (req, res) => {
     const sign = zadarmaSign('/v1/pbx/internal/', {});
     const response = await axios.get(
       'https://api.zadarma.com/v1/pbx/internal/',
-      { params: { user_key: ZADARMA_KEY, sign }, timeout: 10000 }
+      { headers: { 'Authorization': zadarmaAuthHeader(sign) }, timeout: 10000 }
     );
     res.json({ ok: true, data: response.data, key: ZADARMA_KEY.slice(0, 8) + '...' });
   } catch (err) {
