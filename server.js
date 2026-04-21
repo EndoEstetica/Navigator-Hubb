@@ -450,20 +450,18 @@ app.post('/webhook/zadarma', async (req, res) => {
   }
 
   else if (event === 'NOTIFY_OUT_START' || event === 'OUTGOING') {
-    // Połączenie wychodzące zainicjowane (C10)
-    const callObj = {
-      callId,
-      pbxCallId,
-      direction: 'outbound',
-      status: 'ringing',
-      from: called,
-      to: caller || called,
-      timestamp: new Date().toISOString(),
-      recordingUrl: null,
-      tag: null
-    };
-    storeCall(callObj);
-    broadcast({ type: 'CALL_RINGING', ...callObj });
+    // Połączenie wychodzące — jeśli już istnieje z click-to-call, tylko aktualizuj pbxCallId
+    const existing = callsStore.find(c => c.callId === callId);
+    if (existing) {
+      storeCall({ callId, pbxCallId, status: 'ringing' });
+    } else {
+      storeCall({
+        callId, pbxCallId, direction: 'outbound', status: 'ringing',
+        from: caller || called, to: called || caller,
+        timestamp: new Date().toISOString(), recordingUrl: null, tag: null
+      });
+      broadcast({ type: 'CALL_RINGING', callId, direction: 'outbound', from: caller || called, to: called || caller });
+    }
   }
 
   else if (event === 'NOTIFY_ANSWER' || event === 'ANSWERED') {
@@ -563,13 +561,14 @@ app.post('/api/call/initiate', async (req, res) => {
       pbxCallId: callId,
       direction: 'outbound',
       status: 'ringing',
-      from: to,
-      to,
+      from: phoneNumber,       // numer pacjenta (do kogo dzwonimy)
+      to: phoneNumber,
       contactName: contactName || phoneNumber,
       contactId: contactId || null,
       timestamp: new Date().toISOString(),
       recordingUrl: null,
-      tag: null
+      tag: null,
+      userId: req.body.userId || null  // kto dzwoni
     };
     storeCall(callObj);
     broadcast({ type: 'CALL_RINGING', ...callObj });
@@ -768,6 +767,80 @@ app.get('/api/server-ip', async (req, res) => {
   } catch(e) {
     res.json({ serverIp: 'nie udało się pobrać', error: e.message });
   }
+});
+
+// ─── SYSTEM UŻYTKOWNIKÓW ───────────────────────────────────────────────────────
+const USERS = {
+  kasia:      { id: 'kasia',      name: 'Kasia',      role: 'reception', ext: '103' },
+  agnieszka:  { id: 'agnieszka',  name: 'Agnieszka',  role: 'reception', ext: '103' },
+  asia:       { id: 'asia',       name: 'Asia',        role: 'reception', ext: '103' },
+  agata_r:    { id: 'agata_r',    name: 'Agata (R)',   role: 'reception', ext: '103' },
+  zastepstwo: { id: 'zastepstwo', name: 'Zastępstwo',  role: 'reception', ext: '103' },
+  aneta:      { id: 'aneta',      name: 'Aneta',       role: 'opiekun',   ext: '103' },
+  agata_o:    { id: 'agata_o',    name: 'Agata (O)',   role: 'opiekun',   ext: '103' },
+  bartosz:    { id: 'bartosz',    name: 'Bartosz',     role: 'admin',     ext: null },
+  sandra:     { id: 'sandra',     name: 'Sandra',      role: 'admin',     ext: null },
+  aneta_a:    { id: 'aneta_a',    name: 'Aneta (A)',   role: 'admin',     ext: null },
+  patrycja:   { id: 'patrycja',   name: 'Patrycja',    role: 'admin',     ext: null },
+  sonia:      { id: 'sonia',      name: 'Sonia',       role: 'admin',     ext: null },
+};
+
+app.get('/api/users', (req, res) => {
+  const list = Object.values(USERS).map(u => ({ id: u.id, name: u.name, role: u.role }));
+  res.json({ users: list });
+});
+
+app.get('/api/user/:id', (req, res) => {
+  const user = USERS[req.params.id];
+  if (!user) return res.status(404).json({ error: 'Nie znaleziono użytkownika' });
+  res.json(user);
+});
+
+// ─── CHAT DO SONI (prywatny per użytkownik) ──────────────────────────────────
+// In-memory store: chatMessages[conversationKey] = [{ from, to, text, ts }]
+const chatMessages = {};
+const SONIA_ID = 'sonia';
+
+app.post('/api/chat/send', (req, res) => {
+  const { fromUserId, toUserId, text } = req.body;
+  if (!fromUserId || !toUserId || !text) return res.status(400).json({ error: 'Missing fields' });
+  // Klucz konwersacji: zawsze sortowany (by obie strony widziały tę samą historię)
+  const convKey = [fromUserId, toUserId].sort().join(':');
+  if (!chatMessages[convKey]) chatMessages[convKey] = [];
+  const msg = { from: fromUserId, to: toUserId, text, ts: new Date().toISOString(), id: `msg_${Date.now()}_${Math.random().toString(36).slice(2,6)}` };
+  chatMessages[convKey].push(msg);
+  // Ogranicz do 500 wiadomości per konwersacja
+  if (chatMessages[convKey].length > 500) chatMessages[convKey] = chatMessages[convKey].slice(-500);
+  // Broadcast przez WebSocket — tylko do uczestników konwersacji
+  broadcast({ type: 'CHAT_PRIVATE', convKey, msg });
+  res.json({ success: true, msg });
+});
+
+app.get('/api/chat/history/:convKey', (req, res) => {
+  const msgs = chatMessages[req.params.convKey] || [];
+  res.json({ messages: msgs });
+});
+
+// Lista konwersacji Soni (z liczbą nieprzeczytanych)
+app.get('/api/chat/sonia-inbox', (req, res) => {
+  const conversations = [];
+  for (const [key, msgs] of Object.entries(chatMessages)) {
+    if (!key.includes(SONIA_ID)) continue;
+    const otherUserId = key.split(':').find(id => id !== SONIA_ID);
+    const otherUser = USERS[otherUserId];
+    const lastMsg = msgs[msgs.length - 1];
+    const unread = msgs.filter(m => m.to === SONIA_ID && !m.read).length;
+    conversations.push({
+      convKey: key,
+      otherUserId,
+      otherUserName: otherUser?.name || otherUserId,
+      lastMessage: lastMsg?.text || '',
+      lastTs: lastMsg?.ts || '',
+      unread
+    });
+  }
+  conversations.sort((a, b) => b.lastTs.localeCompare(a.lastTs));
+  res.json({ conversations });
 });
 
 // ─── Health check ─────────────────────────────────────────────────────────────

@@ -23,8 +23,87 @@ let currentUserRole = 'reception'; // 'reception' | 'admin'
 let activeCallId = null;
 let pollingInterval = null;
 
-// ==================== INITIALIZATION ====================
-document.addEventListener('DOMContentLoaded', () => {
+// ==================== SYSTEM UŻYTKOWNIKÓW ====================
+let currentUser = null;
+
+function initLoginScreen() {
+  const saved = localStorage.getItem('nav_user');
+  if (saved) {
+    try {
+      currentUser = JSON.parse(saved);
+      showApp();
+      return;
+    } catch(e) { localStorage.removeItem('nav_user'); }
+  }
+  showLoginScreen();
+}
+
+async function showLoginScreen() {
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+  const grid = document.getElementById('loginUserGrid');
+  grid.innerHTML = '<p style="color:#888;">Ładowanie...</p>';
+
+  try {
+    const r = await fetch('/api/users');
+    const data = await r.json();
+    const users = data.users || [];
+    const roleLabels = { reception: '📞 Recepcja', opiekun: '👤 Opiekun', admin: '⚙️ Administracja' };
+    const grouped = {};
+    users.forEach(u => {
+      if (!grouped[u.role]) grouped[u.role] = [];
+      grouped[u.role].push(u);
+    });
+    grid.innerHTML = '';
+    ['reception', 'opiekun', 'admin'].forEach(role => {
+      if (!grouped[role]) return;
+      const section = document.createElement('div');
+      section.className = 'login-role-section';
+      section.innerHTML = `<div class="login-role-label">${roleLabels[role] || role}</div>`;
+      grouped[role].forEach(u => {
+        const btn = document.createElement('button');
+        btn.className = 'login-user-btn';
+        btn.textContent = u.name;
+        btn.onclick = () => loginAs(u);
+        section.appendChild(btn);
+      });
+      grid.appendChild(section);
+    });
+  } catch(e) {
+    grid.innerHTML = '<p style="color:red;">Błąd ładowania użytkowników</p>';
+  }
+}
+
+function loginAs(user) {
+  currentUser = user;
+  localStorage.setItem('nav_user', JSON.stringify(user));
+  showApp();
+}
+
+function logoutUser() {
+  currentUser = null;
+  localStorage.removeItem('nav_user');
+  showLoginScreen();
+}
+
+function showApp() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('app').style.display = '';
+  const nameEl = document.getElementById('sidebarUserName');
+  if (nameEl) nameEl.textContent = currentUser?.name || '—';
+  // Pokaż/ukryj chat do Soni
+  const chatWidget = document.getElementById('soniaChat');
+  if (chatWidget) chatWidget.style.display = currentUser ? '' : 'none';
+  // Admin: ukryj numer wewnętrzny w interfejsie
+  if (currentUser?.role === 'admin') {
+    setUserRole('admin');
+  } else {
+    setUserRole('reception');
+  }
+  initApp();
+}
+
+function initApp() {
   updateClock();
   setInterval(updateClock, 1000);
   connectWebSocket();
@@ -34,9 +113,144 @@ document.addEventListener('DOMContentLoaded', () => {
   renderCharts(null);
   startPolling();
   initDialer();
+  initSoniaChat();
+}
 
-  const savedRole = localStorage.getItem('nav_role');
-  if (savedRole) setUserRole(savedRole);
+// ==================== CHAT DO SONI ====================
+let soniaChatOpen = false;
+let currentConvKey = null;
+
+function initSoniaChat() {
+  if (!currentUser) return;
+  if (currentUser.id === 'sonia') {
+    // Sonia widzi listę konwersacji
+    document.getElementById('soniaChatTitle').textContent = 'Wiadomości';
+    loadSoniaInbox();
+  } else {
+    // Zwykły użytkownik — chat z Sonią
+    currentConvKey = [currentUser.id, 'sonia'].sort().join(':');
+    loadChatHistory(currentConvKey);
+  }
+}
+
+function toggleSoniaChat() {
+  soniaChatOpen = !soniaChatOpen;
+  const panel = document.getElementById('soniaChatPanel');
+  if (panel) {
+    panel.classList.toggle('hidden', !soniaChatOpen);
+  }
+  // Odśwież przy otwarciu
+  if (soniaChatOpen) {
+    if (currentUser?.id === 'sonia') loadSoniaInbox();
+    else if (currentConvKey) loadChatHistory(currentConvKey);
+  }
+}
+
+async function loadChatHistory(convKey) {
+  const container = document.getElementById('soniaChatMessages');
+  if (!container) return;
+  try {
+    const r = await fetch(`/api/chat/history/${convKey}`);
+    const data = await r.json();
+    renderChatMessages(container, data.messages || []);
+  } catch(e) {
+    container.innerHTML = '<p style="padding:12px;color:#888;font-size:12px;">Rozpocznij rozmowę z Sonią</p>';
+  }
+}
+
+function renderChatMessages(container, messages) {
+  if (messages.length === 0) {
+    container.innerHTML = '<p style="padding:12px;color:#888;font-size:12px;">Brak wiadomości. Napisz do Soni.</p>';
+    return;
+  }
+  container.innerHTML = '';
+  messages.forEach(m => {
+    const isMine = m.from === currentUser?.id;
+    const div = document.createElement('div');
+    div.className = `sonia-msg ${isMine ? 'sonia-msg-mine' : 'sonia-msg-other'}`;
+    const time = m.ts ? new Date(m.ts).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }) : '';
+    div.innerHTML = `<div class="sonia-msg-text">${escHtml(m.text)}</div><div class="sonia-msg-time">${time}</div>`;
+    container.appendChild(div);
+  });
+  container.scrollTop = container.scrollHeight;
+}
+
+async function sendSoniaMessage() {
+  const input = document.getElementById('soniaChatInput');
+  const text = input?.value?.trim();
+  if (!text || !currentUser) return;
+
+  let toUserId = 'sonia';
+  // Jeśli Sonia pisze — do kogo?
+  if (currentUser.id === 'sonia' && currentConvKey) {
+    toUserId = currentConvKey.split(':').find(id => id !== 'sonia') || 'sonia';
+  }
+
+  try {
+    await fetch('/api/chat/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fromUserId: currentUser.id, toUserId, text })
+    });
+    input.value = '';
+    if (currentConvKey) loadChatHistory(currentConvKey);
+  } catch(e) {
+    showToast('Błąd wysyłania wiadomości', 'error');
+  }
+}
+
+async function loadSoniaInbox() {
+  const inbox = document.getElementById('soniaInbox');
+  const msgs  = document.getElementById('soniaChatMessages');
+  const inputRow = document.querySelector('.sonia-chat-input-row');
+  if (!inbox) return;
+
+  // Jeśli Sonia ogląda konkretną konwersację — pokaż ją
+  if (currentConvKey) {
+    inbox.style.display = 'none';
+    msgs.style.display = '';
+    if (inputRow) inputRow.style.display = '';
+    loadChatHistory(currentConvKey);
+    return;
+  }
+
+  // Inaczej — lista konwersacji
+  inbox.style.display = '';
+  msgs.style.display = 'none';
+  if (inputRow) inputRow.style.display = 'none';
+
+  try {
+    const r = await fetch('/api/chat/sonia-inbox');
+    const data = await r.json();
+    const convs = data.conversations || [];
+    if (convs.length === 0) {
+      inbox.innerHTML = '<p style="padding:12px;color:#888;font-size:12px;">Brak wiadomości</p>';
+      return;
+    }
+    inbox.innerHTML = '';
+    convs.forEach(c => {
+      const div = document.createElement('div');
+      div.className = 'sonia-inbox-item';
+      div.onclick = () => { currentConvKey = c.convKey; loadSoniaInbox(); };
+      div.innerHTML = `
+        <div style="font-weight:500;font-size:13px;">${escHtml(c.otherUserName)} ${c.unread > 0 ? `<span style="background:#e74c3c;color:#fff;font-size:10px;padding:1px 5px;border-radius:8px;margin-left:4px;">${c.unread}</span>` : ''}</div>
+        <div style="font-size:11px;color:#888;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(c.lastMessage)}</div>
+      `;
+      inbox.appendChild(div);
+    });
+  } catch(e) {
+    inbox.innerHTML = '<p style="padding:12px;color:red;font-size:12px;">Błąd</p>';
+  }
+}
+
+function soniaGoBackToInbox() {
+  currentConvKey = null;
+  loadSoniaInbox();
+}
+
+// ==================== INITIALIZATION ====================
+document.addEventListener('DOMContentLoaded', () => {
+  initLoginScreen();
 });
 
 function updateClock() {
@@ -147,6 +361,23 @@ function handleWebSocketMessage(data) {
     case 'CHAT_MESSAGE':
       appendChatMessage(data.from, data.text, data.ts, false);
       break;
+    case 'CHAT_PRIVATE':
+      // Odśwież chat jeśli dotyczy naszej konwersacji
+      if (data.convKey === currentConvKey && soniaChatOpen) {
+        loadChatHistory(currentConvKey);
+      }
+      // Badge dla Soni
+      if (currentUser?.id === 'sonia' && data.msg?.to === 'sonia') {
+        const badge = document.getElementById('soniaChatBadge');
+        if (badge) { badge.style.display = ''; badge.textContent = '!'; }
+      }
+      // Badge dla zwykłego użytkownika (wiadomość od Soni)
+      if (data.msg?.from === 'sonia' && data.msg?.to === currentUser?.id) {
+        const badge = document.getElementById('soniaChatBadge');
+        if (badge && !soniaChatOpen) { badge.style.display = ''; badge.textContent = '!'; }
+        if (soniaChatOpen && currentConvKey === data.convKey) loadChatHistory(currentConvKey);
+      }
+      break;
   }
 }
 
@@ -196,12 +427,10 @@ function handleCallEnded(data) {
   if (idx >= 0) allCalls[idx] = { ...allCalls[idx], status: 'ended', tag: data.tag, duration: data.duration };
   if (currentView === 'calls') renderCallsTable(allCalls);
 
-  // Uruchom poller nagrania dla udanych połączeń
-  if (data.tag === 'connected') {
-    startRecordingPoller(data.callId);
-  }
+  if (data.tag === 'connected') startRecordingPoller(data.callId);
 
   if (activeCallId === data.callId) {
+    stopCallTimer(); // ← zawsze zatrzymaj timer
     if (data.tag === 'missed' || data.tag === 'ineffective') {
       closeCallPopup();
     }
@@ -715,6 +944,7 @@ function hangupCall() {
   const tagEl = document.getElementById('popupCallTag');
   if (tagEl) { tagEl.textContent = 'ROZŁĄCZONO'; tagEl.className = 'call-tag tag-missed'; tagEl.style.display = 'inline-block'; }
   stopCallTimer();
+  setTimeout(() => closeCallPopup(), 1500);
   showToast('📵 Rozłączono', 'info');
 }
 
@@ -1734,7 +1964,7 @@ function initDialer() {
         <span class="dialer-title">Zadzwoń</span>
         <button class="dialer-close" onclick="toggleDialer()">✕</button>
       </div>
-      <input id="dialerInput" class="dialer-input" type="tel" placeholder="+48 000 000 000"
+      <input id="dialerInput" class="dialer-input" type="tel" value="+48" placeholder="+48 000 000 000"
              oninput="dialerNumber=this.value" onkeydown="if(event.key==='Enter')dialerCall()"/>
       <div class="dialer-grid">
         ${['1','2','3','4','5','6','7','8','9','*','0','#'].map(k => `
@@ -1768,17 +1998,17 @@ function dialerPress(key) {
 
 function dialerDelete() {
   const input = document.getElementById('dialerInput');
-  if (!input) return;
+  if (!input || input.value.length <= 3) return; // nie usuwaj +48
   input.value = input.value.slice(0, -1);
   dialerNumber = input.value;
 }
 
 function dialerCall() {
   const num = (document.getElementById('dialerInput')?.value || '').trim();
-  if (!num) { showToast('Wpisz numer telefonu', 'error'); return; }
+  if (!num || num === '+48') { showToast('Wpisz numer telefonu', 'error'); return; }
   initiateCall(num, num, null, null);
-  document.getElementById('dialerInput').value = '';
-  dialerNumber = '';
+  document.getElementById('dialerInput').value = '+48';
+  dialerNumber = '+48';
   toggleDialer();
 }
 
@@ -1830,6 +2060,7 @@ async function openDiagnose() {
 
   try {
     const r = await fetch('/api/call/diagnose');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const d = await r.json();
     renderDiagnose(d, content);
   } catch(e) {
