@@ -62,38 +62,24 @@ function getRecentCalls(days = 7) {
 const recordingRetryQueue = new Map(); // callId → { attempts, pbxCallId, contactName }
 const RETRY_DELAYS = [5000, 30000, 120000, 300000, 600000, 1200000]; // 5s, 30s, 2min, 5min, 10min, 20min
 
-// ─── Zadarma — podpis API (oficjalny algorytm z supportu Zadarmy) ─────────────
-// Źródło: odpowiedź supportu Zadarma
-//
-// PHP reference:
-//   $paramsStr = http_build_query($params, null, '&', PHP_QUERY_RFC1738);
-//   $sign = base64_encode(hash_hmac('sha1', $method.$paramsStr.md5($paramsStr), $secret));
-//   $header = 'Authorization: ' . $key . ':' . $sign;
-//
-// PHP http_build_query RFC1738: encodes + jako %2B, spacja jako +, inne jako %XX
-// PHP hash_hmac bez raw_output zwraca hex string → base64_encode koduje hex string
-//
-function phpQueryEncode(str) {
-  // Odpowiednik PHP http_build_query z PHP_QUERY_RFC1738
-  // encodeURIComponent + zamień %20 na +
-  return encodeURIComponent(String(str)).replace(/%20/g, '+');
-}
-
+// ─── Zadarma — podpis API (zweryfikowany algorytm z dokumentacji Zadarma) ──────
+// Źródło: support Zadarma + dokument "Moment Przełomowy"
+// PHP: $sign = base64_encode(hash_hmac('sha1', $method.$paramsStr.md5($paramsStr), $secret))
+// PHP hash_hmac domyślnie zwraca HEX → base64_encode koduje HEX string
 function zadarmaSign(method, params) {
+  // Sortuj i zakoduj (URLSearchParams = odpowiednik PHP http_build_query RFC1738)
   const sortedKeys = Object.keys(params).sort();
-  const paramString = sortedKeys
-    .map(k => `${phpQueryEncode(k)}=${phpQueryEncode(params[k])}`)
-    .join('&');
-  const md5Hash = crypto.createHash('md5').update(paramString).digest('hex');
-  const signString = method + paramString + md5Hash;
-  // PHP hash_hmac zwraca hex (nie binary), base64_encode koduje ten hex
-  const hmacHex = crypto.createHmac('sha1', ZADARMA_SECRET).update(signString).digest('hex');
+  const sorted = {};
+  sortedKeys.forEach(k => sorted[k] = params[k]);
+  const paramsStr = new URLSearchParams(sorted).toString();
+  const md5Hash = crypto.createHash('md5').update(paramsStr).digest('hex');
+  const signString = method + paramsStr + md5Hash;
+  const hmacHex = crypto.createHmac('sha1', ZADARMA_SECRET.trim()).update(signString).digest('hex');
   return Buffer.from(hmacHex).toString('base64');
 }
 
-// Nagłówek autoryzacji (zgodnie z supportem: Authorization: KEY:SIGN)
 function zadarmaAuthHeader(sign) {
-  return `${ZADARMA_KEY}:${sign}`;
+  return `${ZADARMA_KEY.trim()}:${sign}`;
 }
 
 // Weryfikacja podpisu webhooków Zadarma (inny wzór: tylko md5, bez method)
@@ -113,7 +99,8 @@ async function fetchRecordingFromZadarma(pbxCallId) {
   try {
     const params = { call_id: pbxCallId };
     const sign = zadarmaSign('/v1/pbx/record/request/', params);
-    const qs = Object.keys(params).sort().map(k => `${phpQueryEncode(k)}=${phpQueryEncode(params[k])}`).join('&');
+    const sorted = {}; Object.keys(params).sort().forEach(k => sorted[k] = params[k]);
+    const qs = new URLSearchParams(sorted).toString();
     const response = await axios.get(
       `https://api.zadarma.com/v1/pbx/record/request/?${qs}`,
       { headers: { 'Authorization': zadarmaAuthHeader(sign) }, timeout: 10000 }
@@ -558,8 +545,8 @@ app.post('/api/call/initiate', async (req, res) => {
     const callParams = { from, to, predicted: '1' };
     const sign = zadarmaSign('/v1/request/callback/', callParams);
     // Buduj URL ręcznie z tym samym kodowaniem co podpis
-    const qs = Object.keys(callParams).sort()
-      .map(k => `${phpQueryEncode(k)}=${phpQueryEncode(callParams[k])}`).join('&');
+    const sortedCallParams = {}; Object.keys(callParams).sort().forEach(k => sortedCallParams[k] = callParams[k]);
+    const qs = new URLSearchParams(sortedCallParams).toString();
 
     console.log(`[Click-to-Call] Próba: from=${from} to=${to}`);
 
@@ -675,7 +662,44 @@ app.get('/api/call/test-sign', async (req, res) => {
   res.json({ key: ZADARMA_KEY?.slice(0, 8) + '...', secret: ZADARMA_SECRET?.slice(0, 4) + '...', ...results });
 });
 
-app.get('/api/call/test-auth', async (req, res) => {
+// Endpoint diagnostyczny — pokazuje dokładne wartości podpisu do weryfikacji ręcznej
+app.get('/api/call/debug-sign', (req, res) => {
+  if (!ZADARMA_KEY || !ZADARMA_SECRET) {
+    return res.json({ error: 'Brak kluczy w env' });
+  }
+
+  const key    = ZADARMA_KEY.trim();
+  const secret = ZADARMA_SECRET.trim();
+  const method = '/v1/info/balance/';
+  const paramsStr = '';
+  const md5ofParams = crypto.createHash('md5').update(paramsStr).digest('hex');
+  const signInput   = method + paramsStr + md5ofParams;
+  const hmacHex     = crypto.createHmac('sha1', secret).update(signInput).digest('hex');
+  const signBase64  = Buffer.from(hmacHex).toString('base64');
+  const authHeader  = `${key}:${signBase64}`;
+
+  res.json({
+    // Diagnostyka kluczy
+    key_raw_length:    ZADARMA_KEY.length,
+    key_trimmed_length: key.length,
+    key_has_whitespace: ZADARMA_KEY !== key,
+    secret_raw_length:    ZADARMA_SECRET.length,
+    secret_trimmed_length: secret.length,
+    secret_has_whitespace: ZADARMA_SECRET !== secret,
+    key_first8:    key.slice(0, 8),
+    secret_first4: secret.slice(0, 4),
+    // Wartości pośrednie
+    method,
+    paramsStr,
+    md5ofParams,
+    signInput,
+    hmacHex,
+    signBase64,
+    // Gotowy nagłówek do curl:
+    curl_command: `curl -H "Authorization: ${authHeader}" https://api.zadarma.com/v1/info/balance/`
+  });
+});
+
   if (!ZADARMA_KEY || !ZADARMA_SECRET) {
     return res.json({ ok: false, reason: 'Brak ZADARMA_KEY lub ZADARMA_SECRET w .env' });
   }
@@ -733,6 +757,16 @@ app.get('/api/stats', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Pokaż publiczne IP serwera (potrzebne do konfiguracji Zadarma)
+app.get('/api/server-ip', async (req, res) => {
+  try {
+    const r = await axios.get('https://api.ipify.org?format=json', { timeout: 5000 });
+    res.json({ serverIp: r.data.ip, note: 'Dodaj to IP do dozwolonych w ustawieniach klucza API Zadarma' });
+  } catch(e) {
+    res.json({ serverIp: 'nie udało się pobrać', error: e.message });
   }
 });
 
