@@ -700,6 +700,7 @@ app.get('/api/call/debug-sign', (req, res) => {
   });
 });
 
+app.get('/api/call/test-auth', async (req, res) => {
   if (!ZADARMA_KEY || !ZADARMA_SECRET) {
     return res.json({ ok: false, reason: 'Brak ZADARMA_KEY lub ZADARMA_SECRET w .env' });
   }
