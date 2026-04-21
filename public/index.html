@@ -600,12 +600,12 @@
   <script src="app.js"></script>
   <!-- CHAT DO SONI — lewy dolny róg -->
   <div id="soniaChat" class="sonia-chat-widget" style="display:none;">
-    <button id="soniaChatToggle" onclick="toggleSoniaChat()" title="Chat do Soni">
+    <button id="soniaChatToggle" onclick="toggleSoniaChat()" title="Zgłoś sprawę do Soni">
       💬 <span id="soniaChatBadge" class="sonia-badge" style="display:none;">0</span>
     </button>
     <div id="soniaChatPanel" class="sonia-chat-panel hidden">
       <div class="sonia-chat-header">
-        <span>💬 <span id="soniaChatTitle">Chat z Sonią</span></span>
+        <span>📋 <span id="soniaChatTitle">Zgłoś sprawę do Soni</span></span>
         <button onclick="toggleSoniaChat()" style="background:none;border:none;color:inherit;cursor:pointer;font-size:16px;">✕</button>
       </div>
       <!-- Sonia: lista konwersacji -->
@@ -613,7 +613,7 @@
       <!-- Zwykły użytkownik / konkretna konwersacja -->
       <div id="soniaChatMessages" class="sonia-chat-messages"></div>
       <div class="sonia-chat-input-row">
-        <input id="soniaChatInput" type="text" placeholder="Napisz do Soni..." onkeydown="if(event.key==='Enter')sendSoniaMessage()"/>
+        <input id="soniaChatInput" type="text" placeholder="Opisz sprawę lub problem..." onkeydown="if(event.key==='Enter')sendSoniaMessage()"/>
         <button onclick="sendSoniaMessage()">➤</button>
       </div>
     </div>

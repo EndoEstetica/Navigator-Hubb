@@ -3,6 +3,43 @@
    Frontend Application Logic — Enhanced Edition
    ============================================================ */
 
+// ==================== GHL STAGES ====================
+const GHL_STAGE_IDS = {
+  NEW:          '4d006021-f3b2-4efc-8efc-4f049522379c',
+  ATTEMPT_1:    '002dbc5a-c6a4-4931-a9a3-af4877b2c525',
+  ATTEMPT_2:    'de0a619e-ee22-41c3-9a90-eccfcb1a8fb8',
+  FOLLOWUP_2:   '6d0c5ca9-8b79-4bf3-a091-381e636cd21e',
+  FOLLOWUP_4:   '53ad4911-a26c-41fa-9b23-bc3c88f98ea4',
+  NO_CONTACT:   '6517c39e-15fe-4041-a847-89ba822b3c96',
+  AFTER_CALL:   '19126f1b-5529-48fc-be95-d6b64e264e59',
+  BOOKED_W0:    '73f6704f-1d6a-49dc-8591-4b129ba1b692',
+  NO_SHOW:      'afc5a678-b78b-47bd-858e-78968724ac4d',
+  REFUSED:      '139cde76-d37e-4a14-ad45-ae94a843d78b',
+};
+const GHL_STAGE_NAMES = {
+  '4d006021-f3b2-4efc-8efc-4f049522379c': 'Nowe zgłoszenie',
+  '002dbc5a-c6a4-4931-a9a3-af4877b2c525': '1 próba kontaktu',
+  'de0a619e-ee22-41c3-9a90-eccfcb1a8fb8': '2 próba kontaktu',
+  '6d0c5ca9-8b79-4bf3-a091-381e636cd21e': 'Follow-up dzień 2',
+  '53ad4911-a26c-41fa-9b23-bc3c88f98ea4': 'Follow-up dzień 4',
+  '6517c39e-15fe-4041-a847-89ba822b3c96': 'Brak kontaktu',
+  '19126f1b-5529-48fc-be95-d6b64e264e59': 'Po rozmowie',
+  '73f6704f-1d6a-49dc-8591-4b129ba1b692': 'Umówiony W0',
+  'afc5a678-b78b-47bd-858e-78968724ac4d': 'No-show',
+  '139cde76-d37e-4a14-ad45-ae94a843d78b': 'Odmówił',
+};
+
+async function moveOpportunityToStage(oppId, stageId) {
+  if (!oppId) return;
+  try {
+    await fetch(`/api/opportunity/${oppId}/move-stage`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stageId })
+    });
+    console.log(`[Stage] Opportunity ${oppId} → ${GHL_STAGE_NAMES[stageId] || stageId}`);
+  } catch(e) { console.error('[Stage] Error:', e); }
+}
+
 // ==================== GLOBAL STATE ====================
 let currentView = 'dashboard';
 let currentTab = 'new-leads';
@@ -123,11 +160,12 @@ let currentConvKey = null;
 function initSoniaChat() {
   if (!currentUser) return;
   if (currentUser.id === 'sonia') {
-    // Sonia widzi listę konwersacji
-    document.getElementById('soniaChatTitle').textContent = 'Wiadomości';
+    // Sonia widzi listę zgłoszeń
+    document.getElementById('soniaChatTitle').textContent = 'Zgłoszenia od zespołu';
     loadSoniaInbox();
   } else {
     // Zwykły użytkownik — chat z Sonią
+    document.getElementById('soniaChatTitle').textContent = 'Zgłoś sprawę do Soni';
     currentConvKey = [currentUser.id, 'sonia'].sort().join(':');
     loadChatHistory(currentConvKey);
   }
@@ -205,11 +243,15 @@ async function loadSoniaInbox() {
   const inputRow = document.querySelector('.sonia-chat-input-row');
   if (!inbox) return;
 
-  // Jeśli Sonia ogląda konkretną konwersację — pokaż ją
+  // Jeśli Sonia ogląda konkretną konwersację — pokaż ją z przyciskiem powrotu
   if (currentConvKey) {
     inbox.style.display = 'none';
     msgs.style.display = '';
     if (inputRow) inputRow.style.display = '';
+    // Dodaj przycisk "← Wróć" do nagłówka
+    const titleEl = document.getElementById('soniaChatTitle');
+    const otherUserId = currentConvKey.split(':').find(id => id !== 'sonia');
+    if (titleEl) titleEl.innerHTML = `<span onclick="soniaGoBackToInbox()" style="cursor:pointer;opacity:0.7;margin-right:6px;">←</span> ${escHtml(otherUserId)}`;
     loadChatHistory(currentConvKey);
     return;
   }
@@ -245,6 +287,8 @@ async function loadSoniaInbox() {
 
 function soniaGoBackToInbox() {
   currentConvKey = null;
+  const titleEl = document.getElementById('soniaChatTitle');
+  if (titleEl) titleEl.textContent = 'Zgłoszenia od zespołu';
   loadSoniaInbox();
 }
 
@@ -528,7 +572,9 @@ async function loadNewLeads() {
       source: opp.source || opp.leadSource || '',
       zglosza: opp.contact?.z_czym_si_zgasza || opp.z_czym_si_zgasza || '',
       createdAt: opp.createdAt || new Date().toISOString(),
-      oppId: opp.id
+      oppId: opp.id,
+      stageId: opp.pipelineStageId || '',
+      stageName: GHL_STAGE_NAMES[opp.pipelineStageId] || ''
     }));
 
     document.getElementById('badge-new').textContent = allLeads.length;
@@ -645,6 +691,9 @@ function createLeadCard(lead) {
   const sourceTags = [...new Set([...(lead.tags || []), lead.source].filter(Boolean))];
   const sourceTagsHtml = sourceTags.map(t => getSourceLabel(t)).join('');
   const ageHtml = getLeadAgeLabel(lead.createdAt);
+  const stageHtml = lead.stageName
+    ? `<span class="lead-stage-tag">${escHtml(lead.stageName)}</span>`
+    : '';
   const phoneHtml = lead.phone
     ? `<div class="lead-phone">📞 ${lead.phone}</div>`
     : `<div class="lead-phone no-phone">Brak numeru telefonu</div>`;
@@ -653,16 +702,17 @@ function createLeadCard(lead) {
     <div class="lead-avatar">${(lead.name || 'P').charAt(0).toUpperCase()}</div>
     <div class="lead-info">
       <div class="lead-name-row">
-        <span class="lead-name">${lead.name}</span>
+        <span class="lead-name">${escHtml(lead.name)}</span>
+        ${stageHtml}
         ${ageHtml}
         ${sourceTagsHtml}
       </div>
       ${phoneHtml}
-      ${lead.zglosza ? `<div class="lead-zglosza"><em>${lead.zglosza}</em></div>` : ''}
+      ${lead.zglosza ? `<div class="lead-zglosza"><em>${escHtml(lead.zglosza)}</em></div>` : ''}
     </div>
     <div class="lead-actions">
-      ${lead.phone ? `<button class="btn-call" onclick="initiateCall('${lead.phone}', '${escHtml(lead.name)}', '${lead.contactId}', '${lead.id}')">📞 Zadzwoń</button>` : ''}
-      <button class="btn-report" onclick="openCallPopupForLead('${lead.contactId}', '${escHtml(lead.name)}', '${lead.phone}', '${escHtml(lead.zglosza)}', '${lead.id}')">📋 Raport</button>
+      ${lead.phone ? `<button class="btn-call" onclick="initiateCall('${escHtml(lead.phone)}', '${escHtml(lead.name)}', '${lead.contactId}', '${lead.id}')">📞 Zadzwoń</button>` : ''}
+      <button class="btn-report" onclick="openCallPopupForLead('${lead.contactId}', '${escHtml(lead.name)}', '${escHtml(lead.phone)}', '${escHtml(lead.zglosza)}', '${lead.id}')">📋 Raport</button>
       <button class="btn-edit edit-request-btn" onclick="openEditRequest('${lead.contactId}', '${escHtml(lead.name)}')">${currentUserRole === 'admin' ? '✏️ Edytuj' : '✏️ Prośba o edycję'}</button>
       <button class="btn-delete admin-only" style="display:${currentUserRole === 'admin' ? 'inline-flex' : 'none'}" onclick="deleteLead('${lead.id}', this)">✕</button>
     </div>
@@ -1106,16 +1156,24 @@ async function handleNewPatientReport(contactId, data) {
           { id: 'dedykowany_program_leczenia', value: data.program }
         ]})
       });
+      // → Przenieś do stage 8: Umówiony W0
+      await moveOpportunityToStage(currentOpportunity.id, GHL_STAGE_IDS.BOOKED_W0);
     }
     showToast(`📅 Wizyta umówiona na ${new Date(data.dataW0).toLocaleDateString('pl-PL')}`, 'success');
   } else if (data.outcome === 'prosi_kontakt' && data.contactDateTime) {
+    // → Przenieś do stage 7: Po rozmowie (rozważa)
+    if (currentOpportunity?.id) {
+      await moveOpportunityToStage(currentOpportunity.id, GHL_STAGE_IDS.AFTER_CALL);
+    }
     if (contactId && contactId !== 'unknown') {
+      const ghlAssignedTo = currentUser?.ghlUserId || null;
       await fetch(`/api/contact/${contactId}/task`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: `Oddzwoń do ${currentContact?.name || 'pacjenta'}`,
           body: `Pacjent prosi o kontakt. Program: ${data.program || 'nieustalony'}`,
-          dueDate: new Date(data.contactDateTime).toISOString()
+          dueDate: new Date(data.contactDateTime).toISOString(),
+          assignedTo: ghlAssignedTo
         })
       });
     }
@@ -1127,6 +1185,8 @@ async function handleNewPatientReport(contactId, data) {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ customFields: [{ id: 'powd_rezygnacji__niekwalifikacji', value: data.powodRezygnacji }]})
       });
+      // → Przenieś do stage: Odmówił
+      await moveOpportunityToStage(currentOpportunity.id, GHL_STAGE_IDS.REFUSED);
     }
     showToast('❌ Rezygnacja zapisana', 'info');
   }
@@ -1151,7 +1211,8 @@ async function handleVisitReport(contactId, data) {
         body: JSON.stringify({
           title: `Oddzwoń - odwołana wizyta: ${currentContact?.name || 'pacjent'}`,
           body: `Powód odwołania: ${data.powodOdwolania || 'nieustalony'}`,
-          dueDate: data.contactDateTime ? new Date(data.contactDateTime).toISOString() : new Date(Date.now() + 86400000).toISOString()
+          dueDate: data.contactDateTime ? new Date(data.contactDateTime).toISOString() : new Date(Date.now() + 86400000).toISOString(),
+          assignedTo: currentUser?.ghlUserId || null
         })
       });
     }
@@ -1168,7 +1229,8 @@ async function handleRegularPatientReport(contactId, data) {
         body: JSON.stringify({
           title: `Oddzwoń do ${currentContact?.name || 'pacjenta'}`,
           body: data.notatka || 'Stały pacjent prosi o kontakt',
-          dueDate: new Date(data.contactDateTime).toISOString()
+          dueDate: new Date(data.contactDateTime).toISOString(),
+          assignedTo: currentUser?.ghlUserId || null
         })
       });
     }

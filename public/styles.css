@@ -2416,3 +2416,19 @@ body {
   transition: background 0.1s;
 }
 .sonia-inbox-item:hover { background: #f9fafb; }
+
+/* ═══════════════════════════════════════════════════════════════
+   STAGE TAG W KARTACH LEADÓW
+   ═══════════════════════════════════════════════════════════════ */
+.lead-stage-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+  white-space: nowrap;
+  margin-left: 4px;
+}

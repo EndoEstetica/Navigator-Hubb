@@ -409,6 +409,47 @@ app.get('/api/call/:callId/recording', async (req, res) => {
   res.json({ url: null, message: 'Nagranie jeszcze niedostępne' });
 });
 
+// ─── Automatyczne przeniesienie stage przy nieodebranym połączeniu ─────────────
+async function autoMoveStageForMissedCall(phone) {
+  if (!phone || !GHL_TOKEN) return;
+  try {
+    // Szukaj kontaktu po numerze telefonu
+    const searchResp = await axios.get(
+      `https://services.leadconnectorhq.com/contacts/search/duplicate?locationId=${GHL_LOCATION_ID}&number=${encodeURIComponent(phone)}`,
+      { headers: ghlHeaders, timeout: 10000 }
+    );
+    const contact = searchResp.data?.contact;
+    if (!contact?.id) return;
+
+    // Szukaj szansy sprzedaży tego kontaktu w pipeline
+    const oppsResp = await axios.get(
+      `https://services.leadconnectorhq.com/opportunities/search?location_id=${GHL_LOCATION_ID}&pipeline_id=${GHL_PIPELINE_ID}&contact_id=${contact.id}&limit=5`,
+      { headers: ghlHeaders, timeout: 10000 }
+    );
+    const opp = (oppsResp.data?.opportunities || [])[0];
+    if (!opp) return;
+
+    // Logika: stage 1 (nowe) → stage 2 (1 próba), stage 2 → stage 3 (2 próba)
+    const currentStage = opp.pipelineStageId;
+    let nextStage = null;
+    if (currentStage === STAGE_NEW)       nextStage = STAGE_ATTEMPT_1;
+    if (currentStage === STAGE_ATTEMPT_1) nextStage = STAGE_ATTEMPT_2;
+
+    if (nextStage) {
+      await axios.patch(
+        `https://services.leadconnectorhq.com/opportunities/${opp.id}`,
+        { pipelineStageId: nextStage },
+        { headers: ghlHeaders, timeout: 10000 }
+      );
+      const stageName = GHL_STAGES[nextStage];
+      console.log(`[Auto-Stage] ${contact.firstName || phone} → "${stageName}"`);
+      broadcast({ type: 'opportunity_stage_changed', id: opp.id, stageId: nextStage, stageName });
+    }
+  } catch(e) {
+    console.error('[Auto-Stage] Error:', e.message);
+  }
+}
+
 // ─── ZADARMA WEBHOOK ──────────────────────────────────────────────────────────
 
 // GET — weryfikacja URL przez Zadarma (odsyła zd_echo)
@@ -482,18 +523,28 @@ app.post('/webhook/zadarma', async (req, res) => {
     storeCall({ callId, status: 'ended', duration, tag, endedAt: new Date().toISOString() });
     broadcast({ type: 'CALL_ENDED', callId, duration, tag, direction });
 
-    // Zaplanuj pobieranie nagrania (D2) — tylko jeśli rozmowa trwała
     if (!isMissed && pbxCallId) {
       scheduleRecordingFetch(callId, pbxCallId, call?.from || caller);
+    }
+
+    // Automatyczne przeniesienie stage dla nieodebranych wychodzących
+    if (tag === 'ineffective' && (call?.from || caller)) {
+      autoMoveStageForMissedCall(call?.from || caller).catch(console.error);
     }
   }
 
   // Połączenie wychodzące Callback — NOTIFY_OUT_END (zakończone)
   else if (event === 'NOTIFY_OUT_END') {
     const duration = parseInt(data.seconds || data.duration) || 0;
-    storeCall({ callId, status: 'ended', duration, tag: duration > 0 ? 'connected' : 'ineffective', endedAt: new Date().toISOString() });
-    broadcast({ type: 'CALL_ENDED', callId, duration, tag: duration > 0 ? 'connected' : 'ineffective', direction: 'outbound' });
+    const outTag = duration > 0 ? 'connected' : 'ineffective';
+    storeCall({ callId, status: 'ended', duration, tag: outTag, endedAt: new Date().toISOString() });
+    broadcast({ type: 'CALL_ENDED', callId, duration, tag: outTag, direction: 'outbound' });
     if (duration > 0 && pbxCallId) scheduleRecordingFetch(callId, pbxCallId, caller);
+    // Nieodebrane wychodzące → auto stage
+    if (outTag === 'ineffective') {
+      const call = callsStore.find(c => c.callId === callId);
+      autoMoveStageForMissedCall(call?.from || called || caller).catch(console.error);
+    }
   }
 
   // Nagranie gotowe (NOTIFY_RECORD) — Zadarma wysyła URL bezpośrednio
@@ -771,22 +822,41 @@ app.get('/api/server-ip', async (req, res) => {
 
 // ─── SYSTEM UŻYTKOWNIKÓW ───────────────────────────────────────────────────────
 const USERS = {
-  kasia:      { id: 'kasia',      name: 'Kasia',      role: 'reception', ext: '103' },
-  agnieszka:  { id: 'agnieszka',  name: 'Agnieszka',  role: 'reception', ext: '103' },
-  asia:       { id: 'asia',       name: 'Asia',        role: 'reception', ext: '103' },
-  agata_r:    { id: 'agata_r',    name: 'Agata (R)',   role: 'reception', ext: '103' },
-  zastepstwo: { id: 'zastepstwo', name: 'Zastępstwo',  role: 'reception', ext: '103' },
-  aneta:      { id: 'aneta',      name: 'Aneta',       role: 'opiekun',   ext: '103' },
-  agata_o:    { id: 'agata_o',    name: 'Agata (O)',   role: 'opiekun',   ext: '103' },
-  bartosz:    { id: 'bartosz',    name: 'Bartosz',     role: 'admin',     ext: null },
-  sandra:     { id: 'sandra',     name: 'Sandra',      role: 'admin',     ext: null },
-  aneta_a:    { id: 'aneta_a',    name: 'Aneta (A)',   role: 'admin',     ext: null },
-  patrycja:   { id: 'patrycja',   name: 'Patrycja',    role: 'admin',     ext: null },
-  sonia:      { id: 'sonia',      name: 'Sonia',       role: 'admin',     ext: null },
+  kasia:      { id: 'kasia',      name: 'Kasia',      role: 'reception', ext: '103', ghlUserId: '3QCy7rl8W0UmUH9eelOe' },
+  agnieszka:  { id: 'agnieszka',  name: 'Agnieszka',  role: 'reception', ext: '103', ghlUserId: 'QGSNWPj1RAflM2oVIkiF' },
+  asia:       { id: 'asia',       name: 'Asia',        role: 'reception', ext: '103', ghlUserId: 'cKLX5NCjigFcAXgtNdn3' },
+  agata_r:    { id: 'agata_r',    name: 'Agata (R)',   role: 'reception', ext: '103', ghlUserId: 'gSCZaRsO5fmvUGIAj6AL' },
+  zastepstwo: { id: 'zastepstwo', name: 'Zastępstwo',  role: 'reception', ext: '103', ghlUserId: null },
+  aneta:      { id: 'aneta',      name: 'Aneta',       role: 'opiekun',   ext: '103', ghlUserId: 'tJ66GMn7OXDBxWWkGis9I' },
+  agata_o:    { id: 'agata_o',    name: 'Agata (O)',   role: 'opiekun',   ext: '103', ghlUserId: 'gSCZaRsO5fmvUGIAj6AL' },
+  bartosz:    { id: 'bartosz',    name: 'Bartosz',     role: 'admin',     ext: null,  ghlUserId: null },
+  sandra:     { id: 'sandra',     name: 'Sandra',      role: 'admin',     ext: null,  ghlUserId: null },
+  aneta_a:    { id: 'aneta_a',    name: 'Aneta (A)',   role: 'admin',     ext: null,  ghlUserId: null },
+  patrycja:   { id: 'patrycja',   name: 'Patrycja',    role: 'admin',     ext: null,  ghlUserId: null },
+  sonia:      { id: 'sonia',      name: 'Sonia',       role: 'admin',     ext: null,  ghlUserId: GHL_SONIA_USER_ID },
 };
 
+// ─── STAGE IDs LEJKA GHL ──────────────────────────────────────────────────────
+const GHL_STAGES = {
+  '4d006021-f3b2-4efc-8efc-4f049522379c': 'Nowe zgłoszenie',
+  '002dbc5a-c6a4-4931-a9a3-af4877b2c525': '1 próba kontaktu',
+  'de0a619e-ee22-41c3-9a90-eccfcb1a8fb8': '2 próba kontaktu',
+  '6d0c5ca9-8b79-4bf3-a091-381e636cd21e': 'Follow-up dzień 2',
+  '53ad4911-a26c-41fa-9b23-bc3c88f98ea4': 'Follow-up dzień 4',
+  '6517c39e-15fe-4041-a847-89ba822b3c96': 'Brak kontaktu',
+  '19126f1b-5529-48fc-be95-d6b64e264e59': 'Po rozmowie',
+  '73f6704f-1d6a-49dc-8591-4b129ba1b692': 'Umówiony W0',
+  'afc5a678-b78b-47bd-858e-78968724ac4d': 'No-show',
+  '139cde76-d37e-4a14-ad45-ae94a843d78b': 'Odmówił',
+};
+const STAGE_NEW           = '4d006021-f3b2-4efc-8efc-4f049522379c';
+const STAGE_ATTEMPT_1     = '002dbc5a-c6a4-4931-a9a3-af4877b2c525';
+const STAGE_ATTEMPT_2     = 'de0a619e-ee22-41c3-9a90-eccfcb1a8fb8';
+const STAGE_AFTER_CALL    = '19126f1b-5529-48fc-be95-d6b64e264e59';
+const STAGE_BOOKED_W0     = '73f6704f-1d6a-49dc-8591-4b129ba1b692';
+
 app.get('/api/users', (req, res) => {
-  const list = Object.values(USERS).map(u => ({ id: u.id, name: u.name, role: u.role }));
+  const list = Object.values(USERS).map(u => ({ id: u.id, name: u.name, role: u.role, ghlUserId: u.ghlUserId }));
   res.json({ users: list });
 });
 
@@ -794,6 +864,41 @@ app.get('/api/user/:id', (req, res) => {
   const user = USERS[req.params.id];
   if (!user) return res.status(404).json({ error: 'Nie znaleziono użytkownika' });
   res.json(user);
+});
+
+// Stage mapping (frontend potrzebuje nazw)
+app.get('/api/stages', (req, res) => {
+  res.json({ stages: GHL_STAGES });
+});
+
+// Przenieś szansę sprzedaży do innego stage w lejku GHL
+app.post('/api/opportunity/:id/move-stage', async (req, res) => {
+  try {
+    const { stageId } = req.body;
+    if (!stageId) return res.status(400).json({ error: 'Brak stageId' });
+    const response = await axios.patch(
+      `https://services.leadconnectorhq.com/opportunities/${req.params.id}`,
+      { pipelineStageId: stageId },
+      { headers: ghlHeaders, timeout: 10000 }
+    );
+    // Dodaj tag z nazwą stage
+    const stageName = GHL_STAGES[stageId];
+    if (stageName && response.data?.contactId) {
+      try {
+        await axios.post(
+          `https://services.leadconnectorhq.com/contacts/${response.data.contactId}/tags`,
+          { tags: [stageName] },
+          { headers: ghlHeaders, timeout: 10000 }
+        );
+      } catch(e) { /* tag opcjonalny */ }
+    }
+    broadcast({ type: 'opportunity_stage_changed', id: req.params.id, stageId, stageName });
+    console.log(`[GHL] Opportunity ${req.params.id} → stage "${stageName || stageId}"`);
+    res.json({ success: true, data: response.data });
+  } catch (err) {
+    console.error('[GHL] Move stage error:', err.response?.data || err.message);
+    res.status(500).json({ error: err.message, details: err.response?.data });
+  }
 });
 
 // ─── CHAT DO SONI (prywatny per użytkownik) ──────────────────────────────────
