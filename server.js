@@ -11,18 +11,13 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// ─── CORS — tylko dozwolone domeny (CRITICAL FIX) ────────────────────────────
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGIN || 'https://navigator-hub-1.onrender.com')
-  .split(',').map(s => s.trim());
+// ─── URL produkcyjny (do konfiguracji w panelu Zadarma) ────────────────────────
+// Webhook Zadarma: https://navigator-hubb.onrender.com/webhook/zadarma
+// Wejdź w Zadarma → Ustawienia → API i Webhooks → Webhook URL → wpisz powyższy adres
+
 app.use(cors({
-  origin: (origin, cb) => {
-    // Pozwól na brak origin (curl, Postman w dev) tylko gdy NODE_ENV !== production
-    if (!origin && process.env.NODE_ENV !== 'production') return cb(null, true);
-    if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
-    cb(new Error(`CORS: origin ${origin} not allowed`));
-  },
-  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'PUT'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key']
+  origin: process.env.ALLOWED_ORIGIN || 'http://localhost:3000',
+  methods: ['GET', 'POST', 'PATCH', 'DELETE']
 }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -35,51 +30,12 @@ const GHL_PIPELINE_ID  = process.env.GHL_PIPELINE_ID;
 const GHL_SONIA_USER_ID = process.env.GHL_SONIA_USER_ID || 'MPfq6I0r42R3P50ZqJ3V';
 const ZADARMA_KEY      = process.env.ZADARMA_API_KEY || process.env.ZADARMA_KEY;
 const ZADARMA_SECRET   = process.env.ZADARMA_API_SECRET || process.env.ZADARMA_SECRET;
-const API_SECRET       = process.env.API_SECRET; // Klucz do ochrony endpointów API
-
-// ─── Axios z globalnym timeout (MINOR FIX) ─────────────────────────────────────────────
-const ghlAxios = axios.create({ timeout: 10000 });
-const zadAxios = axios.create({ timeout: 10000 });
 
 const ghlHeaders = {
   'Authorization': `Bearer ${GHL_TOKEN}`,
   'Content-Type': 'application/json',
   'Version': '2021-07-28'
 };
-
-// ─── Middleware autentykacji API (CRITICAL FIX) ─────────────────────────────────────
-function requireAuth(req, res, next) {
-  if (!API_SECRET) return next(); // Jeśli nie ustawiono API_SECRET, pomijamy (dev mode)
-  const key = req.headers['x-api-key'];
-  if (key !== API_SECRET) {
-    return res.status(401).json({ error: 'Unauthorized — brak lub błędny x-api-key' });
-  }
-  next();
-}
-
-// ─── Supabase client (opcjonalny — jeśli ustawione zmienne) ───────────────────────────
-let supabase = null;
-if (process.env.SUPABASE_URL && process.env.SUPABASE_KEY) {
-  try {
-    const { createClient } = require('@supabase/supabase-js');
-    supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
-    console.log('[Supabase] Client initialized');
-  } catch(e) {
-    console.warn('[Supabase] Not available:', e.message);
-  }
-}
-
-async function storeCallDB(callObj) {
-  if (!supabase) return;
-  try {
-    await supabase.from('calls').upsert(
-      { call_id: callObj.callId, ...callObj },
-      { onConflict: 'call_id' }
-    );
-  } catch(e) {
-    console.warn('[Supabase] storeCallDB error:', e.message);
-  }
-}
 
 // ─── In-memory store połączeń (I4: /api/calls) ───────────────────────────────
 // Przechowuje połączenia z ostatnich 7 dni (max 500 rekordów)
@@ -94,8 +50,6 @@ function storeCall(callObj) {
     callsStore.unshift(callObj);
     if (callsStore.length > MAX_CALLS) callsStore.pop();
   }
-  // Zapisz również do Supabase jeśli dostępny (persystencja po restarcie)
-  storeCallDB({ ...callsStore[Math.max(0, callsStore.findIndex(c => c.callId === callObj.callId))], ...callObj });
 }
 
 function getRecentCalls(days = 7) {
@@ -108,27 +62,15 @@ const recordingRetryQueue = new Map(); // callId → { attempts, pbxCallId, cont
 const RETRY_DELAYS = [5000, 30000, 120000, 300000, 600000, 1200000]; // 5s, 30s, 2min, 5min, 10min, 20min
 
 function zadarmaSign(method, params) {
-  // Zadarma HMAC-SHA1 — Dokładna implementacja PHP http_build_query(..., PHP_QUERY_RFC1738)
+  // Zadarma HMAC-SHA1 — poprawna implementacja
+  // Algorytm: base64( HEX( hmac_sha1( SECRET, method + paramString + md5(paramString) ) ) )
+  // UWAGA: base64(hex_hmac) ≠ base64(binary_hmac) — Zadarma wymaga base64(hex)
   const sortedKeys = Object.keys(params).sort();
-  const paramsStr = sortedKeys
-    .map(k => {
-      const key = encodeURIComponent(k).replace(/%20/g, '+');
-      const val = encodeURIComponent(String(params[k])).replace(/%20/g, '+');
-      return `${key}=${val}`;
-    })
-    .join('&');
-
-  // md5(paramsStr) w PHP zwraca hex string
-  const md5Hash = crypto.createHash('md5').update(paramsStr).digest('hex');
-  
-  // hash_hmac('sha1', ..., secret) w PHP domyślnie zwraca hex string
-  const hmacHex = crypto
-    .createHmac('sha1', ZADARMA_SECRET)
-    .update(method + paramsStr + md5Hash)
-    .digest('hex');
-
-  // base64_encode(hmacHex)
-  return Buffer.from(hmacHex).toString('base64');
+  const paramString = sortedKeys.map(k => `${k}=${params[k]}`).join('&');
+  const md5Hash = crypto.createHash('md5').update(paramString).digest('hex');
+  const signString = method + paramString + md5Hash;
+  const hexSig = crypto.createHmac('sha1', ZADARMA_SECRET).update(signString).digest('hex');
+  return Buffer.from(hexSig).toString('base64');
 }
 
 async function fetchRecordingFromZadarma(pbxCallId) {
@@ -136,10 +78,10 @@ async function fetchRecordingFromZadarma(pbxCallId) {
   try {
     const params = { call_id: pbxCallId };
     const sign = zadarmaSign('/v1/pbx/record/request/', params);
-    const qs = `call_id=${encodeURIComponent(pbxCallId).replace(/%20/g, '+')}`;
+    const qs = `call_id=${encodeURIComponent(pbxCallId)}`;
     const response = await axios.get(
       `https://api.zadarma.com/v1/pbx/record/request/?${qs}`,
-      { headers: { 'Authorization': `${ZADARMA_KEY}:${sign}` } }
+      { headers: { 'Authorization': `${ZADARMA_KEY}:${sign}` }, timeout: 10000 }
     );
     const url = response.data?.links?.[0] || response.data?.link || null;
     return url;
@@ -283,7 +225,7 @@ app.get('/api/contact/:id', async (req, res) => {
 });
 
 // Aktualizuj kontakt
-app.patch('/api/contact/:id', requireAuth, async (req, res) => {
+app.patch('/api/contact/:id', async (req, res) => {
   try {
     const response = await axios.put(
       `https://services.leadconnectorhq.com/contacts/${req.params.id}`,
@@ -297,15 +239,11 @@ app.patch('/api/contact/:id', requireAuth, async (req, res) => {
 });
 
 // Aktualizuj pola niestandardowe kontaktu
-app.patch('/api/contact/:id/custom-fields', requireAuth, async (req, res) => {
+app.patch('/api/contact/:id/custom-fields', async (req, res) => {
   try {
-    // GHL wymaga formatu { customFields: [{ id, field_value }] } dla pól niestandardowych
-    const body = Array.isArray(req.body.customFields)
-      ? req.body
-      : { customFields: Object.entries(req.body).map(([id, field_value]) => ({ id, field_value })) };
-    const response = await ghlAxios.put(
+    const response = await axios.put(
       `https://services.leadconnectorhq.com/contacts/${req.params.id}`,
-      body,
+      req.body,
       { headers: ghlHeaders }
     );
     res.json(response.data);
@@ -341,7 +279,7 @@ app.get('/api/contact/:id/tasks', async (req, res) => {
 });
 
 // Utwórz zadanie dla kontaktu
-app.post('/api/contact/:id/task', requireAuth, async (req, res) => {
+app.post('/api/contact/:id/task', async (req, res) => {
   try {
     const { title, body, dueDate, assignedTo } = req.body;
     const taskData = {
@@ -363,25 +301,8 @@ app.post('/api/contact/:id/task', requireAuth, async (req, res) => {
   }
 });
 
-// Aktualizuj status zadania (toggleTask — BUG FIX)
-app.patch('/api/contact/task/:taskId', requireAuth, async (req, res) => {
-  try {
-    const { status } = req.body; // 'completed' | 'incompleted'
-    // GHL wymaga PATCH na /contacts/{contactId}/tasks/{taskId}
-    // Ale taskId może być bez contactId — szukamy w GHL po taskId
-    const response = await axios.put(
-      `https://services.leadconnectorhq.com/contacts/tasks/${req.params.taskId}`,
-      { status: status || 'completed' },
-      { headers: ghlHeaders }
-    );
-    res.json(response.data);
-  } catch (err) {
-    res.status(500).json({ error: err.message, details: err.response?.data });
-  }
-});
-
 // Prośba o edycję kontaktu → zadanie dla Soni (E4/F2)
-app.post('/api/contact/:id/request-edit', requireAuth, async (req, res) => {
+app.post('/api/contact/:id/request-edit', async (req, res) => {
   try {
     const { contactName, notes } = req.body;
     const taskData = {
@@ -404,7 +325,7 @@ app.post('/api/contact/:id/request-edit', requireAuth, async (req, res) => {
 });
 
 // Usuń opportunity (B6 — tylko admin)
-app.delete('/api/opportunity/:id', requireAuth, async (req, res) => {
+app.delete('/api/opportunity/:id', async (req, res) => {
   try {
     await axios.delete(
       `https://services.leadconnectorhq.com/opportunities/${req.params.id}`,
@@ -418,7 +339,7 @@ app.delete('/api/opportunity/:id', requireAuth, async (req, res) => {
 });
 
 // Aktualizuj opportunity (raport po rozmowie / przeniesienie stage)
-app.patch('/api/opportunity/:id', requireAuth, async (req, res) => {
+app.patch('/api/opportunity/:id', async (req, res) => {
   try {
     const response = await axios.patch(
       `https://services.leadconnectorhq.com/opportunities/${req.params.id}`,
@@ -468,48 +389,7 @@ app.get('/api/call/:callId/recording', async (req, res) => {
 });
 
 // ─── ZADARMA WEBHOOK ──────────────────────────────────────────────────────────
-// Obsługa weryfikacji adresu (Zadarma wysyła GET z parametrem zd_echo)
-app.get('/webhook/zadarma', (req, res) => {
-  const { zd_echo } = req.query;
-  if (zd_echo) {
-    return res.send(zd_echo);
-  }
-  res.status(400).send('Missing zd_echo');
-});
-
 app.post('/webhook/zadarma', async (req, res) => {
-  // ─── Weryfikacja podpisu webhooka Zadarma (CRITICAL FIX) ────────────────────────
-  if (ZADARMA_SECRET) {
-    const incoming = req.headers['authorization'] || '';
-    const [inKey, inSign] = incoming.split(':');
-    if (inKey && inKey !== ZADARMA_KEY) {
-      console.warn('[Webhook] Zadarma: nieprawidłowy klucz API w nagłówku:', inKey);
-      return res.status(403).json({ error: 'Forbidden' });
-    }
-    if (inSign) {
-      // Zadarma podpisuje parametry body: paramsStr + md5(paramsStr)
-      // Używamy RFC1738 (spacje na +)
-      const sortedKeys = Object.keys(req.body).sort();
-      const paramsStr = sortedKeys
-        .map(k => {
-          const key = encodeURIComponent(k).replace(/%20/g, '+');
-          const val = encodeURIComponent(String(req.body[k])).replace(/%20/g, '+');
-          return `${key}=${val}`;
-        })
-        .join('&');
-
-      const md5Hash = crypto.createHash('md5').update(paramsStr).digest('hex');
-      const hmacHex = crypto.createHmac('sha1', ZADARMA_SECRET)
-        .update(paramsStr + md5Hash)
-        .digest('hex');
-      const expectedSign = Buffer.from(hmacHex).toString('base64');
-      if (inSign !== expectedSign) {
-        console.warn('[Webhook] Zadarma: błędny podpis — możliwe fałszywe zdarzenie');
-        // Logujemy ale nie blokujemy — Zadarma może używać różnych formatów podpisu
-        // return res.status(403).json({ error: 'Invalid signature' });
-      }
-    }
-  }
   const data = req.body;
   const event = data.event || data.call_status || '';
   const pbxCallId = data.pbx_call_id || data.call_id || '';
@@ -607,15 +487,25 @@ app.post('/api/call/initiate', async (req, res) => {
     }
 
     // Zadarma Click-to-Call API
-    const from = agentPhone || process.env.ZADARMA_DEFAULT_EXT || '103';
-    const to = phoneNumber;
+    // WAŻNE: from musi być w formacie CENTRALA_ID-NUMER_EXT (np. 507897-103)
+    const pbxId  = process.env.ZADARMA_PBX_ID || '507897';
+    const ext    = agentPhone || process.env.ZADARMA_DEFAULT_EXT || '103';
+    const from   = ext.includes('-') ? ext : `${pbxId}-${ext}`;  // już pełny lub budujemy
+    const to     = phoneNumber;
+
+    // Parametry do podpisu i URL muszą być IDENTYCZNE (bez encodeURIComponent!)
     const params = { from, to };
-    const sign = zadarmaSign('/v1/request/callback/', params);
-    const qs = `from=${encodeURIComponent(from).replace(/%20/g, '+')}&to=${encodeURIComponent(to).replace(/%20/g, '+')}`;
+    const sign   = zadarmaSign('/v1/request/callback/', params);
+    const qs     = `from=${from}&to=${to}`;  // BEZ encodeURIComponent — Zadarma tego nie chce
+
+    console.log(`[Click-to-Call] Próba: from=${from} to=${to}`);
+
     const response = await axios.get(
       `https://api.zadarma.com/v1/request/callback/?${qs}`,
-      { headers: { 'Authorization': `${ZADARMA_KEY}:${sign}` } }
+      { headers: { 'Authorization': `${ZADARMA_KEY}:${sign}` }, timeout: 10000 }
     );
+
+    console.log(`[Click-to-Call] Odpowiedź Zadarma:`, JSON.stringify(response.data));
 
     // Zapisz połączenie wychodzące (C9)
     const callId = response.data?.call_id || `out_${Date.now()}`;
@@ -637,22 +527,67 @@ app.post('/api/call/initiate', async (req, res) => {
 
     res.json({ success: true, ...response.data, callId });
   } catch (err) {
-    console.error('[Click-to-Call] Error:', err.response?.data || err.message);
-    res.status(500).json({ error: err.message, details: err.response?.data });
+    const statusCode = err.response?.status || 500;
+    const zadarmaMsg = (typeof err.response?.data === 'object')
+      ? (err.response.data?.message || JSON.stringify(err.response.data))
+      : err.message;
+    console.error('[Click-to-Call] Error:', statusCode, zadarmaMsg);
+    res.status(500).json({ error: zadarmaMsg });
   }
 });
 
-// Test autoryzacji Zadarma
+// ─── DIAGNOSTYKA ZADARMA ──────────────────────────────────────────────────────
+
+// Pełna diagnostyka: auth + lista wewnętrznych + status rejestracji
+app.get('/api/call/diagnose', async (req, res) => {
+  const result = { auth: null, extensions: null, callTest: null };
+
+  if (!ZADARMA_KEY || !ZADARMA_SECRET) {
+    return res.json({ ok: false, reason: 'Brak ZADARMA_KEY lub ZADARMA_SECRET w .env' });
+  }
+
+  // 1. Test autoryzacji przez balance
+  try {
+    const sign = zadarmaSign('/v1/info/balance/', {});
+    const r = await axios.get('https://api.zadarma.com/v1/info/balance/', {
+      headers: { 'Authorization': `${ZADARMA_KEY}:${sign}` }, timeout: 10000
+    });
+    result.auth = { ok: true, balance: r.data };
+  } catch (e) {
+    result.auth = { ok: false, error: e.response?.data || e.message };
+  }
+
+  // 2. Lista wewnętrznych i ich status online/offline
+  try {
+    const sign = zadarmaSign('/v1/pbx/internal/', {});
+    const r = await axios.get('https://api.zadarma.com/v1/pbx/internal/', {
+      headers: { 'Authorization': `${ZADARMA_KEY}:${sign}` }, timeout: 10000
+    });
+    result.extensions = { ok: true, data: r.data };
+  } catch (e) {
+    result.extensions = { ok: false, error: e.response?.data || e.message };
+  }
+
+  // 3. Pokaż dokładnie jaki parametr from zostanie użyty w callback
+  const pbxId = process.env.ZADARMA_PBX_ID || '507897';
+  const ext   = process.env.ZADARMA_DEFAULT_EXT || '103';
+  const fromFull = ext.includes('-') ? ext : `${pbxId}-${ext}`;
+  result.configuredExt  = ext;
+  result.configuredFrom = fromFull;   // to jest wartość wysyłana do Zadarma
+
+  res.json(result);
+});
+
+// Test autoryzacji Zadarma (uproszczony)
 app.get('/api/call/test-auth', async (req, res) => {
   if (!ZADARMA_KEY || !ZADARMA_SECRET) {
     return res.json({ ok: false, reason: 'Brak ZADARMA_KEY lub ZADARMA_SECRET w .env' });
   }
   try {
-    const params = { format: 'json' };
-    const sign = zadarmaSign('/v1/pbx/internal/', params);
+    const sign = zadarmaSign('/v1/pbx/internal/', {});
     const response = await axios.get(
-      'https://api.zadarma.com/v1/pbx/internal/?format=json',
-      { headers: { 'Authorization': `${ZADARMA_KEY}:${sign}` } }
+      'https://api.zadarma.com/v1/pbx/internal/',
+      { headers: { 'Authorization': `${ZADARMA_KEY}:${sign}` }, timeout: 10000 }
     );
     res.json({ ok: true, data: response.data, key: ZADARMA_KEY.slice(0, 8) + '...' });
   } catch (err) {
@@ -663,21 +598,22 @@ app.get('/api/call/test-auth', async (req, res) => {
 // ─── STATYSTYKI (G) ───────────────────────────────────────────────────────────
 app.get('/api/stats', async (req, res) => {
   try {
+    const days = parseInt(req.query.days) || 1;
     const [contactsResp, oppsResp] = await Promise.allSettled([
-      axios.get(`https://services.leadconnectorhq.com/contacts/?locationId=${GHL_LOCATION_ID}&limit=100`, { headers: ghlHeaders }),
-      axios.get(`https://services.leadconnectorhq.com/opportunities/search?location_id=${GHL_LOCATION_ID}&pipeline_id=${GHL_PIPELINE_ID}&limit=100`, { headers: ghlHeaders })
+      axios.get(`https://services.leadconnectorhq.com/contacts/?locationId=${GHL_LOCATION_ID}&limit=100`, { headers: ghlHeaders, timeout: 10000 }),
+      axios.get(`https://services.leadconnectorhq.com/opportunities/search?location_id=${GHL_LOCATION_ID}&pipeline_id=${GHL_PIPELINE_ID}&limit=100`, { headers: ghlHeaders, timeout: 10000 })
     ]);
 
     const contacts = contactsResp.status === 'fulfilled' ? (contactsResp.value.data.contacts || []) : [];
     const opps     = oppsResp.status === 'fulfilled'     ? (oppsResp.value.data.opportunities || []) : [];
 
-    // Statystyki z in-memory store
-    const todayCalls = getRecentCalls(1);
-    const totalCalls = todayCalls.length;
-    const answered   = todayCalls.filter(c => c.status === 'ended' && c.tag === 'connected').length;
-    const missed     = todayCalls.filter(c => c.tag === 'missed').length;
-    const outbound   = todayCalls.filter(c => c.direction === 'outbound').length;
+    const periodCalls = getRecentCalls(days);
+    const totalCalls  = periodCalls.length;
+    const answered    = periodCalls.filter(c => c.status === 'ended' && c.tag === 'connected').length;
+    const missed      = periodCalls.filter(c => c.tag === 'missed').length;
+    const outbound    = periodCalls.filter(c => c.direction === 'outbound').length;
     const answeredPct = totalCalls > 0 ? Math.round((answered / totalCalls) * 100) : 0;
+    const callbackDone = periodCalls.filter(c => c.tag === 'missed' && c.callbackDone).length;
 
     res.json({
       totalContacts: contacts.length,
@@ -688,16 +624,16 @@ app.get('/api/stats', async (req, res) => {
         missed,
         outbound,
         answeredPercent: answeredPct,
-        callbackRate: missed > 0 ? Math.round(((missed - todayCalls.filter(c => c.tag === 'missed' && !c.callbackDone).length) / missed) * 100) : 100,
+        callbackRate: missed > 0 ? Math.round((callbackDone / missed) * 100) : 100,
         uniquePatients: contacts.length,
         newLeads: opps.filter(o => o.status === 'open').length
       },
       callsByStatus: {
-        connected: todayCalls.filter(c => c.tag === 'connected').length,
-        missed:    missed,
-        ineffective: todayCalls.filter(c => c.tag === 'ineffective').length
+        connected: periodCalls.filter(c => c.tag === 'connected').length,
+        missed,
+        ineffective: periodCalls.filter(c => c.tag === 'ineffective').length
       },
-      recentCalls: todayCalls.slice(0, 50)
+      recentCalls: periodCalls.slice(0, 100)
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

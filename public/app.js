@@ -31,10 +31,10 @@ document.addEventListener('DOMContentLoaded', () => {
   loadNewLeads();
   loadTodayTasks();
   loadContacts();
-  renderCharts();
+  renderCharts(null);
   startPolling();
+  initDialer();
 
-  // Wykryj rolę z localStorage (jeśli jest)
   const savedRole = localStorage.getItem('nav_role');
   if (savedRole) setUserRole(savedRole);
 });
@@ -196,13 +196,15 @@ function handleCallEnded(data) {
   if (idx >= 0) allCalls[idx] = { ...allCalls[idx], status: 'ended', tag: data.tag, duration: data.duration };
   if (currentView === 'calls') renderCallsTable(allCalls);
 
-  // Jeśli popup jest otwarty dla tego połączenia
+  // Uruchom poller nagrania dla udanych połączeń
+  if (data.tag === 'connected') {
+    startRecordingPoller(data.callId);
+  }
+
   if (activeCallId === data.callId) {
     if (data.tag === 'missed' || data.tag === 'ineffective') {
-      // Nieodebrane — zamknij popup automatycznie (C6)
       closeCallPopup();
     }
-    // Zaktualizuj tag
     const tagEl = document.getElementById('popupCallTag');
     if (tagEl) {
       const labels = { connected: 'POŁĄCZONO', missed: 'NIEODEBRANE', ineffective: 'NIESKUTECZNE' };
@@ -212,7 +214,6 @@ function handleCallEnded(data) {
       tagEl.style.display = 'inline-block';
     }
   }
-  // Odśwież KPI
   updateMissedKPI();
 }
 
@@ -252,6 +253,7 @@ function switchView(view) {
   if (view === 'contacts') loadContacts();
   if (view === 'calls') loadCalls();
   if (view === 'stats') loadAndRenderStats();
+  if (view === 'tasks') loadAllTasks();
 }
 
 function switchTab(tab) {
@@ -459,7 +461,6 @@ async function deleteLead(oppId, btn) {
 }
 
 function escHtml(str) {
-  // CRITICAL FIX: pełne escapowanie XSS (& < > " ')
   return (str || '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -528,11 +529,13 @@ function renderCallRow(c) {
   // Tag (C3)
   const tagHtml = c.tag ? `<span class="call-tag tag-${c.tag}">${tagLabel(c.tag)}</span>` : '';
 
-  // Nagranie (D1 — tylko gdy gotowe)
+  // Nagranie (D1)
   const recHtml = c.recordingUrl
     ? `<audio controls src="${c.recordingUrl}" class="call-recording-player"></audio>
        <a href="${c.recordingUrl}" download class="btn-download-rec" title="Pobierz">↓</a>`
-    : `<button class="btn-fetch-rec" onclick="fetchRecording('${c.callId}', this)" title="Sprawdź nagranie">▶ Sprawdź</button>`;
+    : c.tag === 'connected'
+      ? `<span data-rec-callid="${escHtml(c.callId)}" class="btn-rec-pending" title="Nagranie pojawi się po zakończeniu przetwarzania">⏳ Oczekuje...</span>`
+      : `<button class="btn-fetch-rec" onclick="fetchRecording('${c.callId}', this)" title="Sprawdź nagranie">▶ Sprawdź</button>`;
 
   return `
     <tr class="call-row" onclick="openCallReport('${c.callId}')">
@@ -583,7 +586,12 @@ async function fetchRecording(callId, btn) {
     if (data.url) {
       const idx = allCalls.findIndex(c => c.callId === callId);
       if (idx >= 0) allCalls[idx].recordingUrl = data.url;
-      renderCallsTable(allCalls);
+      // Zaktualizuj tylko komórkę — bez przeładowania całej tabeli
+      const cell = btn.closest('td');
+      if (cell) {
+        cell.innerHTML = `<audio controls src="${data.url}" class="call-recording-player"></audio>
+          <a href="${data.url}" download class="btn-download-rec" title="Pobierz">↓</a>`;
+      }
       showToast('🎙️ Nagranie gotowe', 'success');
     } else {
       btn.textContent = '▶ Sprawdź';
@@ -772,7 +780,6 @@ function selectOutcome(outcome) {
 
 // ==================== TIME SETTERS ====================
 function setContactTime(days, btn) {
-  // BUG FIX: btn przekazywany jako parametr zamiast niejawnego event.target
   const date = new Date();
   date.setDate(date.getDate() + days);
   date.setHours(10, 0, 0, 0);
@@ -940,7 +947,9 @@ async function handleRegularPatientReport(contactId, data) {
   }
 }
 
-// ==================== TASKS (F1) ====================
+// ==================== TASKS (F1/F2) ====================
+let completedTaskIds = new Set(JSON.parse(localStorage.getItem('completedTaskIds') || '[]'));
+
 async function loadTodayTasks() {
   const listEl = document.getElementById('tasksTodayList');
   if (!listEl) return;
@@ -948,74 +957,238 @@ async function loadTodayTasks() {
   try {
     const r = await fetch('/api/tasks');
     const data = await r.json();
-    const tasks = data.tasks || data.data || [];
+    const tasks = (data.tasks || data.data || []).filter(t => !completedTaskIds.has(t.id));
 
     const today = new Date().toDateString();
-    todayTasks = tasks.filter(t => {
-      if (!t.dueDate) return false;
-      return new Date(t.dueDate).toDateString() === today;
-    });
+    todayTasks = tasks.filter(t => t.dueDate && new Date(t.dueDate).toDateString() === today);
 
-    renderTasks(listEl, todayTasks);
+    renderTodayTasks(listEl, todayTasks);
     const badge = document.getElementById('kpi-tasks');
     if (badge) badge.textContent = todayTasks.length;
+    const navBadge = document.getElementById('badge-tasks-nav');
+    if (navBadge) navBadge.textContent = todayTasks.length || '';
   } catch (err) {
-    // Demo tasks
     todayTasks = [
-      { id: 't1', title: 'Oddzwoń do Anny Kowalskiej', dueDate: new Date().toISOString(), completed: false },
-      { id: 't2', title: 'Prośba o edycję: Marek Nowak', dueDate: new Date().toISOString(), completed: false }
-    ];
-    renderTasks(listEl, todayTasks);
+      { id: 't1', title: 'Oddzwoń do Anny Kowalskiej', body: 'Pacjentka prosi o kontakt', phone: '+48 501 234 567', dueDate: new Date().toISOString(), completed: false },
+      { id: 't2', title: 'Prośba o edycję: Marek Nowak', body: 'Recepcja prosi o edycję danych', phone: '+48 602 345 678', dueDate: new Date().toISOString(), completed: false }
+    ].filter(t => !completedTaskIds.has(t.id));
+    renderTodayTasks(listEl, todayTasks);
   }
 }
 
-function renderTasks(listEl, tasks) {
-  if (tasks.length === 0) {
-    listEl.innerHTML = '<div class="empty-state">Brak zadań na dziś</div>';
+function renderTodayTasks(listEl, tasks) {
+  const active = tasks.filter(t => !completedTaskIds.has(t.id));
+  if (active.length === 0) {
+    listEl.innerHTML = '<div class="empty-state">Brak zadań na dziś ✓</div>';
     return;
   }
   listEl.innerHTML = '';
-  tasks.forEach(task => {
+  active.forEach(task => {
     const item = document.createElement('div');
-    item.className = `task-item ${task.completed ? 'completed' : ''}`;
+    item.className = 'task-item';
+    item.dataset.taskId = task.id;
+    const phone = task.phone || task.contactPhone || '';
+    const note  = task.body || task.note || '';
     item.innerHTML = `
-      <input type="checkbox" class="task-checkbox" ${task.completed ? 'checked' : ''}
-             onchange="toggleTask('${task.id}', this.checked)">
-      <span class="task-title">${task.title || task.body || 'Zadanie'}</span>
-      <span class="task-due">${formatTaskDue(task.dueDate)}</span>
+      <div class="task-main">
+        <div class="task-title">${escHtml(task.title || 'Zadanie')}</div>
+        ${note  ? `<div class="task-note">${escHtml(note)}</div>` : ''}
+        ${phone ? `<div class="task-phone">📞 ${escHtml(phone)}</div>` : ''}
+      </div>
+      <div class="task-meta">
+        <span class="task-due">${formatTaskDue(task.dueDate)}</span>
+        ${phone ? `<button class="btn-call btn-sm" onclick="event.stopPropagation();initiateCall('${escHtml(phone)}','${escHtml(task.title||'')}')">📞</button>` : ''}
+        <button class="btn-task-done" onclick="completeTask('${task.id}', this)" title="Odznacz jako wykonane">✓ Odznacz</button>
+      </div>
     `;
     listEl.appendChild(item);
   });
 }
 
+function renderTasks(listEl, tasks) {
+  renderTodayTasks(listEl, tasks);
+}
+
 function formatTaskDue(dueDate) {
   if (!dueDate) return '';
-  return new Date(dueDate).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
+  const d = new Date(dueDate);
+  const today = new Date().toDateString();
+  if (d.toDateString() === today) {
+    return d.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
+  }
+  return d.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit' }) + ' ' +
+         d.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
+}
+
+async function completeTask(taskId, btn) {
+  completedTaskIds.add(taskId);
+  localStorage.setItem('completedTaskIds', JSON.stringify([...completedTaskIds]));
+
+  // Usuń wizualnie z listy na kokpicie
+  const item = btn.closest('.task-item');
+  if (item) {
+    item.style.opacity = '0';
+    item.style.transform = 'translateX(30px)';
+    item.style.transition = 'all 0.25s ease';
+    setTimeout(() => {
+      item.remove();
+      const listEl = document.getElementById('tasksTodayList');
+      if (listEl && !listEl.querySelector('.task-item')) {
+        listEl.innerHTML = '<div class="empty-state">Brak zadań na dziś ✓</div>';
+      }
+    }, 260);
+  }
+
+  // Aktualizuj liczniki
+  todayTasks = todayTasks.filter(t => t.id !== taskId);
+  const badge = document.getElementById('kpi-tasks');
+  if (badge) badge.textContent = todayTasks.length;
+  const navBadge = document.getElementById('badge-tasks-nav');
+  if (navBadge) navBadge.textContent = todayTasks.length || '';
+
+  // Zapisz w GHL
+  try {
+    await fetch(`/api/contact/task/${taskId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'completed' })
+    });
+  } catch(e) { /* cicho */ }
+
+  // Odśwież widok Zadania jeśli otwarty
+  if (currentView === 'tasks') loadAllTasks();
 }
 
 async function toggleTask(taskId, completed) {
-  // BUG FIX: zapisuje stan zadania przez API (wcześniej tylko toast bez efektu)
-  try {
-    const apiKey = localStorage.getItem('nav_api_key') || '';
-    const response = await fetch(`/api/contact/task/${taskId}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey
-      },
-      body: JSON.stringify({ status: completed ? 'completed' : 'incompleted' })
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    showToast(completed ? '✅ Zadanie oznaczone jako wykonane' : 'Zadanie przywrócone', 'success');
-    // Odśwież listę zadań
-    loadTodayTasks();
-  } catch(e) {
-    showToast('Błąd zapisu zadania: ' + e.message, 'error');
-    // Przywróć checkbox do poprzedniego stanu
-    const cb = document.querySelector(`[data-task-id="${taskId}"]`);
-    if (cb) cb.checked = !completed;
+  if (completed) {
+    completeTask(taskId, document.querySelector(`[data-task-id="${taskId}"] .btn-task-done`) || document.createElement('button'));
   }
 }
+
+// ── Pełny widok zadań ──────────────────────────────────────────────────────
+let allTasksCache = [];
+
+async function loadAllTasks() {
+  const todoEl = document.getElementById('tasksTodoList');
+  const doneEl = document.getElementById('tasksDoneList');
+  if (!todoEl) return;
+  todoEl.innerHTML = '<div class="loading-state"><div class="spinner"></div><p>Ładowanie...</p></div>';
+
+  try {
+    const r = await fetch('/api/tasks');
+    const data = await r.json();
+    allTasksCache = data.tasks || data.data || [];
+  } catch(e) {
+    allTasksCache = [
+      { id: 't1', title: 'Oddzwoń do Anny Kowalskiej', body: 'Pacjentka prosi o kontakt', phone: '+48 501 234 567', dueDate: new Date().toISOString() },
+      { id: 't2', title: 'Prośba o edycję: Marek Nowak', body: 'Recepcja prosi o edycję danych', phone: '+48 602 345 678', dueDate: new Date(Date.now() + 86400000).toISOString() }
+    ];
+  }
+
+  const todo = allTasksCache.filter(t => !completedTaskIds.has(t.id));
+  const done = allTasksCache.filter(t => completedTaskIds.has(t.id));
+
+  renderAllTasksTodo(todoEl, todo);
+  renderAllTasksDone(doneEl, done);
+
+  const todoBadge = document.getElementById('badge-tasks-todo');
+  if (todoBadge) todoBadge.textContent = todo.length;
+  const doneBadge = document.getElementById('badge-tasks-done');
+  if (doneBadge) doneBadge.textContent = done.length;
+  const navBadge = document.getElementById('badge-tasks-nav');
+  if (navBadge) navBadge.textContent = todo.length || '';
+}
+
+function renderAllTasksTodo(el, tasks) {
+  if (tasks.length === 0) { el.innerHTML = '<div class="empty-state">Brak zadań do zrobienia ✓</div>'; return; }
+
+  // Grupuj wg daty
+  const groups = {};
+  tasks.forEach(t => {
+    const d = t.dueDate ? new Date(t.dueDate).toDateString() : 'Bez terminu';
+    if (!groups[d]) groups[d] = [];
+    groups[d].push(t);
+  });
+
+  const today = new Date().toDateString();
+  const tomorrow = new Date(Date.now() + 86400000).toDateString();
+
+  el.innerHTML = '';
+  Object.entries(groups).forEach(([dateStr, groupTasks]) => {
+    let label = dateStr;
+    if (dateStr === today)    label = '📅 Dziś';
+    else if (dateStr === tomorrow) label = '📅 Jutro';
+    else if (dateStr !== 'Bez terminu') {
+      label = '📅 ' + new Date(dateStr).toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' });
+    }
+
+    const group = document.createElement('div');
+    group.className = 'task-group';
+    group.innerHTML = `<div class="task-group-label">${label}</div>`;
+    groupTasks.forEach(task => {
+      const phone = task.phone || task.contactPhone || '';
+      const note  = task.body || task.note || '';
+      const item = document.createElement('div');
+      item.className = 'task-item';
+      item.dataset.taskId = task.id;
+      item.innerHTML = `
+        <div class="task-main">
+          <div class="task-title">${escHtml(task.title || 'Zadanie')}</div>
+          ${note  ? `<div class="task-note">${escHtml(note)}</div>` : ''}
+          ${phone ? `<div class="task-phone">📞 ${escHtml(phone)}</div>` : ''}
+        </div>
+        <div class="task-meta">
+          <span class="task-due">${formatTaskDue(task.dueDate)}</span>
+          ${phone ? `<button class="btn-call btn-sm" onclick="event.stopPropagation();initiateCall('${escHtml(phone)}','${escHtml(task.title||'')}')">📞</button>` : ''}
+          <button class="btn-task-done" onclick="completeTask('${task.id}', this)">✓ Odznacz</button>
+        </div>
+      `;
+      group.appendChild(item);
+    });
+    el.appendChild(group);
+  });
+}
+
+function renderAllTasksDone(el, tasks) {
+  if (!el) return;
+  if (tasks.length === 0) { el.innerHTML = '<div class="empty-state">Brak wykonanych zadań</div>'; return; }
+  el.innerHTML = '';
+  tasks.forEach(task => {
+    const phone = task.phone || task.contactPhone || '';
+    const item = document.createElement('div');
+    item.className = 'task-item completed';
+    item.innerHTML = `
+      <div class="task-main">
+        <div class="task-title" style="text-decoration:line-through;opacity:.6">${escHtml(task.title || 'Zadanie')}</div>
+        ${phone ? `<div class="task-phone" style="opacity:.5">📞 ${escHtml(phone)}</div>` : ''}
+      </div>
+      <div class="task-meta">
+        <span class="task-due" style="opacity:.5">${formatTaskDue(task.dueDate)}</span>
+        <button class="btn-secondary btn-sm" onclick="restoreTask('${task.id}')" title="Przywróć">↩ Przywróć</button>
+      </div>
+    `;
+    el.appendChild(item);
+  });
+}
+
+function restoreTask(taskId) {
+  completedTaskIds.delete(taskId);
+  localStorage.setItem('completedTaskIds', JSON.stringify([...completedTaskIds]));
+  loadAllTasks();
+  loadTodayTasks();
+}
+
+let activeTasksTab = 'todo';
+function switchTasksTab(tab) {
+  activeTasksTab = tab;
+  document.querySelectorAll('#view-tasks .tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('#view-tasks .tab-content').forEach(c => c.classList.remove('active'));
+  const btn = document.querySelector(`#view-tasks [data-tab="tasks-${tab}"]`);
+  if (btn) btn.classList.add('active');
+  const content = document.getElementById(`tab-tasks-${tab}`);
+  if (content) content.classList.add('active');
+}
+
 
 // ==================== CONTACTS — BLOK E ====================
 async function loadContacts() {
@@ -1234,10 +1407,13 @@ async function loadAndRenderStats() {
   container.innerHTML = '<div class="loading-state"><div class="spinner"></div><p>Ładowanie statystyk...</p></div>';
 
   try {
-    const r = await fetch('/api/stats');
+    const range = document.getElementById('statsRange')?.value || 'today';
+    const days = range === 'today' ? 1 : range === 'week' ? 7 : 30;
+    const r = await fetch(`/api/stats?days=${days}`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = await r.json();
     renderAdminStats(container, data);
+    renderCharts(data); // ← wykresy z realnych danych
   } catch(e) {
     container.innerHTML = `<div class="stats-error"><p>Błąd ładowania statystyk: ${e.message}</p><button class="btn-secondary" onclick="loadAndRenderStats()">Odśwież</button></div>`;
   }
@@ -1365,20 +1541,56 @@ function appendChatMessage(from, text, ts, isMine) {
   list.scrollTop = list.scrollHeight;
 }
 
-// ==================== CHARTS (zachowane z v6) ====================
-async function renderCharts() {
-  // MINOR FIX: pobiera dane z /api/stats zamiast hardcoded wartości
-  let statsData = null;
-  try {
-    const r = await fetch('/api/stats');
-    if (r.ok) statsData = await r.json();
-  } catch(e) { /* brak danych — użyj domyślnych */ }
+// ==================== CHARTS — REALNE DANE ====================
+function renderCharts(statsData) {
+  // Jeśli brak danych, pobierz najpierw
+  if (!statsData) {
+    fetch('/api/stats').then(r => r.json()).then(d => renderCharts(d)).catch(() => renderCharts({}));
+    return;
+  }
   renderDonutChart(statsData);
   renderGaugeChart(statsData);
   renderBarChart(statsData);
+  updateStatCards(statsData);
 }
 
-function renderDonutChart(stats) {
+function updateStatCards(data) {
+  const s = data.stats || {};
+  const total = s.totalCalls || 0;
+  const answered = s.answered || 0;
+  const missed = s.missed || 0;
+  const answeredPct = s.answeredPercent || 0;
+  const callbackRate = s.callbackRate || 0;
+  const unique = data.totalContacts || 0;
+
+  const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  setEl('stat-total', total);
+  setEl('stat-unique', unique);
+  setEl('stat-answered', answeredPct + '%');
+  setEl('stat-callback', callbackRate + '%');
+
+  // Podtytuły stat-cards
+  const cards = document.querySelectorAll('.stat-card');
+  if (cards[0]) cards[0].querySelector('.stat-sub') && (cards[0].querySelector('.stat-sub').textContent = `(100%) • zakres wybrany`);
+  if (cards[2]) cards[2].querySelector('.stat-sub') && (cards[2].querySelector('.stat-sub').textContent = `${answered} połączeń`);
+
+  // Tabela szczegółowa
+  const tbody = document.getElementById('statsTableBody');
+  if (tbody && total > 0) {
+    const ineffective = (data.callsByStatus || {}).ineffective || 0;
+    const connected = (data.callsByStatus || {}).connected || 0;
+    const pct = v => total > 0 ? (v/total*100).toFixed(1)+'%' : '—';
+    tbody.innerHTML = `
+      <tr><td>Odebrane</td><td>${connected}</td><td>${pct(connected)}</td><td class="trend-up">↑</td></tr>
+      <tr><td>Nieodebrane</td><td>${missed}</td><td>${pct(missed)}</td><td class="trend-down">↓</td></tr>
+      <tr><td>Nieskuteczne (wychodzące)</td><td>${ineffective}</td><td>${pct(ineffective)}</td><td class="trend-neutral">→</td></tr>
+      <tr><td>Wychodzące łącznie</td><td>${s.outbound || 0}</td><td>${pct(s.outbound||0)}</td><td class="trend-neutral">→</td></tr>
+      <tr><td>Zgłoszenia do oddzwonienia</td><td>${missed}</td><td>—</td><td class="trend-up">↑</td></tr>
+    `;
+  }
+}
+
+function renderDonutChart(data) {
   const canvas = document.getElementById('callsDonutChart');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
@@ -1386,21 +1598,28 @@ function renderDonutChart(stats) {
   const cx = width / 2, cy = height / 2;
   const r = Math.min(width, height) / 2 - 20;
   const inner = r * 0.6;
-  // Dane z API lub domyślne (placeholder)
-  const answered = stats?.totalAnswered ?? 0;
-  const missed = stats?.totalMissed ?? 0;
-  const total = (stats?.totalCalls ?? (answered + missed)) || 1;
-  const other = Math.max(0, total - answered - missed);
-  const data = [
-    { value: answered || 1, color: '#27ae60', label: `Odebrane (${total > 0 ? Math.round(answered/total*100) : 0}%)` },
-    { value: missed || 0,   color: '#e74c3c', label: `Nieodebrane (${total > 0 ? Math.round(missed/total*100) : 0}%)` },
-    { value: other || 0,    color: '#f39c12', label: `Inne (${total > 0 ? Math.round(other/total*100) : 0}%)` }
-  ].filter(d => d.value > 0);
-  const totalVal = data.reduce((s, d) => s + d.value, 0);
+
+  const s = (data && data.stats) || {};
+  const total = s.totalCalls || 0;
+  const connected = (data && data.callsByStatus && data.callsByStatus.connected) || 0;
+  const missed = (data && data.callsByStatus && data.callsByStatus.missed) || 0;
+  const ineffective = (data && data.callsByStatus && data.callsByStatus.ineffective) || 0;
+  const other = Math.max(0, total - connected - missed - ineffective);
+
+  const segments = total > 0
+    ? [
+        { value: connected,   color: '#27ae60', label: `Odebrane (${total>0?Math.round(connected/total*100):0}%)` },
+        { value: missed,      color: '#e74c3c', label: `Nieodebrane (${total>0?Math.round(missed/total*100):0}%)` },
+        { value: ineffective, color: '#f39c12', label: `Nieskuteczne (${total>0?Math.round(ineffective/total*100):0}%)` },
+        { value: other,       color: '#95a5a6', label: `Inne (${total>0?Math.round(other/total*100):0}%)` }
+      ].filter(s => s.value > 0)
+    : [{ value: 1, color: '#e9ecef', label: 'Brak danych' }];
+
+  const segTotal = segments.reduce((s, d) => s + d.value, 0);
   let angle = -Math.PI / 2;
   ctx.clearRect(0, 0, width, height);
-  data.forEach(seg => {
-    const slice = (seg.value / totalVal) * 2 * Math.PI;
+  segments.forEach(seg => {
+    const slice = (seg.value / segTotal) * 2 * Math.PI;
     ctx.beginPath(); ctx.moveTo(cx, cy);
     ctx.arc(cx, cy, r, angle, angle + slice);
     ctx.closePath(); ctx.fillStyle = seg.color; ctx.fill();
@@ -1410,48 +1629,72 @@ function renderDonutChart(stats) {
   ctx.fillStyle = '#ffffff'; ctx.fill();
   ctx.fillStyle = '#001f3f'; ctx.font = 'bold 28px Inter';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(String(total), cx, cy - 10);
+  ctx.fillText(total || '—', cx, cy - 10);
   ctx.font = '12px Inter'; ctx.fillStyle = '#6c757d';
   ctx.fillText('połączeń', cx, cy + 14);
+
   const legendEl = document.getElementById('donutLegend');
-  if (legendEl) legendEl.innerHTML = data.map(d => `<div class="legend-item"><div class="legend-dot" style="background:${d.color}"></div><span>${d.label}</span></div>`).join('');
+  if (legendEl) legendEl.innerHTML = segments.map(d => `<div class="legend-item"><div class="legend-dot" style="background:${d.color}"></div><span>${d.label}</span></div>`).join('');
 }
 
-function renderGaugeChart(stats) {
+function renderGaugeChart(data) {
   const canvas = document.getElementById('callbackGaugeChart');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const { width, height } = canvas;
   const cx = width / 2, cy = height * 0.75;
   const r = Math.min(width, height) * 0.65;
-  // Dane z API lub domyślne
-  const pct = stats?.answerRate ?? 0;
-  const ratio = Math.min(1, pct / 100);
-  const color = pct >= 80 ? '#27ae60' : pct >= 60 ? '#f39c12' : '#e74c3c';
+
+  const pct = ((data && data.stats && data.stats.callbackRate) || 0) / 100;
+  const displayVal = data && data.stats ? (data.stats.callbackRate || 0) + '%' : '—';
+  const fillColor = pct >= 0.9 ? '#27ae60' : pct >= 0.7 ? '#f39c12' : '#e74c3c';
+
   ctx.clearRect(0, 0, width, height);
   ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 0);
   ctx.lineWidth = 20; ctx.strokeStyle = '#e9ecef'; ctx.stroke();
-  if (ratio > 0) {
-    ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, Math.PI + ratio * Math.PI);
-    ctx.lineWidth = 20; ctx.strokeStyle = color; ctx.lineCap = 'round'; ctx.stroke();
+  if (pct > 0) {
+    ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, Math.PI + pct * Math.PI);
+    ctx.lineWidth = 20; ctx.strokeStyle = fillColor; ctx.lineCap = 'round'; ctx.stroke();
   }
   ctx.fillStyle = '#001f3f'; ctx.font = 'bold 24px Inter';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(`${Math.round(pct)}%`, cx, cy - 10);
+  ctx.fillText(displayVal, cx, cy - 10);
+
+  const gaugeEl = document.getElementById('gaugeValue');
+  if (gaugeEl) gaugeEl.textContent = displayVal;
 }
 
-function renderBarChart() {
+function renderBarChart(data) {
   const canvas = document.getElementById('callsBarChart');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const { width, height } = canvas;
   const pad = { top: 20, right: 20, bottom: 40, left: 50 };
+
+  // Grupuj połączenia po godzinie
   const hours = ['8','9','10','11','12','13','14','15','16','17','18'];
-  const values = [12, 28, 45, 52, 38, 41, 55, 48, 35, 22, 8];
+  const counts = Array(hours.length).fill(0);
+  const calls = (data && data.recentCalls) || [];
+  calls.forEach(c => {
+    if (!c.timestamp) return;
+    const h = new Date(c.timestamp).getHours();
+    const idx = h - 8;
+    if (idx >= 0 && idx < counts.length) counts[idx]++;
+  });
+
+  // Jeśli wszystko 0, nie rysuj
+  const hasData = counts.some(v => v > 0);
   ctx.clearRect(0, 0, width, height);
+
+  if (!hasData) {
+    ctx.fillStyle = '#6c757d'; ctx.font = '13px Inter'; ctx.textAlign = 'center';
+    ctx.fillText('Brak danych dla wybranego zakresu', width / 2, height / 2);
+    return;
+  }
+
   const cw = width - pad.left - pad.right;
   const ch = height - pad.top - pad.bottom;
-  const max = Math.max(...values);
+  const max = Math.max(...counts, 1);
   const bw = (cw / hours.length) * 0.7;
   const bs = cw / hours.length;
   ctx.strokeStyle = '#e9ecef'; ctx.lineWidth = 1;
@@ -1463,18 +1706,242 @@ function renderBarChart() {
   }
   hours.forEach((h, i) => {
     const x = pad.left + i * bs + (bs - bw) / 2;
-    const bh = (values[i] / max) * ch;
+    const bh = (counts[i] / max) * ch;
     const y = pad.top + ch - bh;
     const g = ctx.createLinearGradient(0, y, 0, y + bh);
     g.addColorStop(0, '#001f3f'); g.addColorStop(1, '#003d7a');
     ctx.fillStyle = g;
-    ctx.beginPath(); ctx.roundRect(x, y, bw, bh, [4, 4, 0, 0]); ctx.fill();
+    if (bh > 0) { ctx.beginPath(); ctx.roundRect(x, y, bw, bh, [4, 4, 0, 0]); ctx.fill(); }
     ctx.fillStyle = '#6c757d'; ctx.font = '11px Inter'; ctx.textAlign = 'center';
     ctx.fillText(`${h}:00`, x + bw / 2, height - pad.bottom + 16);
   });
 }
 
-// ==================== TOAST NOTIFICATIONS ====================
+
+// ==================== DIALER WIDGET ====================
+let dialerOpen = false;
+let dialerNumber = '';
+
+function initDialer() {
+  const widget = document.getElementById('dialerWidget');
+  if (!widget) return;
+  widget.innerHTML = `
+    <button id="dialerToggleBtn" onclick="toggleDialer()" title="Klawiatura">
+      <span id="dialerToggleIcon">📞</span>
+    </button>
+    <div id="dialerPanel" class="dialer-panel hidden">
+      <div class="dialer-header">
+        <span class="dialer-title">Zadzwoń</span>
+        <button class="dialer-close" onclick="toggleDialer()">✕</button>
+      </div>
+      <input id="dialerInput" class="dialer-input" type="tel" placeholder="+48 000 000 000"
+             oninput="dialerNumber=this.value" onkeydown="if(event.key==='Enter')dialerCall()"/>
+      <div class="dialer-grid">
+        ${['1','2','3','4','5','6','7','8','9','*','0','#'].map(k => `
+          <button class="dialer-key" onclick="dialerPress('${k}')">${k}</button>
+        `).join('')}
+      </div>
+      <div class="dialer-actions">
+        <button class="dialer-del" onclick="dialerDelete()" title="Usuń">⌫</button>
+        <button class="dialer-call-btn" onclick="dialerCall()">📞 Zadzwoń</button>
+      </div>
+    </div>
+  `;
+}
+
+function toggleDialer() {
+  dialerOpen = !dialerOpen;
+  const panel = document.getElementById('dialerPanel');
+  const icon  = document.getElementById('dialerToggleIcon');
+  if (!panel) return;
+  panel.classList.toggle('hidden', !dialerOpen);
+  if (icon) icon.textContent = dialerOpen ? '✕' : '📞';
+  if (dialerOpen) setTimeout(() => document.getElementById('dialerInput')?.focus(), 50);
+}
+
+function dialerPress(key) {
+  const input = document.getElementById('dialerInput');
+  if (!input) return;
+  input.value += key;
+  dialerNumber = input.value;
+}
+
+function dialerDelete() {
+  const input = document.getElementById('dialerInput');
+  if (!input) return;
+  input.value = input.value.slice(0, -1);
+  dialerNumber = input.value;
+}
+
+function dialerCall() {
+  const num = (document.getElementById('dialerInput')?.value || '').trim();
+  if (!num) { showToast('Wpisz numer telefonu', 'error'); return; }
+  initiateCall(num, num, null, null);
+  document.getElementById('dialerInput').value = '';
+  dialerNumber = '';
+  toggleDialer();
+}
+
+// ==================== NAGRANIA — automatyczne odświeżanie ====================
+// Dla udanych połączeń: jeśli brak nagrania, sprawdzaj co 30s przez 20 minut
+const recordingPollers = new Map(); // callId → intervalId
+
+function startRecordingPoller(callId) {
+  if (recordingPollers.has(callId)) return;
+  let attempts = 0;
+  const maxAttempts = 40; // 40 × 30s = 20 minut
+  const id = setInterval(async () => {
+    attempts++;
+    const call = allCalls.find(c => c.callId === callId);
+    if (call?.recordingUrl || attempts >= maxAttempts) {
+      clearInterval(id);
+      recordingPollers.delete(callId);
+      return;
+    }
+    try {
+      const r = await fetch(`/api/call/${callId}/recording`);
+      const data = await r.json();
+      if (data.url) {
+        const idx = allCalls.findIndex(c => c.callId === callId);
+        if (idx >= 0) allCalls[idx].recordingUrl = data.url;
+        clearInterval(id);
+        recordingPollers.delete(callId);
+        if (currentView === 'calls') renderCallsTable(allCalls);
+        // Odśwież przycisk nagrania inline (bez przeładowania całej tabeli)
+        const btn = document.querySelector(`[data-rec-callid="${CSS.escape(callId)}"]`);
+        if (btn) {
+          btn.outerHTML = `<audio controls src="${data.url}" class="call-recording-player"></audio>
+            <a href="${data.url}" download class="btn-download-rec" title="Pobierz">↓</a>`;
+        }
+        showToast('🎙️ Nagranie gotowe', 'success');
+      }
+    } catch(e) { /* cicho — spróbujemy ponownie */ }
+  }, 30000);
+  recordingPollers.set(callId, id);
+}
+
+
+async function openDiagnose() {
+  const modal = document.getElementById('diagnoseModal');
+  const content = document.getElementById('diagnoseContent');
+  modal.classList.remove('hidden');
+  modal.style.display = 'flex';
+  content.innerHTML = '<p style="color:#888;">⏳ Odpytuję Zadarma API...</p>';
+
+  try {
+    const r = await fetch('/api/call/diagnose');
+    const d = await r.json();
+    renderDiagnose(d, content);
+  } catch(e) {
+    content.innerHTML = `<p style="color:red;">Błąd: ${e.message}</p>`;
+  }
+}
+
+function closeDiagnose() {
+  const modal = document.getElementById('diagnoseModal');
+  modal.classList.add('hidden');
+  modal.style.display = 'none';
+}
+
+function renderDiagnose(d, el) {
+  let html = '';
+
+  // Auth
+  if (d.auth?.ok) {
+    const bal = d.auth.balance?.balance ?? '?';
+    const currency = d.auth.balance?.currency ?? '';
+    html += `<div style="padding:10px 12px;border-radius:8px;background:#f0fdf4;border:1px solid #bbf7d0;margin-bottom:10px;">
+      ✅ <strong>Autoryzacja API OK</strong> — saldo: ${bal} ${currency}
+    </div>`;
+  } else {
+    html += `<div style="padding:10px 12px;border-radius:8px;background:#fef2f2;border:1px solid #fecaca;margin-bottom:10px;">
+      ❌ <strong>Błąd autoryzacji</strong> — ${JSON.stringify(d.auth?.error)}
+      <br><small>Sprawdź ZADARMA_API_KEY i ZADARMA_API_SECRET w pliku .env</small>
+    </div>`;
+  }
+
+  // Skonfigurowany numer wewnętrzny
+  html += `<div style="padding:10px 12px;border-radius:8px;background:#eff6ff;border:1px solid #bfdbfe;margin-bottom:10px;">
+    📞 <strong>Parametr "from" wysyłany do Zadarma:</strong> <code style="font-family:monospace;font-weight:600;font-size:13px">${d.configuredFrom || d.configuredExt}</code>
+    <br><small>Musi być w formacie <code style="font-family:monospace">CENTRALA_ID-NUMER_EXT</code>, np. <code style="font-family:monospace">507897-103</code></small>
+    <br><small>Ustaw w .env: <code style="font-family:monospace">ZADARMA_PBX_ID=507897</code> i <code style="font-family:monospace">ZADARMA_DEFAULT_EXT=103</code></small>
+  </div>`;
+
+  // Numery wewnętrzne PBX
+  if (d.extensions?.ok) {
+    const exts = d.extensions.data?.numbers || d.extensions.data?.extensions || [];
+    if (exts.length > 0) {
+      html += `<div style="margin-bottom:10px;"><strong>📋 Numery wewnętrzne PBX:</strong>`;
+      html += `<table style="width:100%;margin-top:6px;border-collapse:collapse;font-size:12px;">
+        <tr style="background:#f9fafb;"><th style="padding:5px 8px;text-align:left;border:1px solid #e5e7eb;">Nr wewn.</th>
+        <th style="padding:5px 8px;text-align:left;border:1px solid #e5e7eb;">Nazwa</th>
+        <th style="padding:5px 8px;text-align:left;border:1px solid #e5e7eb;">Status</th></tr>`;
+      exts.forEach(e => {
+        const num = e.internal_number || e.number || e.id || '?';
+        const name = e.name || e.description || '—';
+        const online = e.online !== undefined ? e.online : (e.status === 'online' || e.status === 1);
+        const statusColor = online ? '#16a34a' : '#dc2626';
+        const statusTxt = online ? '🟢 Online' : '🔴 Offline';
+        const isTarget = String(num) === String(d.configuredExt).replace(' (domyślny)', '');
+        const bg = isTarget ? '#fefce8' : '';
+        html += `<tr style="background:${bg}">
+          <td style="padding:5px 8px;border:1px solid #e5e7eb;font-weight:${isTarget?'600':'400'}">${num}${isTarget?' ← skonfigurowany':''}</td>
+          <td style="padding:5px 8px;border:1px solid #e5e7eb;">${name}</td>
+          <td style="padding:5px 8px;border:1px solid #e5e7eb;color:${statusColor}">${statusTxt}</td>
+        </tr>`;
+      });
+      html += `</table></div>`;
+
+      // Sprawdź czy skonfigurowany ext jest online
+      const configExt = String(d.configuredExt).replace(' (domyślny)', '');
+      const targetExt = exts.find(e => String(e.internal_number || e.number || e.id) === configExt);
+      if (targetExt) {
+        const isOnline = targetExt.online !== undefined ? targetExt.online : (targetExt.status === 'online' || targetExt.status === 1);
+        if (!isOnline) {
+          html += `<div style="padding:10px 12px;border-radius:8px;background:#fff7ed;border:1px solid #fed7aa;margin-bottom:10px;">
+            ⚠️ <strong>Numer wewnętrzny ${configExt} jest OFFLINE!</strong>
+            <br>Telefon/softphone dla tego stanowiska nie jest zalogowany w Zadarma PBX.
+            <br>Click-to-call nie zadziała dopóki numer nie będzie online.
+          </div>`;
+        } else {
+          html += `<div style="padding:10px 12px;border-radius:8px;background:#f0fdf4;border:1px solid #bbf7d0;margin-bottom:10px;">
+            ✅ <strong>Numer wewnętrzny ${configExt} jest ONLINE</strong> — click-to-call powinien działać.
+          </div>`;
+        }
+      } else {
+        html += `<div style="padding:10px 12px;border-radius:8px;background:#fef2f2;border:1px solid #fecaca;margin-bottom:10px;">
+          ❌ <strong>Numer wewnętrzny "${configExt}" nie istnieje w PBX!</strong>
+          <br>Dostępne numery: ${exts.map(e => e.internal_number || e.number || e.id).join(', ')}
+          <br>Popraw <code style="font-family:monospace">ZADARMA_DEFAULT_EXT</code> w .env.
+        </div>`;
+      }
+    } else {
+      html += `<div style="padding:8px 12px;border-radius:8px;background:#f9fafb;border:1px solid #e5e7eb;margin-bottom:10px;">
+        ℹ️ Brak numerów wewnętrznych lub nieobsługiwana struktura odpowiedzi.
+        <br><small>Raw: ${JSON.stringify(d.extensions.data).slice(0, 200)}</small>
+      </div>`;
+    }
+  } else {
+    html += `<div style="padding:10px 12px;border-radius:8px;background:#fef2f2;border:1px solid #fecaca;margin-bottom:10px;">
+      ❌ Błąd pobierania numerów wewnętrznych: ${JSON.stringify(d.extensions?.error)}
+    </div>`;
+  }
+
+  // Instrukcja
+  html += `<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12px;color:#6b7280;">💡 Co zrobić jeśli click-to-call nie działa?</summary>
+    <ol style="font-size:12px;line-height:1.8;margin-top:8px;padding-left:18px;color:#374151;">
+      <li>Sprawdź czy softphone/aparat jest zalogowany w Zadarma (numer musi być <strong>Online</strong> powyżej)</li>
+      <li>Upewnij się że <code style="font-family:monospace">ZADARMA_DEFAULT_EXT</code> w .env odpowiada Twojemu numerowi wewnętrznemu</li>
+      <li>Zadarma <strong>najpierw dzwoni na Twój numer (from)</strong>, dopiero po odebraniu łączy z pacjentem</li>
+      <li>Sprawdź logi serwera — po kliknięciu "Zadzwoń" powinna pojawić się linia <code style="font-family:monospace">[Click-to-Call] Odpowiedź Zadarma:</code></li>
+      <li>Jeśli odpowiedź Zadarma zawiera <code style="font-family:monospace">"status":"success"</code> ale telefon nie dzwoni — problem jest po stronie PBX/softphone</li>
+    </ol>
+  </details>`;
+
+  el.innerHTML = html;
+}
+
+
 function showToast(message, type = 'info') {
   const container = document.getElementById('toastContainer');
   if (!container) return;
@@ -1491,7 +1958,6 @@ function showToast(message, type = 'info') {
 
 // ==================== KPI UPDATES ====================
 function updateKPIs() {
-  document.getElementById('kpi-calls').textContent = '0';
-  document.getElementById('kpi-missed').textContent = '0';
+  // KPI są aktualizowane przez loadNewLeads(), loadCalls() i updateMissedKPI()
+  // Ta funkcja jest pozostawiona jako placeholder dla przyszłych rozszerzeń
 }
-updateKPIs();
