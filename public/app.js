@@ -459,7 +459,13 @@ async function deleteLead(oppId, btn) {
 }
 
 function escHtml(str) {
-  return (str || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  // CRITICAL FIX: pełne escapowanie XSS (& < > " ')
+  return (str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // ==================== CALLS — BLOK C ====================
@@ -765,31 +771,32 @@ function selectOutcome(outcome) {
 }
 
 // ==================== TIME SETTERS ====================
-function setContactTime(days) {
+function setContactTime(days, btn) {
+  // BUG FIX: btn przekazywany jako parametr zamiast niejawnego event.target
   const date = new Date();
   date.setDate(date.getDate() + days);
   date.setHours(10, 0, 0, 0);
   document.getElementById('contactDateTime').value = formatDateTimeLocal(date);
   document.querySelectorAll('.contact-time-buttons .time-btn').forEach(b => b.classList.remove('active'));
-  event.target.classList.add('active');
+  if (btn) btn.classList.add('active');
 }
 
-function setContactTimeSt(days) {
+function setContactTimeSt(days, btn) {
   const date = new Date();
   date.setDate(date.getDate() + days);
   date.setHours(10, 0, 0, 0);
   document.getElementById('stalyContactDateTime').value = formatDateTimeLocal(date);
   document.querySelectorAll('#outcome-staly_kontakt .time-btn').forEach(b => b.classList.remove('active'));
-  event.target.classList.add('active');
+  if (btn) btn.classList.add('active');
 }
 
-function setContactTimeWizyta(days) {
+function setContactTimeWizyta(days, btn) {
   const date = new Date();
   date.setDate(date.getDate() + days);
   date.setHours(10, 0, 0, 0);
   document.getElementById('wizytaContactDateTime').value = formatDateTimeLocal(date);
   document.querySelectorAll('#outcome-odwolanie .time-btn').forEach(b => b.classList.remove('active'));
-  event.target.classList.add('active');
+  if (btn) btn.classList.add('active');
 }
 
 function formatDateTimeLocal(date) {
@@ -987,7 +994,27 @@ function formatTaskDue(dueDate) {
 }
 
 async function toggleTask(taskId, completed) {
-  showToast(completed ? 'Zadanie oznaczone jako wykonane' : 'Zadanie przywrócone', 'info');
+  // BUG FIX: zapisuje stan zadania przez API (wcześniej tylko toast bez efektu)
+  try {
+    const apiKey = localStorage.getItem('nav_api_key') || '';
+    const response = await fetch(`/api/contact/task/${taskId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey
+      },
+      body: JSON.stringify({ status: completed ? 'completed' : 'incompleted' })
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    showToast(completed ? '✅ Zadanie oznaczone jako wykonane' : 'Zadanie przywrócone', 'success');
+    // Odśwież listę zadań
+    loadTodayTasks();
+  } catch(e) {
+    showToast('Błąd zapisu zadania: ' + e.message, 'error');
+    // Przywróć checkbox do poprzedniego stanu
+    const cb = document.querySelector(`[data-task-id="${taskId}"]`);
+    if (cb) cb.checked = !completed;
+  }
 }
 
 // ==================== CONTACTS — BLOK E ====================
@@ -1339,13 +1366,19 @@ function appendChatMessage(from, text, ts, isMine) {
 }
 
 // ==================== CHARTS (zachowane z v6) ====================
-function renderCharts() {
-  renderDonutChart();
-  renderGaugeChart();
-  renderBarChart();
+async function renderCharts() {
+  // MINOR FIX: pobiera dane z /api/stats zamiast hardcoded wartości
+  let statsData = null;
+  try {
+    const r = await fetch('/api/stats');
+    if (r.ok) statsData = await r.json();
+  } catch(e) { /* brak danych — użyj domyślnych */ }
+  renderDonutChart(statsData);
+  renderGaugeChart(statsData);
+  renderBarChart(statsData);
 }
 
-function renderDonutChart() {
+function renderDonutChart(stats) {
   const canvas = document.getElementById('callsDonutChart');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
@@ -1353,17 +1386,21 @@ function renderDonutChart() {
   const cx = width / 2, cy = height / 2;
   const r = Math.min(width, height) / 2 - 20;
   const inner = r * 0.6;
+  // Dane z API lub domyślne (placeholder)
+  const answered = stats?.totalAnswered ?? 0;
+  const missed = stats?.totalMissed ?? 0;
+  const total = (stats?.totalCalls ?? (answered + missed)) || 1;
+  const other = Math.max(0, total - answered - missed);
   const data = [
-    { value: 776, color: '#27ae60', label: 'Odebrane (74%)' },
-    { value: 118, color: '#e74c3c', label: 'Nieodebrane (11%)' },
-    { value: 129, color: '#f39c12', label: 'Rozłączenia (12%)' },
-    { value: 23,  color: '#95a5a6', label: 'Poza godz. (2%)' }
-  ];
-  const total = data.reduce((s, d) => s + d.value, 0);
+    { value: answered || 1, color: '#27ae60', label: `Odebrane (${total > 0 ? Math.round(answered/total*100) : 0}%)` },
+    { value: missed || 0,   color: '#e74c3c', label: `Nieodebrane (${total > 0 ? Math.round(missed/total*100) : 0}%)` },
+    { value: other || 0,    color: '#f39c12', label: `Inne (${total > 0 ? Math.round(other/total*100) : 0}%)` }
+  ].filter(d => d.value > 0);
+  const totalVal = data.reduce((s, d) => s + d.value, 0);
   let angle = -Math.PI / 2;
   ctx.clearRect(0, 0, width, height);
   data.forEach(seg => {
-    const slice = (seg.value / total) * 2 * Math.PI;
+    const slice = (seg.value / totalVal) * 2 * Math.PI;
     ctx.beginPath(); ctx.moveTo(cx, cy);
     ctx.arc(cx, cy, r, angle, angle + slice);
     ctx.closePath(); ctx.fillStyle = seg.color; ctx.fill();
@@ -1373,28 +1410,34 @@ function renderDonutChart() {
   ctx.fillStyle = '#ffffff'; ctx.fill();
   ctx.fillStyle = '#001f3f'; ctx.font = 'bold 28px Inter';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('1046', cx, cy - 10);
+  ctx.fillText(String(total), cx, cy - 10);
   ctx.font = '12px Inter'; ctx.fillStyle = '#6c757d';
   ctx.fillText('połączeń', cx, cy + 14);
   const legendEl = document.getElementById('donutLegend');
   if (legendEl) legendEl.innerHTML = data.map(d => `<div class="legend-item"><div class="legend-dot" style="background:${d.color}"></div><span>${d.label}</span></div>`).join('');
 }
 
-function renderGaugeChart() {
+function renderGaugeChart(stats) {
   const canvas = document.getElementById('callbackGaugeChart');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const { width, height } = canvas;
   const cx = width / 2, cy = height * 0.75;
   const r = Math.min(width, height) * 0.65;
+  // Dane z API lub domyślne
+  const pct = stats?.answerRate ?? 0;
+  const ratio = Math.min(1, pct / 100);
+  const color = pct >= 80 ? '#27ae60' : pct >= 60 ? '#f39c12' : '#e74c3c';
   ctx.clearRect(0, 0, width, height);
   ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 0);
   ctx.lineWidth = 20; ctx.strokeStyle = '#e9ecef'; ctx.stroke();
-  ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, Math.PI + 0.9 * Math.PI);
-  ctx.lineWidth = 20; ctx.strokeStyle = '#27ae60'; ctx.lineCap = 'round'; ctx.stroke();
+  if (ratio > 0) {
+    ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, Math.PI + ratio * Math.PI);
+    ctx.lineWidth = 20; ctx.strokeStyle = color; ctx.lineCap = 'round'; ctx.stroke();
+  }
   ctx.fillStyle = '#001f3f'; ctx.font = 'bold 24px Inter';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('90%', cx, cy - 10);
+  ctx.fillText(`${Math.round(pct)}%`, cx, cy - 10);
 }
 
 function renderBarChart() {

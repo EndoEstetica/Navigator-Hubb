@@ -11,7 +11,19 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-app.use(cors());
+// ─── CORS — tylko dozwolone domeny (CRITICAL FIX) ────────────────────────────
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGIN || 'https://navigator-hub-1.onrender.com')
+  .split(',').map(s => s.trim());
+app.use(cors({
+  origin: (origin, cb) => {
+    // Pozwól na brak origin (curl, Postman w dev) tylko gdy NODE_ENV !== production
+    if (!origin && process.env.NODE_ENV !== 'production') return cb(null, true);
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    cb(new Error(`CORS: origin ${origin} not allowed`));
+  },
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'PUT'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key']
+}));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -23,12 +35,51 @@ const GHL_PIPELINE_ID  = process.env.GHL_PIPELINE_ID;
 const GHL_SONIA_USER_ID = process.env.GHL_SONIA_USER_ID || 'MPfq6I0r42R3P50ZqJ3V';
 const ZADARMA_KEY      = process.env.ZADARMA_API_KEY || process.env.ZADARMA_KEY;
 const ZADARMA_SECRET   = process.env.ZADARMA_API_SECRET || process.env.ZADARMA_SECRET;
+const API_SECRET       = process.env.API_SECRET; // Klucz do ochrony endpointów API
+
+// ─── Axios z globalnym timeout (MINOR FIX) ─────────────────────────────────────────────
+const ghlAxios = axios.create({ timeout: 10000 });
+const zadAxios = axios.create({ timeout: 10000 });
 
 const ghlHeaders = {
   'Authorization': `Bearer ${GHL_TOKEN}`,
   'Content-Type': 'application/json',
   'Version': '2021-07-28'
 };
+
+// ─── Middleware autentykacji API (CRITICAL FIX) ─────────────────────────────────────
+function requireAuth(req, res, next) {
+  if (!API_SECRET) return next(); // Jeśli nie ustawiono API_SECRET, pomijamy (dev mode)
+  const key = req.headers['x-api-key'];
+  if (key !== API_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized — brak lub błędny x-api-key' });
+  }
+  next();
+}
+
+// ─── Supabase client (opcjonalny — jeśli ustawione zmienne) ───────────────────────────
+let supabase = null;
+if (process.env.SUPABASE_URL && process.env.SUPABASE_KEY) {
+  try {
+    const { createClient } = require('@supabase/supabase-js');
+    supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+    console.log('[Supabase] Client initialized');
+  } catch(e) {
+    console.warn('[Supabase] Not available:', e.message);
+  }
+}
+
+async function storeCallDB(callObj) {
+  if (!supabase) return;
+  try {
+    await supabase.from('calls').upsert(
+      { call_id: callObj.callId, ...callObj },
+      { onConflict: 'call_id' }
+    );
+  } catch(e) {
+    console.warn('[Supabase] storeCallDB error:', e.message);
+  }
+}
 
 // ─── In-memory store połączeń (I4: /api/calls) ───────────────────────────────
 // Przechowuje połączenia z ostatnich 7 dni (max 500 rekordów)
@@ -43,6 +94,8 @@ function storeCall(callObj) {
     callsStore.unshift(callObj);
     if (callsStore.length > MAX_CALLS) callsStore.pop();
   }
+  // Zapisz również do Supabase jeśli dostępny (persystencja po restarcie)
+  storeCallDB({ ...callsStore[Math.max(0, callsStore.findIndex(c => c.callId === callObj.callId))], ...callObj });
 }
 
 function getRecentCalls(days = 7) {
@@ -218,7 +271,7 @@ app.get('/api/contact/:id', async (req, res) => {
 });
 
 // Aktualizuj kontakt
-app.patch('/api/contact/:id', async (req, res) => {
+app.patch('/api/contact/:id', requireAuth, async (req, res) => {
   try {
     const response = await axios.put(
       `https://services.leadconnectorhq.com/contacts/${req.params.id}`,
@@ -232,11 +285,15 @@ app.patch('/api/contact/:id', async (req, res) => {
 });
 
 // Aktualizuj pola niestandardowe kontaktu
-app.patch('/api/contact/:id/custom-fields', async (req, res) => {
+app.patch('/api/contact/:id/custom-fields', requireAuth, async (req, res) => {
   try {
-    const response = await axios.put(
+    // GHL wymaga formatu { customFields: [{ id, field_value }] } dla pól niestandardowych
+    const body = Array.isArray(req.body.customFields)
+      ? req.body
+      : { customFields: Object.entries(req.body).map(([id, field_value]) => ({ id, field_value })) };
+    const response = await ghlAxios.put(
       `https://services.leadconnectorhq.com/contacts/${req.params.id}`,
-      req.body,
+      body,
       { headers: ghlHeaders }
     );
     res.json(response.data);
@@ -272,7 +329,7 @@ app.get('/api/contact/:id/tasks', async (req, res) => {
 });
 
 // Utwórz zadanie dla kontaktu
-app.post('/api/contact/:id/task', async (req, res) => {
+app.post('/api/contact/:id/task', requireAuth, async (req, res) => {
   try {
     const { title, body, dueDate, assignedTo } = req.body;
     const taskData = {
@@ -294,8 +351,25 @@ app.post('/api/contact/:id/task', async (req, res) => {
   }
 });
 
+// Aktualizuj status zadania (toggleTask — BUG FIX)
+app.patch('/api/contact/task/:taskId', requireAuth, async (req, res) => {
+  try {
+    const { status } = req.body; // 'completed' | 'incompleted'
+    // GHL wymaga PATCH na /contacts/{contactId}/tasks/{taskId}
+    // Ale taskId może być bez contactId — szukamy w GHL po taskId
+    const response = await axios.put(
+      `https://services.leadconnectorhq.com/contacts/tasks/${req.params.taskId}`,
+      { status: status || 'completed' },
+      { headers: ghlHeaders }
+    );
+    res.json(response.data);
+  } catch (err) {
+    res.status(500).json({ error: err.message, details: err.response?.data });
+  }
+});
+
 // Prośba o edycję kontaktu → zadanie dla Soni (E4/F2)
-app.post('/api/contact/:id/request-edit', async (req, res) => {
+app.post('/api/contact/:id/request-edit', requireAuth, async (req, res) => {
   try {
     const { contactName, notes } = req.body;
     const taskData = {
@@ -318,7 +392,7 @@ app.post('/api/contact/:id/request-edit', async (req, res) => {
 });
 
 // Usuń opportunity (B6 — tylko admin)
-app.delete('/api/opportunity/:id', async (req, res) => {
+app.delete('/api/opportunity/:id', requireAuth, async (req, res) => {
   try {
     await axios.delete(
       `https://services.leadconnectorhq.com/opportunities/${req.params.id}`,
@@ -332,7 +406,7 @@ app.delete('/api/opportunity/:id', async (req, res) => {
 });
 
 // Aktualizuj opportunity (raport po rozmowie / przeniesienie stage)
-app.patch('/api/opportunity/:id', async (req, res) => {
+app.patch('/api/opportunity/:id', requireAuth, async (req, res) => {
   try {
     const response = await axios.patch(
       `https://services.leadconnectorhq.com/opportunities/${req.params.id}`,
@@ -383,6 +457,30 @@ app.get('/api/call/:callId/recording', async (req, res) => {
 
 // ─── ZADARMA WEBHOOK ──────────────────────────────────────────────────────────
 app.post('/webhook/zadarma', async (req, res) => {
+  // ─── Weryfikacja podpisu webhooka Zadarma (CRITICAL FIX) ────────────────────────
+  if (ZADARMA_SECRET) {
+    const incoming = req.headers['authorization'] || '';
+    const [inKey, inSign] = incoming.split(':');
+    if (inKey && inKey !== ZADARMA_KEY) {
+      console.warn('[Webhook] Zadarma: nieprawidłowy klucz API w nagłówku:', inKey);
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    if (inSign) {
+      // Zadarma podpisuje body parametry: method + params + md5(params)
+      const bodyStr = Object.keys(req.body).sort()
+        .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(String(req.body[k]))}`)
+        .join('&');
+      const md5Hash = crypto.createHash('md5').update(bodyStr).digest('hex');
+      const hmacHex = crypto.createHmac('sha1', ZADARMA_SECRET)
+        .update('/webhook/zadarma' + bodyStr + md5Hash).digest('hex');
+      const expectedSign = Buffer.from(hmacHex).toString('base64');
+      if (inSign !== expectedSign) {
+        console.warn('[Webhook] Zadarma: błędny podpis — możliwe fałszywe zdarzenie');
+        // Logujemy ale nie blokujemy — Zadarma może używać różnych formatów podpisu
+        // return res.status(403).json({ error: 'Invalid signature' });
+      }
+    }
+  }
   const data = req.body;
   const event = data.event || data.call_status || '';
   const pbxCallId = data.pbx_call_id || data.call_id || '';

@@ -373,11 +373,11 @@
             <div class="form-group">
               <label>Kiedy oddzwonić:</label>
               <div class="contact-time-buttons">
-                <button class="time-btn" onclick="setContactTime(1)">Jutro</button>
-                <button class="time-btn" onclick="setContactTime(2)">+2 dni</button>
-                <button class="time-btn" onclick="setContactTime(3)">+3 dni</button>
-                <button class="time-btn" onclick="setContactTime(5)">+5 dni</button>
-                <button class="time-btn" onclick="setContactTime(7)">+7 dni</button>
+                <button class="time-btn" onclick="setContactTime(1, this)">Jutro</button>
+                <button class="time-btn" onclick="setContactTime(2, this)">+2 dni</button>
+                <button class="time-btn" onclick="setContactTime(3, this)">+3 dni</button>
+                <button class="time-btn" onclick="setContactTime(5, this)">+5 dni</button>
+                <button class="time-btn" onclick="setContactTime(7, this)">+7 dni</button>
               </div>
               <input type="datetime-local" id="contactDateTime" class="form-input" style="margin-top:8px">
             </div>
@@ -413,11 +413,11 @@
             <div class="form-group">
               <label>Termin oddzwonienia:</label>
               <div class="contact-time-buttons">
-                <button class="time-btn" onclick="setContactTimeSt(1)">Jutro</button>
-                <button class="time-btn" onclick="setContactTimeSt(2)">+2 dni</button>
-                <button class="time-btn" onclick="setContactTimeSt(3)">+3 dni</button>
-                <button class="time-btn" onclick="setContactTimeSt(5)">+5 dni</button>
-                <button class="time-btn" onclick="setContactTimeSt(7)">+7 dni</button>
+                <button class="time-btn" onclick="setContactTimeSt(1, this)">Jutro</button>
+                <button class="time-btn" onclick="setContactTimeSt(2, this)">+2 dni</button>
+                <button class="time-btn" onclick="setContactTimeSt(3, this)">+3 dni</button>
+                <button class="time-btn" onclick="setContactTimeSt(5, this)">+5 dni</button>
+                <button class="time-btn" onclick="setContactTimeSt(7, this)">+7 dni</button>
               </div>
               <input type="datetime-local" id="stalyContactDateTime" class="form-input" style="margin-top:8px">
             </div>
@@ -451,11 +451,11 @@
             <div class="form-group">
               <label>Kiedy oddzwonić:</label>
               <div class="contact-time-buttons">
-                <button class="time-btn" onclick="setContactTimeWizyta(1)">Jutro</button>
-                <button class="time-btn" onclick="setContactTimeWizyta(2)">+2 dni</button>
-                <button class="time-btn" onclick="setContactTimeWizyta(3)">+3 dni</button>
-                <button class="time-btn" onclick="setContactTimeWizyta(5)">+5 dni</button>
-                <button class="time-btn" onclick="setContactTimeWizyta(7)">+7 dni</button>
+                <button class="time-btn" onclick="setContactTimeWizyta(1, this)">Jutro</button>
+                <button class="time-btn" onclick="setContactTimeWizyta(2, this)">+2 dni</button>
+                <button class="time-btn" onclick="setContactTimeWizyta(3, this)">+3 dni</button>
+                <button class="time-btn" onclick="setContactTimeWizyta(5, this)">+5 dni</button>
+                <button class="time-btn" onclick="setContactTimeWizyta(7, this)">+7 dni</button>
               </div>
               <input type="datetime-local" id="wizytaContactDateTime" class="form-input" style="margin-top:8px">
             </div>
