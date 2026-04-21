@@ -20,6 +20,7 @@ app.use(cors({
   methods: ['GET', 'POST', 'PATCH', 'DELETE']
 }));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // ← Zadarma wysyła webhooki jako form-urlencoded
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Konfiguracja ─────────────────────────────────────────────────────────────
@@ -679,6 +680,11 @@ app.get('/api/stats', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ─── Health check ─────────────────────────────────────────────────────────────
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', uptime: Math.floor(process.uptime()), ts: new Date().toISOString() });
 });
 
 // ─── Fallback SPA ─────────────────────────────────────────────────────────────
