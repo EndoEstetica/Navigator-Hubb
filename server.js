@@ -108,14 +108,26 @@ const recordingRetryQueue = new Map(); // callId → { attempts, pbxCallId, cont
 const RETRY_DELAYS = [5000, 30000, 120000, 300000, 600000, 1200000]; // 5s, 30s, 2min, 5min, 10min, 20min
 
 function zadarmaSign(method, params) {
-  // Zadarma HMAC-SHA1 — zgodnie z oficjalną dokumentacją PHP:
-  // base64_encode( hash_hmac('sha1', method + paramString + md5(paramString), secret) )
-  // PHP hash_hmac zwraca hex string, więc base64 koduje hex (nie binary)
+  // Zadarma HMAC-SHA1 — Dokładna implementacja PHP http_build_query(..., PHP_QUERY_RFC1738)
   const sortedKeys = Object.keys(params).sort();
-  const paramString = sortedKeys.map(k => `${k}=${encodeURIComponent(String(params[k])).replace(/%20/g, '+')}`).join('&');
-  const md5Hash = crypto.createHash('md5').update(paramString).digest('hex');
-  const signString = method + paramString + md5Hash;
-  const hmacHex = crypto.createHmac('sha1', ZADARMA_SECRET).update(signString).digest('hex');
+  const paramsStr = sortedKeys
+    .map(k => {
+      const key = encodeURIComponent(k).replace(/%20/g, '+');
+      const val = encodeURIComponent(String(params[k])).replace(/%20/g, '+');
+      return `${key}=${val}`;
+    })
+    .join('&');
+
+  // md5(paramsStr) w PHP zwraca hex string
+  const md5Hash = crypto.createHash('md5').update(paramsStr).digest('hex');
+  
+  // hash_hmac('sha1', ..., secret) w PHP domyślnie zwraca hex string
+  const hmacHex = crypto
+    .createHmac('sha1', ZADARMA_SECRET)
+    .update(method + paramsStr + md5Hash)
+    .digest('hex');
+
+  // base64_encode(hmacHex)
   return Buffer.from(hmacHex).toString('base64');
 }
 
@@ -124,7 +136,7 @@ async function fetchRecordingFromZadarma(pbxCallId) {
   try {
     const params = { call_id: pbxCallId };
     const sign = zadarmaSign('/v1/pbx/record/request/', params);
-    const qs = `call_id=${pbxCallId}`;
+    const qs = `call_id=${encodeURIComponent(pbxCallId).replace(/%20/g, '+')}`;
     const response = await axios.get(
       `https://api.zadarma.com/v1/pbx/record/request/?${qs}`,
       { headers: { 'Authorization': `${ZADARMA_KEY}:${sign}` } }
@@ -456,6 +468,15 @@ app.get('/api/call/:callId/recording', async (req, res) => {
 });
 
 // ─── ZADARMA WEBHOOK ──────────────────────────────────────────────────────────
+// Obsługa weryfikacji adresu (Zadarma wysyła GET z parametrem zd_echo)
+app.get('/webhook/zadarma', (req, res) => {
+  const { zd_echo } = req.query;
+  if (zd_echo) {
+    return res.send(zd_echo);
+  }
+  res.status(400).send('Missing zd_echo');
+});
+
 app.post('/webhook/zadarma', async (req, res) => {
   // ─── Weryfikacja podpisu webhooka Zadarma (CRITICAL FIX) ────────────────────────
   if (ZADARMA_SECRET) {
@@ -466,13 +487,21 @@ app.post('/webhook/zadarma', async (req, res) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
     if (inSign) {
-      // Zadarma podpisuje body parametry: method + params + md5(params)
-      const bodyStr = Object.keys(req.body).sort()
-        .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(String(req.body[k]))}`)
+      // Zadarma podpisuje parametry body: paramsStr + md5(paramsStr)
+      // Używamy RFC1738 (spacje na +)
+      const sortedKeys = Object.keys(req.body).sort();
+      const paramsStr = sortedKeys
+        .map(k => {
+          const key = encodeURIComponent(k).replace(/%20/g, '+');
+          const val = encodeURIComponent(String(req.body[k])).replace(/%20/g, '+');
+          return `${key}=${val}`;
+        })
         .join('&');
-      const md5Hash = crypto.createHash('md5').update(bodyStr).digest('hex');
+
+      const md5Hash = crypto.createHash('md5').update(paramsStr).digest('hex');
       const hmacHex = crypto.createHmac('sha1', ZADARMA_SECRET)
-        .update('/webhook/zadarma' + bodyStr + md5Hash).digest('hex');
+        .update(paramsStr + md5Hash)
+        .digest('hex');
       const expectedSign = Buffer.from(hmacHex).toString('base64');
       if (inSign !== expectedSign) {
         console.warn('[Webhook] Zadarma: błędny podpis — możliwe fałszywe zdarzenie');
@@ -582,7 +611,7 @@ app.post('/api/call/initiate', async (req, res) => {
     const to = phoneNumber;
     const params = { from, to };
     const sign = zadarmaSign('/v1/request/callback/', params);
-    const qs = `from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+    const qs = `from=${encodeURIComponent(from).replace(/%20/g, '+')}&to=${encodeURIComponent(to).replace(/%20/g, '+')}`;
     const response = await axios.get(
       `https://api.zadarma.com/v1/request/callback/?${qs}`,
       { headers: { 'Authorization': `${ZADARMA_KEY}:${sign}` } }
