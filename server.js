@@ -61,16 +61,32 @@ function getRecentCalls(days = 7) {
 const recordingRetryQueue = new Map(); // callId → { attempts, pbxCallId, contactName }
 const RETRY_DELAYS = [5000, 30000, 120000, 300000, 600000, 1200000]; // 5s, 30s, 2min, 5min, 10min, 20min
 
+// ─── Zadarma — podpis API (algorytm ze starszego działającego repozytorium) ───
+// Wzór: base64( binary_hmac_sha1( SECRET, METHOD + md5(paramString) ) )
+// WAŻNE:
+//   1. Podpisujemy METHOD + md5Hash — NIE method + paramString + md5Hash
+//   2. .digest('base64') bezpośrednio (binary base64) — NIE hex→base64
+//   3. Params do URL: ?...&user_key=KEY&sign=SIGN — NIE nagłówek Authorization
 function zadarmaSign(method, params) {
-  // Zadarma HMAC-SHA1 — poprawna implementacja
-  // Algorytm: base64( HEX( hmac_sha1( SECRET, method + paramString + md5(paramString) ) ) )
-  // UWAGA: base64(hex_hmac) ≠ base64(binary_hmac) — Zadarma wymaga base64(hex)
   const sortedKeys = Object.keys(params).sort();
   const paramString = sortedKeys.map(k => `${k}=${params[k]}`).join('&');
   const md5Hash = crypto.createHash('md5').update(paramString).digest('hex');
-  const signString = method + paramString + md5Hash;
-  const hexSig = crypto.createHmac('sha1', ZADARMA_SECRET).update(signString).digest('hex');
-  return Buffer.from(hexSig).toString('base64');
+  return crypto
+    .createHmac('sha1', ZADARMA_SECRET)
+    .update(`${method}${md5Hash}`)
+    .digest('base64');
+}
+
+// Weryfikacja podpisu webhooków Zadarma (inny wzór: tylko md5, bez method)
+function verifyZadarmaWebhookSign(params, signature) {
+  const filtered = Object.fromEntries(
+    Object.entries(params).filter(([k]) => k !== 'sign')
+  );
+  const sortedKeys = Object.keys(filtered).sort();
+  const paramString = sortedKeys.map(k => `${k}=${filtered[k]}`).join('&');
+  const md5Hash = crypto.createHash('md5').update(paramString).digest('hex');
+  const expected = crypto.createHmac('sha1', ZADARMA_SECRET).update(md5Hash).digest('base64');
+  return expected === signature;
 }
 
 async function fetchRecordingFromZadarma(pbxCallId) {
@@ -78,10 +94,9 @@ async function fetchRecordingFromZadarma(pbxCallId) {
   try {
     const params = { call_id: pbxCallId };
     const sign = zadarmaSign('/v1/pbx/record/request/', params);
-    const qs = `call_id=${encodeURIComponent(pbxCallId)}`;
     const response = await axios.get(
-      `https://api.zadarma.com/v1/pbx/record/request/?${qs}`,
-      { headers: { 'Authorization': `${ZADARMA_KEY}:${sign}` }, timeout: 10000 }
+      `https://api.zadarma.com/v1/pbx/record/request/`,
+      { params: { ...params, user_key: ZADARMA_KEY, sign }, timeout: 10000 }
     );
     const url = response.data?.links?.[0] || response.data?.link || null;
     return url;
@@ -389,7 +404,19 @@ app.get('/api/call/:callId/recording', async (req, res) => {
 });
 
 // ─── ZADARMA WEBHOOK ──────────────────────────────────────────────────────────
+
+// GET — weryfikacja URL przez Zadarma (odsyła zd_echo)
+app.get('/webhook/zadarma', (req, res) => {
+  const zdEcho = req.query.zd_echo;
+  if (zdEcho) {
+    console.log('[Zadarma] Weryfikacja webhooka, zd_echo:', zdEcho);
+    return res.send(zdEcho);
+  }
+  res.json({ status: 'webhook endpoint active' });
+});
+
 app.post('/webhook/zadarma', async (req, res) => {
+  res.sendStatus(200); // odpowiedz natychmiast, resztę rób async
   const data = req.body;
   const event = data.event || data.call_status || '';
   const pbxCallId = data.pbx_call_id || data.call_id || '';
@@ -457,7 +484,24 @@ app.post('/webhook/zadarma', async (req, res) => {
     }
   }
 
-  res.json({ status: 'ok' });
+  // Połączenie wychodzące Callback — NOTIFY_OUT_END (zakończone)
+  else if (event === 'NOTIFY_OUT_END') {
+    const duration = parseInt(data.seconds || data.duration) || 0;
+    storeCall({ callId, status: 'ended', duration, tag: duration > 0 ? 'connected' : 'ineffective', endedAt: new Date().toISOString() });
+    broadcast({ type: 'CALL_ENDED', callId, duration, tag: duration > 0 ? 'connected' : 'ineffective', direction: 'outbound' });
+    if (duration > 0 && pbxCallId) scheduleRecordingFetch(callId, pbxCallId, caller);
+  }
+
+  // Nagranie gotowe (NOTIFY_RECORD) — Zadarma wysyła URL bezpośrednio
+  else if (event === 'NOTIFY_RECORD') {
+    const recUrl = data.link || data.record || '';
+    const recCallId = data.call_id_with_rec || pbxCallId || callId;
+    if (recCallId && recUrl) {
+      storeCall({ callId: recCallId, recordingUrl: recUrl });
+      broadcast({ type: 'CALL_RECORDING_READY', callId: recCallId, recordingUrl: recUrl });
+      console.log(`[Zadarma] Nagranie gotowe dla ${recCallId}: ${recUrl}`);
+    }
+  }
 });
 
 // ─── CLICK-TO-CALL (C1/C9) ────────────────────────────────────────────────────
@@ -486,23 +530,20 @@ app.post('/api/call/initiate', async (req, res) => {
       return res.json({ success: true, message: 'Symulacja połączenia (brak konfiguracji Zadarma)', callId });
     }
 
-    // Zadarma Click-to-Call API
-    // WAŻNE: from musi być w formacie CENTRALA_ID-NUMER_EXT (np. 507897-103)
-    const pbxId  = process.env.ZADARMA_PBX_ID || '507897';
-    const ext    = agentPhone || process.env.ZADARMA_DEFAULT_EXT || '103';
-    const from   = ext.includes('-') ? ext : `${pbxId}-${ext}`;  // już pełny lub budujemy
-    const to     = phoneNumber;
-
-    // Parametry do podpisu i URL muszą być IDENTYCZNE (bez encodeURIComponent!)
-    const params = { from, to };
-    const sign   = zadarmaSign('/v1/request/callback/', params);
-    const qs     = `from=${from}&to=${to}`;  // BEZ encodeURIComponent — Zadarma tego nie chce
+    // Zadarma Click-to-Call API — callback mode
+    // 'from' = numer wewnętrzny recepcji (np. '103'), Zadarma najpierw tu zadzwoni
+    // 'to'   = numer pacjenta
+    // 'predicted: 1' = tryb callback (najpierw dzwoni do recepcji, potem łączy z pacjentem)
+    const from = agentPhone || process.env.ZADARMA_DEFAULT_EXT || '103';
+    const to   = phoneNumber;
+    const callParams = { from, to, predicted: '1' };
+    const sign = zadarmaSign('/v1/request/callback/', callParams);
 
     console.log(`[Click-to-Call] Próba: from=${from} to=${to}`);
 
     const response = await axios.get(
-      `https://api.zadarma.com/v1/request/callback/?${qs}`,
-      { headers: { 'Authorization': `${ZADARMA_KEY}:${sign}` }, timeout: 10000 }
+      `https://api.zadarma.com/v1/request/callback/`,
+      { params: { ...callParams, user_key: ZADARMA_KEY, sign }, timeout: 10000 }
     );
 
     console.log(`[Click-to-Call] Odpowiedź Zadarma:`, JSON.stringify(response.data));
@@ -550,7 +591,7 @@ app.get('/api/call/diagnose', async (req, res) => {
   try {
     const sign = zadarmaSign('/v1/info/balance/', {});
     const r = await axios.get('https://api.zadarma.com/v1/info/balance/', {
-      headers: { 'Authorization': `${ZADARMA_KEY}:${sign}` }, timeout: 10000
+      params: { user_key: ZADARMA_KEY, sign }, timeout: 10000
     });
     result.auth = { ok: true, balance: r.data };
   } catch (e) {
@@ -561,7 +602,7 @@ app.get('/api/call/diagnose', async (req, res) => {
   try {
     const sign = zadarmaSign('/v1/pbx/internal/', {});
     const r = await axios.get('https://api.zadarma.com/v1/pbx/internal/', {
-      headers: { 'Authorization': `${ZADARMA_KEY}:${sign}` }, timeout: 10000
+      params: { user_key: ZADARMA_KEY, sign }, timeout: 10000
     });
     result.extensions = { ok: true, data: r.data };
   } catch (e) {
@@ -587,7 +628,7 @@ app.get('/api/call/test-auth', async (req, res) => {
     const sign = zadarmaSign('/v1/pbx/internal/', {});
     const response = await axios.get(
       'https://api.zadarma.com/v1/pbx/internal/',
-      { headers: { 'Authorization': `${ZADARMA_KEY}:${sign}` }, timeout: 10000 }
+      { params: { user_key: ZADARMA_KEY, sign }, timeout: 10000 }
     );
     res.json({ ok: true, data: response.data, key: ZADARMA_KEY.slice(0, 8) + '...' });
   } catch (err) {
