@@ -24,28 +24,28 @@
     <!-- Sidebar nawigacja -->
     <nav class="sidebar" id="sidebar">
         <div class="sidebar-logo" style="padding: 20px 0; border-bottom: 1px solid rgba(255,255,255,0.05); text-align: center;">
-          <img src="assets/logo.jpg" alt="EndoEstetica Navigator" style="width: 100%; height: auto; display: block; padding: 0 10px;">
+          <img src="assets/logo.png" alt="EndoEstetica Navigator" style="width: 100%; height: auto; display: block; padding: 0 10px; max-height: 80px; object-fit: contain;">
         </div>
       <ul class="sidebar-menu">
         <li class="menu-item active" data-view="dashboard" onclick="switchView('dashboard')">
           <span class="menu-icon">📊</span>
-          <span class="menu-label">Kokpit</span>
+          <span class="menu-label">KOKPIT</span>
         </li>
         <li class="menu-item" data-view="calls" onclick="switchView('calls')">
           <span class="menu-icon">📞</span>
-          <span class="menu-label">Połączenia</span>
+          <span class="menu-label">POŁĄCZENIA</span>
         </li>
         <li class="menu-item" data-view="contacts" onclick="switchView('contacts')">
           <span class="menu-icon">👥</span>
-          <span class="menu-label">Kontakty</span>
+          <span class="menu-label">KONTAKTY</span>
         </li>
         <li class="menu-item" data-view="stats" onclick="switchView('stats')">
           <span class="menu-icon">📈</span>
-          <span class="menu-label">Statystyki</span>
+          <span class="menu-label">STATYSTYKI</span>
         </li>
         <li class="menu-item" data-view="tasks" onclick="switchView('tasks')">
           <span class="menu-icon">✅</span>
-          <span class="menu-label">Zadania</span>
+          <span class="menu-label">ZADANIA</span>
           <span class="tab-badge" id="badge-tasks-nav" style="margin-left:auto;font-size:10px;"></span>
         </li>
       </ul>
@@ -83,11 +83,16 @@
             <input type="text" placeholder="Szukaj pacjenta, numeru telefonu...">
           </div>
           <div class="header-actions">
-            <div class="user-info-header">
-              <span class="user-role-label">Recepcja 1</span>
-              <span class="user-role-sub">RECEPCJA</span>
+            <div class="header-clock" id="headerClock">
+              <span class="clock-icon">⏰</span>
+              <span class="clock-time" id="clockTime">00:00</span>
+              <span class="clock-date" id="clockDate"></span>
             </div>
-            <div class="user-avatar-circle">R</div>
+            <div class="user-info-header">
+              <span class="user-role-label" id="headerUserName">Recepcja 1</span>
+              <span class="user-role-sub" id="headerUserRole">RECEPCJA</span>
+            </div>
+            <div class="user-avatar-circle" id="headerUserAvatar">R</div>
           </div>
         </div>
 
@@ -433,12 +438,12 @@
         </div>
         <div class="popup-header-right">
           <span class="call-tag hidden" id="popupCallTag"></span>
-          <div class="call-timer" id="callTimer">00:00</div>
+          <div class="call-timer hidden" id="callTimer">00:00</div>
           <!-- Przyciski Odbierz / Rozłącz (C6) -->
           <button class="btn-answer" id="popupAnswerBtn" onclick="answerCall()" style="display:none">
             📞 Odbierz
           </button>
-          <button class="btn-hangup" id="popupHangupBtn" onclick="hangupCall()">
+          <button class="btn-hangup hidden" id="popupHangupBtn" onclick="hangupCall()">
             🔴 Rozłącz
           </button>
           <button class="popup-close" onclick="closeCallPopup()">✕</button>

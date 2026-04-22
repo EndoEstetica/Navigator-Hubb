@@ -171,6 +171,23 @@ function initApp() {
   }, 300);
 }
 
+// ==================== ZEGAR W NAGŁÓWKU ====================
+function startHeaderClock() {
+  function update() {
+    const now = new Date();
+    const timeEl = document.getElementById('clockTime');
+    const dateEl = document.getElementById('clockDate');
+    if (timeEl) {
+      timeEl.textContent = now.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+    if (dateEl) {
+      dateEl.textContent = now.toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' });
+    }
+  }
+  update();
+  setInterval(update, 1000);
+}
+
 async function loadDashboardData() {
   loadDashboardPool(); // Załaduj pulę zadań na kokpicie
   try {
@@ -452,8 +469,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function updateClock() {
   const now = new Date();
+  // Stary zegar (jeśli istnieje)
   const el = document.getElementById('currentTime');
   if (el) el.textContent = now.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  // Nowy zegar w nagłówku
+  const timeEl = document.getElementById('clockTime');
+  const dateEl = document.getElementById('clockDate');
+  if (timeEl) timeEl.textContent = now.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  if (dateEl) dateEl.textContent = now.toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' });
+  // Aktualizuj info o użytkowniku w nagłówku
+  const headerName = document.getElementById('headerUserName');
+  const headerRole = document.getElementById('headerUserRole');
+  const headerAvatar = document.getElementById('headerUserAvatar');
+  if (headerName && currentUser) headerName.textContent = currentUser.name || 'Użytkownik';
+  if (headerRole && currentUser) headerRole.textContent = (currentUser.role || 'recepcja').toUpperCase();
+  if (headerAvatar && currentUser) headerAvatar.textContent = (currentUser.name || 'U').charAt(0).toUpperCase();
 }
 
 function setUserRole(role) {
@@ -965,6 +995,8 @@ function renderCallsTable(calls) {
       <thead>
         <tr>
           <th>Pacjent / Numer</th>
+          <th>Status pacjenta</th>
+          <th>Program</th>
           <th>Kierunek</th>
           <th>Status</th>
           <th>Czas</th>
@@ -1014,6 +1046,23 @@ function renderCallRow(c) {
   // Etap lejka
   const stageHtml = getStageTagHtml(c.stageId, c.stageName);
 
+  // Status pacjenta z raportu
+  const contactTypeMap = {
+    'NOWY_PACJENT':    { label: 'Nowy pacjent',    cls: 'ct-new' },
+    'STALY_PACJENT':   { label: 'Stały pacjent',   cls: 'ct-regular' },
+    'WIZYTA_BIEZACA':  { label: 'Bieżąca wizyta',  cls: 'ct-visit' },
+    'SPAM':            { label: 'Pomyłka/SPAM',    cls: 'ct-spam' }
+  };
+  const ctInfo = contactTypeMap[c.contactType];
+  const contactTypeHtml = ctInfo
+    ? `<span class="contact-type-tag ${ctInfo.cls}">${ctInfo.label}</span>`
+    : '<span style="color:#94a3b8;font-size:11px;">—</span>';
+
+  // Program z raportu
+  const programHtml = c.program
+    ? `<span class="program-tag">${escHtml(c.program)}</span>`
+    : '<span style="color:#94a3b8;font-size:11px;">—</span>';
+
   return `
     <tr class="call-row" onclick="openCallReport('${c.callId}')">
       <td>
@@ -1026,6 +1075,8 @@ function renderCallRow(c) {
           </div>
         </div>
       </td>
+      <td>${contactTypeHtml}</td>
+      <td>${programHtml}</td>
       <td><span style="font-size:13px;">${dirIcon}</span> <span style="font-size:12px;color:#64748b;">${dirLabel}</span></td>
       <td>${tagHtml}</td>
       <td>
@@ -1168,8 +1219,10 @@ function openCallPopup(contact) {
   // Przyciski Odbierz/Rozłącz (C6)
   const answerBtn = document.getElementById('popupAnswerBtn');
   const hangupBtn = document.getElementById('popupHangupBtn');
+  // Przycisk Odbierz - tylko dla połączeń przychodzących
   if (answerBtn) answerBtn.style.display = contact.direction === 'inbound' ? 'inline-flex' : 'none';
-  if (hangupBtn) hangupBtn.style.display = 'inline-flex';
+  // Przycisk Rozłącz i timer - widoczne tylko gdy połączenie trwa (startCallTimer je pokaże)
+  // Dla wychodzących startCallTimer() jest wywoływane niżej, więc hangup pojawi się automatycznie
 
   // Pole z_czym_si_zgasza
   if (contact.zglosza) {
@@ -1260,19 +1313,28 @@ function closeCallPopup() {
 
 function startCallTimer() {
   callStartTime = Date.now();
+  // Pokaż timer i przycisk rozłącz
+  const timerEl = document.getElementById('callTimer');
+  const hangupBtn = document.getElementById('popupHangupBtn');
+  if (timerEl) timerEl.classList.remove('hidden');
+  if (hangupBtn) { hangupBtn.classList.remove('hidden'); hangupBtn.style.display = ''; }
+
   callTimerInterval = setInterval(() => {
     const elapsed = Math.floor((Date.now() - callStartTime) / 1000);
     const min = Math.floor(elapsed / 60).toString().padStart(2, '0');
     const sec = (elapsed % 60).toString().padStart(2, '0');
-    const timerEl = document.getElementById('callTimer');
-    if (timerEl) timerEl.textContent = `${min}:${sec}`;
+    const el = document.getElementById('callTimer');
+    if (el) el.textContent = `${min}:${sec}`;
   }, 1000);
 }
 
 function stopCallTimer() {
   if (callTimerInterval) { clearInterval(callTimerInterval); callTimerInterval = null; }
+  // Ukryj timer i przycisk rozłącz
   const timerEl = document.getElementById('callTimer');
-  if (timerEl) timerEl.textContent = '00:00';
+  const hangupBtn = document.getElementById('popupHangupBtn');
+  if (timerEl) { timerEl.textContent = '00:00'; timerEl.classList.add('hidden'); }
+  if (hangupBtn) hangupBtn.classList.add('hidden');
 }
 
 function resetReportForm() {
