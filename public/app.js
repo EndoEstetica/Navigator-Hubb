@@ -1711,7 +1711,7 @@ function renderContactRow(c) {
     <div class="contacts-grid-row">
       <div class="contact-name-cell">
         <div class="contact-avatar-sm">${name.charAt(0)}</div>
-        <span class="contact-name">${name}</span>
+        <span class="contact-name" style="cursor:pointer; color:#3b82f6; text-decoration:underline;" onclick="openPatientCard('${c.id}', '${escHtml(name)}')" title="Kliknij aby otworzyć kartę pacjenta">${name}</span>
       </div>
       <div class="contact-phone-cell" onclick="editContactField('${c.id}', 'phone', '${c.phone || ''}', this)" title="Kliknij aby edytować">
         ${c.phone || '<span class="no-data">Brak</span>'}
