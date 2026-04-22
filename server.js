@@ -144,7 +144,8 @@ async function loadCallsFromSupabase() {
 
 // ─── Kolejka retry nagrań (D2) ────────────────────────────────────────────────
 const recordingRetryQueue = new Map(); // callId → { attempts, pbxCallId, contactName }
-const RETRY_DELAYS = [5000, 30000, 120000, 300000, 600000, 1200000]; // 5s, 30s, 2min, 5min, 10min, 20min
+// Strategia retry: 5s, 30s, 1m, 2m, 5m, 10m, 20m, 30m, 60m
+const RETRY_DELAYS = [5000, 30000, 60000, 120000, 300000, 600000, 1200000, 1800000, 3600000];
 
 // ─── Zadarma — podpis API (zweryfikowany algorytm z dokumentacji Zadarma) ──────
 // Źródło: support Zadarma + dokument "Moment Przełomowy"
@@ -180,62 +181,118 @@ function verifyZadarmaWebhookSign(params, signature) {
 
 async function fetchRecordingFromZadarma(pbxCallId) {
   if (!ZADARMA_KEY || !ZADARMA_SECRET) return null;
-  // Próbuj oba endpointy: record/request i record/download
+  
+  // Endpointy Zadarma do pobierania nagrań
   const endpoints = ['/v1/pbx/record/request/', '/v1/pbx/record/download/'];
+  
   for (const endpoint of endpoints) {
     try {
       const params = { call_id: pbxCallId };
       const sign = zadarmaSign(endpoint, params);
       const sorted = {}; Object.keys(params).sort().forEach(k => sorted[k] = params[k]);
       const qs = new URLSearchParams(sorted).toString();
+      
+      console.log(`[Recording] Attempting fetch from ${endpoint} for pbxCallId: ${pbxCallId}`);
+      
       const response = await axios.get(
         `https://api.zadarma.com${endpoint}?${qs}`,
         { headers: { 'Authorization': zadarmaAuthHeader(sign) }, timeout: 15000 }
       );
+      
       const url = response.data?.links?.[0] || response.data?.link || response.data?.url || null;
       if (url) {
-        console.log(`[Recording] Found via ${endpoint} for ${pbxCallId}: ${url}`);
+        console.log(`[Recording] SUCCESS: Found via ${endpoint} for ${pbxCallId}: ${url}`);
         return url;
       }
     } catch (e) {
-      console.log(`[Recording] ${endpoint} failed for ${pbxCallId}: ${e.response?.data?.message || e.message}`);
+      const errorMsg = e.response?.data?.message || e.response?.data?.error || e.message;
+      console.log(`[Recording] INFO: ${endpoint} for ${pbxCallId} not ready yet: ${errorMsg}`);
     }
   }
   return null;
 }
 
+/**
+ * Kolejkuje próbę pobrania nagrania z mechanizmem retry.
+ * Zapewnia idempotentność — nie dodaje dwa razy tego samego połączenia do kolejki.
+ */
 function scheduleRecordingFetch(callId, pbxCallId, contactName) {
-  if (recordingRetryQueue.has(callId)) return;
-  recordingRetryQueue.set(callId, { attempts: 0, pbxCallId, contactName });
-
-  function tryFetch() {
-    const entry = recordingRetryQueue.get(callId);
-    if (!entry) return;
-    const { attempts, pbxCallId: pid } = entry;
-
-    fetchRecordingFromZadarma(pid).then(url => {
-      if (url) {
-        // Nagranie gotowe — zaktualizuj store i broadcast
-        storeCall({ callId, recordingUrl: url });
-        broadcast({ type: 'CALL_RECORDING_READY', callId, recordingUrl: url });
-        recordingRetryQueue.delete(callId);
-        console.log(`[Recording] Ready for ${callId}: ${url}`);
-      } else {
-        const nextAttempt = attempts + 1;
-        if (nextAttempt < RETRY_DELAYS.length) {
-          recordingRetryQueue.set(callId, { ...entry, attempts: nextAttempt });
-          setTimeout(tryFetch, RETRY_DELAYS[nextAttempt]);
-          console.log(`[Recording] Retry ${nextAttempt}/${RETRY_DELAYS.length} for ${callId} in ${RETRY_DELAYS[nextAttempt]/1000}s`);
-        } else {
-          recordingRetryQueue.delete(callId);
-          console.log(`[Recording] Max retries reached for ${callId}`);
-        }
-      }
-    });
+  if (!pbxCallId) return;
+  
+  // Idempotentność: Jeśli już w kolejce, nie dodawaj ponownie
+  if (recordingRetryQueue.has(callId)) {
+    console.log(`[Recording] Skip schedule: ${callId} already in retry queue.`);
+    return;
+  }
+  
+  // Sprawdź czy już mamy nagranie (idempotentność bazy danych)
+  const existing = callsStore.find(c => c.callId === callId);
+  if (existing?.recordingUrl) {
+    console.log(`[Recording] Skip schedule: ${callId} already has recording URL.`);
+    return;
   }
 
+  recordingRetryQueue.set(callId, { attempts: 0, pbxCallId, contactName, startTime: Date.now() });
+
+  async function tryFetch() {
+    const entry = recordingRetryQueue.get(callId);
+    if (!entry) return;
+    
+    const { attempts, pbxCallId: pid } = entry;
+    const url = await fetchRecordingFromZadarma(pid);
+    
+    if (url) {
+      storeCall({ callId, recordingUrl: url });
+      broadcast({ type: 'CALL_RECORDING_READY', callId, recordingUrl: url });
+      recordingRetryQueue.delete(callId);
+    } else {
+      const nextAttempt = attempts + 1;
+      if (nextAttempt < RETRY_DELAYS.length) {
+        recordingRetryQueue.set(callId, { ...entry, attempts: nextAttempt });
+        setTimeout(tryFetch, RETRY_DELAYS[nextAttempt]);
+        console.log(`[Recording] RETRY ${nextAttempt}/${RETRY_DELAYS.length} for ${callId} in ${RETRY_DELAYS[nextAttempt]/1000}s`);
+      } else {
+        recordingRetryQueue.delete(callId);
+        console.log(`[Recording] ERROR: Max retries reached for ${callId}. Recording might not be available on Zadarma.`);
+      }
+    }
+  }
+
+  // Pierwsza próba po 5s
   setTimeout(tryFetch, RETRY_DELAYS[0]);
 }
+
+/**
+ * Background Fallback Poller:
+ * Co 2 minuty sprawdza ostatnie 50 połączeń z callsStore.
+ * Jeśli połączenie jest 'ended', trwało > 0s, ma pbxCallId, ale NIE ma recordingUrl 
+ * i nie jest w kolejce retry — dodaje je do kolejki.
+ * Zabezpiecza przed sytuacją, gdy webhook NOTIFY_END nie dotarł.
+ */
+function startRecordingFallbackPoller() {
+  console.log('[Poller] Starting Recording Fallback Poller (every 2m)');
+  setInterval(() => {
+    const now = Date.now();
+    const candidates = callsStore.filter(c => 
+      c.status === 'ended' && 
+      c.duration > 0 && 
+      c.pbxCallId && 
+      !c.recordingUrl && 
+      !recordingRetryQueue.has(c.callId) &&
+      (now - new Date(c.timestamp).getTime()) < 24 * 60 * 60 * 1000 // tylko z ostatnich 24h
+    ).slice(0, 10); // max 10 na raz, żeby nie przeciążyć API
+
+    if (candidates.length > 0) {
+      console.log(`[Poller] Found ${candidates.length} calls missing recordings. Scheduling fetch...`);
+      candidates.forEach(c => {
+        scheduleRecordingFetch(c.callId, c.pbxCallId, c.contactName);
+      });
+    }
+  }, 120000); // co 2 minuty
+}
+
+// Uruchom poller
+startRecordingFallbackPoller();
 
 // ─── WebSocket broadcast ──────────────────────────────────────────────────────
 function broadcast(data) {
@@ -536,18 +593,24 @@ app.get('/api/call/:callId/recording', async (req, res) => {
       }
     } catch(e) { /* kontynuuj */ }
   }
-
   // Spróbuj pobrać z Zadarma — próbuj różne warianty ID
   const idsToTry = [call?.pbxCallId, callId].filter(Boolean);
   for (const pid of idsToTry) {
     const url = await fetchRecordingFromZadarma(pid);
     if (url) {
       storeCall({ callId, recordingUrl: url });
+      broadcast({ type: 'CALL_RECORDING_READY', callId, recordingUrl: url });
       return res.json({ url });
     }
   }
+  
+  // Jeśli nie znaleziono manualnie, a połączenie jest zakończone — dodaj do kolejki retry (jeśli jeszcze nie ma)
+  if (call?.status === 'ended' && call?.pbxCallId) {
+    console.log(`[Recording] Manual check failed for ${callId}, adding to background retry queue.`);
+    scheduleRecordingFetch(callId, call.pbxCallId, call.contactName);
+  }
 
-  res.json({ url: null, message: 'Nagranie jeszcze niedostępne — spróbuj ponownie za chwilę' });
+  res.json({ url: null });
 });
 
 // ─── Automatyczne przeniesienie stage przy nieodebranym połączeniu ─────────────
