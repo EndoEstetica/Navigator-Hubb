@@ -2652,3 +2652,57 @@ async function loadCalls() {
     feedEl.innerHTML = '<div class="error-state">Błąd ładowania połączeń</div>';
   }
 }
+
+
+// ==================== TWORZENIE ZADANIA MODAL ====================
+function openCreateTaskModal() {
+  document.getElementById('createTaskModal').classList.remove('hidden');
+  document.getElementById('taskInputDueDate').value = new Date().toISOString().slice(0, 16);
+  document.getElementById('taskInputTitle').value = '';
+  document.getElementById('taskInputBody').value = '';
+}
+
+function openCreateTaskModalFromCall() {
+  openCreateTaskModal();
+  if (currentContact) {
+    document.getElementById('taskInputTitle').value = `Zadanie: ${currentContact.name}`;
+    document.getElementById('taskInputBody').value = `Zadanie utworzone w trakcie rozmowy z ${currentContact.name} (${currentContact.phone})`;
+  }
+}
+
+function closeCreateTaskModal() {
+  document.getElementById('createTaskModal').classList.add('hidden');
+}
+
+async function submitCreateTask() {
+  const title = document.getElementById('taskInputTitle').value;
+  const body = document.getElementById('taskInputBody').value;
+  const dueDate = document.getElementById('taskInputDueDate').value;
+  const assignee = document.getElementById('taskInputAssignee').value;
+  
+  if (!title) { showToast('Podaj tytuł zadania', 'error'); return; }
+  
+  const taskData = {
+    title,
+    body,
+    dueDate: new Date(dueDate).toISOString(),
+    assignedTo: assignee === 'pool' ? null : (assignee === 'me' ? currentUser?.id : assignee),
+    contactId: currentContact?.id || null,
+    contactName: currentContact?.name || null
+  };
+  
+  try {
+    const r = await fetch('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(taskData)
+    });
+    if (r.ok) {
+      showToast('✅ Zadanie utworzone', 'success');
+      closeCreateTaskModal();
+      loadTasks();
+    } else {
+      showToast('Błąd tworzenia zadania', 'error');
+    }
+  } catch(e) { showToast('Błąd tworzenia zadania', 'error'); }
+}

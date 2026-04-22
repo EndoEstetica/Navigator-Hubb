@@ -584,6 +584,7 @@
         <!-- Przyciski zapisu -->
         <div class="popup-footer">
           <button class="btn-secondary" onclick="if(currentContact?.id) openPatientCard(currentContact.id, currentContact.name); else showToast('Brak danych pacjenta', 'error')">👤 Karta pacjenta</button>
+          <button class="btn-secondary" onclick="openCreateTaskModalFromCall()">➕ Dodaj zadanie</button>
           <button class="btn-secondary" onclick="closeCallPopup()">Anuluj</button>
           <button class="btn-primary" onclick="saveReport()">💾 Zapisz raport</button>
         </div>
@@ -710,3 +711,44 @@
       </div>
     </div>
   </div>
+
+    <!-- MODAL: TWORZENIE ZADANIA -->
+    <div id="createTaskModal" class="modal hidden">
+      <div class="modal-content" style="max-width: 500px;">
+        <div class="modal-header">
+          <h2 id="createTaskTitle">Nowe Zadanie</h2>
+          <button class="btn-close" onclick="closeCreateTaskModal()">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Tytuł zadania</label>
+            <input type="text" id="taskInputTitle" placeholder="np. Oddzwonić w sprawie wizyty">
+          </div>
+          <div class="form-group">
+            <label>Opis / Notatka</label>
+            <textarea id="taskInputBody" rows="3" placeholder="Dodatkowe informacje..."></textarea>
+          </div>
+          <div class="form-group">
+            <label>Termin (Data i Godzina)</label>
+            <input type="datetime-local" id="taskInputDueDate">
+          </div>
+          <div class="form-group">
+            <label>Przypisanie</label>
+            <select id="taskInputAssignee">
+              <option value="pool">Pula (Do wzięcia)</option>
+              <option value="me">Przypisz do mnie</option>
+              <option value="Kasia">Kasia</option>
+              <option value="Agnieszka">Agnieszka</option>
+              <option value="Asia">Asia</option>
+              <option value="Agata">Agata</option>
+              <option value="Aneta Opiekun">Aneta Opiekun</option>
+              <option value="Agata Opiekun">Agata Opiekun</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" onclick="closeCreateTaskModal()">Anuluj</button>
+          <button class="btn-primary" onclick="submitCreateTask()">Stwórz zadanie</button>
+        </div>
+      </div>
+    </div>
