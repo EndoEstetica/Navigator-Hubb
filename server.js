@@ -65,25 +65,53 @@ function storeCall(callObj) {
   // Supabase (trwałe) — async, nie blokuje
   if (supabase) {
     const merged = idx >= 0 ? callsStore[idx] : callObj;
-    supabase.from('calls').upsert({
-      call_id: merged.callId,
-      pbx_call_id: merged.pbxCallId || null,
-      caller_phone: merged.from || null,
-      called_phone: merged.to || null,
-      direction: merged.direction || 'inbound',
-      status: merged.status || 'ringing',
-      duration_seconds: merged.duration || 0,
-      recording_url: merged.recordingUrl || null,
-      patient_name: merged.contactName || null,
-      ghl_contact_id: merged.contactId || null,
-      user_id: merged.userId || null,
-      contact_type: merged.tag || null,
-      created_at: merged.timestamp || new Date().toISOString(),
-      answered_at: merged.answeredAt || null,
-      ended_at: merged.endedAt || null,
-    }, { onConflict: 'call_id' }).then(({ error }) => {
-      if (error) console.error('[Supabase] storeCall error:', error.message);
-    });
+    
+    // Jeśli to aktualizacja istniejącego rekordu (np. tylko recording_url) — użyj UPDATE
+    // aby nie nadpisać istniejących pól (np. recording_url) wartościami null
+    if (idx >= 0 && Object.keys(callObj).length <= 3) {
+      // Aktualizacja cząstkowa (np. tylko recordingUrl, status lub tag)
+      const partialUpdate = {};
+      if (callObj.recordingUrl !== undefined) partialUpdate.recording_url = callObj.recordingUrl;
+      if (callObj.status !== undefined)       partialUpdate.status = callObj.status;
+      if (callObj.tag !== undefined)          partialUpdate.contact_type = callObj.tag;
+      if (callObj.duration !== undefined)     partialUpdate.duration_seconds = callObj.duration;
+      if (callObj.answeredAt !== undefined)   partialUpdate.answered_at = callObj.answeredAt;
+      if (callObj.endedAt !== undefined)      partialUpdate.ended_at = callObj.endedAt;
+      if (callObj.contactName !== undefined)  partialUpdate.patient_name = callObj.contactName;
+      if (callObj.contactId !== undefined)    partialUpdate.ghl_contact_id = callObj.contactId;
+      if (callObj.pbxCallId !== undefined)    partialUpdate.pbx_call_id = callObj.pbxCallId;
+      if (Object.keys(partialUpdate).length > 0) {
+        supabase.from('calls').update(partialUpdate)
+          .eq('call_id', merged.callId)
+          .then(({ error }) => {
+            if (error) console.error('[Supabase] storeCall partial update error:', error.message);
+          });
+      }
+    } else {
+      // Pełny upsert (nowy rekord lub duża aktualizacja)
+      const upsertData = {
+        call_id: merged.callId,
+        pbx_call_id: merged.pbxCallId || null,
+        caller_phone: merged.from || null,
+        called_phone: merged.to || null,
+        direction: merged.direction || 'inbound',
+        status: merged.status || 'ringing',
+        duration_seconds: merged.duration || 0,
+        patient_name: merged.contactName || null,
+        ghl_contact_id: merged.contactId || null,
+        user_id: merged.userId || null,
+        contact_type: merged.tag || null,
+        created_at: merged.timestamp || new Date().toISOString(),
+        answered_at: merged.answeredAt || null,
+        ended_at: merged.endedAt || null,
+      };
+      // recording_url dodaj tylko jeśli jest ustawione — nie nadpisuj nullą
+      if (merged.recordingUrl) upsertData.recording_url = merged.recordingUrl;
+      
+      supabase.from('calls').upsert(upsertData, { onConflict: 'call_id' }).then(({ error }) => {
+        if (error) console.error('[Supabase] storeCall error:', error.message);
+      });
+    }
   }
 }
 
@@ -269,26 +297,56 @@ function scheduleRecordingFetch(callId, pbxCallId, contactName) {
  * i nie jest w kolejce retry — dodaje je do kolejki.
  * Zabezpiecza przed sytuacją, gdy webhook NOTIFY_END nie dotarł.
  */
-function startRecordingFallbackPoller() {
+async function startRecordingFallbackPoller() {
   console.log('[Poller] Starting Recording Fallback Poller (every 2m)');
-  setInterval(() => {
+  
+  async function runPoll() {
     const now = Date.now();
-    const candidates = callsStore.filter(c => 
+    
+    // 1. Sprawdz callsStore (in-memory)
+    const inMemoryCandidates = callsStore.filter(c => 
       c.status === 'ended' && 
       c.duration > 0 && 
       c.pbxCallId && 
       !c.recordingUrl && 
       !recordingRetryQueue.has(c.callId) &&
-      (now - new Date(c.timestamp).getTime()) < 24 * 60 * 60 * 1000 // tylko z ostatnich 24h
-    ).slice(0, 10); // max 10 na raz, żeby nie przeciążyć API
+      (now - new Date(c.timestamp).getTime()) < 24 * 60 * 60 * 1000
+    ).slice(0, 10);
 
-    if (candidates.length > 0) {
-      console.log(`[Poller] Found ${candidates.length} calls missing recordings. Scheduling fetch...`);
-      candidates.forEach(c => {
+    // 2. Sprawdź Supabase (połączenia które mogły nie być w RAM po restarcie)
+    let supabaseCandidates = [];
+    if (supabase) {
+      try {
+        const since = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+        const { data } = await supabase.from('calls')
+          .select('call_id, pbx_call_id, patient_name, recording_url, duration_seconds, status')
+          .eq('status', 'ended')
+          .gt('duration_seconds', 0)
+          .is('recording_url', null)
+          .gte('created_at', since)
+          .limit(10);
+        if (data && data.length > 0) {
+          supabaseCandidates = data
+            .filter(r => r.pbx_call_id && !recordingRetryQueue.has(r.call_id))
+            .map(r => ({ callId: r.call_id, pbxCallId: r.pbx_call_id, contactName: r.patient_name }));
+        }
+      } catch(e) { /* ignoruj błędy Supabase w pollerze */ }
+    }
+
+    // Połącz i deduplikuj
+    const allCandidates = [...inMemoryCandidates];
+    const inMemoryIds = new Set(inMemoryCandidates.map(c => c.callId));
+    supabaseCandidates.forEach(c => { if (!inMemoryIds.has(c.callId)) allCandidates.push(c); });
+
+    if (allCandidates.length > 0) {
+      console.log(`[Poller] Found ${allCandidates.length} calls missing recordings (${inMemoryCandidates.length} RAM, ${supabaseCandidates.length} Supabase). Scheduling fetch...`);
+      allCandidates.forEach(c => {
         scheduleRecordingFetch(c.callId, c.pbxCallId, c.contactName);
       });
     }
-  }, 120000); // co 2 minuty
+  }
+  
+  setInterval(runPoll, 120000); // co 2 minuty
 }
 
 // Uruchom poller
