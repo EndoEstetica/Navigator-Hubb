@@ -2505,3 +2505,150 @@ function closePatientCard() {
     modal.style.display = 'none';
   }
 }
+
+
+// ==================== CALLS — ULEPSZONY WIDOK ====================
+function groupCallsByDay(calls) {
+  const grouped = {};
+  calls.forEach(c => {
+    const date = new Date(c.timestamp).toLocaleDateString('pl-PL');
+    if (!grouped[date]) grouped[date] = [];
+    grouped[date].push(c);
+  });
+  return grouped;
+}
+
+function groupRepeatedMissedCalls(calls) {
+  const groups = [];
+  const processed = new Set();
+  
+  calls.forEach((c, idx) => {
+    if (processed.has(idx)) return;
+    if (c.tag !== 'missed' && c.tag !== 'ineffective') {
+      groups.push({ type: 'single', call: c });
+      processed.add(idx);
+      return;
+    }
+    
+    const sameNumber = calls.slice(idx + 1).filter(x => x.from === c.from && (x.tag === 'missed' || x.tag === 'ineffective'));
+    if (sameNumber.length >= 2) {
+      groups.push({ type: 'group', calls: [c, ...sameNumber.slice(0, 2)], count: sameNumber.length + 1 });
+      sameNumber.slice(0, 2).forEach(x => processed.add(calls.indexOf(x)));
+    } else {
+      groups.push({ type: 'single', call: c });
+    }
+    processed.add(idx);
+  });
+  
+  return groups;
+}
+
+function renderCallsTableGrouped(feedEl, groupedByDay) {
+  feedEl.innerHTML = '';
+  
+  Object.entries(groupedByDay).forEach(([date, daysCalls]) => {
+    const daySection = document.createElement('div');
+    daySection.style.marginBottom = '24px';
+    
+    const dayHeader = document.createElement('div');
+    dayHeader.style.cssText = 'font-weight:700; color:#1e293b; padding:12px 0; border-bottom:2px solid #e2e8f0; margin-bottom:12px;';
+    dayHeader.textContent = date;
+    daySection.appendChild(dayHeader);
+    
+    const grouped = groupRepeatedMissedCalls(daysCalls);
+    grouped.forEach(item => {
+      if (item.type === 'single') {
+        daySection.appendChild(createCallRow(item.call));
+      } else {
+        daySection.appendChild(createGroupedCallRow(item.calls, item.count));
+      }
+    });
+    
+    feedEl.appendChild(daySection);
+  });
+}
+
+function createCallRow(call) {
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex; align-items:center; padding:12px; border-bottom:1px solid #f1f5f9; gap:16px;';
+  
+  const statusColor = call.tag === 'missed' ? '#ef4444' : call.tag === 'ineffective' ? '#f59e0b' : '#10b981';
+  const statusBg = call.tag === 'missed' ? '#fee2e2' : call.tag === 'ineffective' ? '#fef3c7' : '#dcfce7';
+  const statusLabel = call.tag === 'missed' ? 'Nieodebrane' : call.tag === 'ineffective' ? 'Bez odbioru' : 'Połączono';
+  
+  div.innerHTML = `
+    <div style="width:36px; height:36px; border-radius:50%; background:#f1f5f9; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+      ${call.direction === 'inbound' ? '📥' : '📤'}
+    </div>
+    <div style="flex:1;">
+      <div style="font-weight:600; color:#1e293b;">${escHtml(call.contactName || call.from)}</div>
+      <div style="font-size:12px; color:#64748b;">${new Date(call.timestamp).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })} • ${call.duration || 0}s</div>
+    </div>
+    <div style="background:${statusBg}; color:${statusColor}; padding:4px 12px; border-radius:6px; font-size:11px; font-weight:700;">${statusLabel}</div>
+    ${call.recordingUrl ? `<button class="btn-secondary" style="padding:6px 12px; font-size:11px;" onclick="playRecording('${call.recordingUrl}')">🎙️ Odtwórz</button>` : ''}
+  `;
+  return div;
+}
+
+function createGroupedCallRow(calls, totalCount) {
+  const div = document.createElement('div');
+  div.style.cssText = 'border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; margin-bottom:8px;';
+  
+  const header = document.createElement('div');
+  header.style.cssText = 'display:flex; align-items:center; padding:12px; background:#f8fafc; cursor:pointer; gap:12px;';
+  header.onclick = () => {
+    const body = div.querySelector('.group-body');
+    if (body) body.style.display = body.style.display === 'none' ? '' : 'none';
+    header.querySelector('.expand-icon').textContent = header.querySelector('.expand-icon').textContent === '▶' ? '▼' : '▶';
+  };
+  
+  const from = calls[0].from;
+  header.innerHTML = `
+    <span class="expand-icon" style="font-size:12px; color:#64748b;">▶</span>
+    <div style="flex:1;">
+      <div style="font-weight:600; color:#1e293b;">${escHtml(calls[0].contactName || from)}</div>
+      <div style="font-size:12px; color:#64748b;">${totalCount} nieodebranych połączeń</div>
+    </div>
+    <div style="background:#fee2e2; color:#ef4444; padding:4px 12px; border-radius:6px; font-size:11px; font-weight:700;">🔴 ${totalCount}x</div>
+  `;
+  div.appendChild(header);
+  
+  const body = document.createElement('div');
+  body.className = 'group-body';
+  body.style.display = 'none';
+  body.style.borderTop = '1px solid #e2e8f0';
+  calls.forEach(c => {
+    const row = createCallRow(c);
+    row.style.paddingLeft = '40px';
+    body.appendChild(row);
+  });
+  div.appendChild(body);
+  
+  return div;
+}
+
+function playRecording(url) {
+  const audio = new Audio(url);
+  audio.play();
+  showToast('🎧 Odtwarzanie nagrania...', 'info');
+}
+
+// Aktualizacja loadCalls aby używał nowego systemu
+async function loadCalls() {
+  const feedEl = document.getElementById('callsFeed');
+  if (!feedEl) return;
+
+  feedEl.innerHTML = '<div class="loading-state"><div class="spinner"></div><p>Ładowanie połączeń...</p></div>';
+
+  try {
+    const response = await fetch('/api/calls');
+    const data = await response.json();
+    allCalls = data.calls || [];
+    
+    const grouped = groupCallsByDay(allCalls);
+    renderCallsTableGrouped(feedEl, grouped);
+  } catch (err) {
+    console.error('Load calls error:', err);
+    feedEl.innerHTML = '<div class="error-state">Błąd ładowania połączeń</div>';
+  }
+}
