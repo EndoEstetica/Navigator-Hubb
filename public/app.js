@@ -498,6 +498,15 @@ function setUserRole(role) {
   document.querySelectorAll('.admin-only').forEach(el => {
     el.style.display = role === 'admin' ? '' : 'none';
   });
+  // Pokaż/ukryj elementy reception-only
+  document.querySelectorAll('.reception-only').forEach(el => {
+    el.style.display = (role === 'reception' || role === 'opiekun') ? '' : 'none';
+  });
+  // Admin: ukryj widok połączeń w sidebarze (punkt 9)
+  const callsMenuItem = document.querySelector('[data-view="calls"]');
+  if (callsMenuItem) {
+    callsMenuItem.style.display = role === 'admin' ? 'none' : '';
+  }
   // Etykiety przycisków edycji
   document.querySelectorAll('.edit-request-btn').forEach(btn => {
     btn.textContent = role === 'admin' ? '✏️ Edytuj' : '✏️ Prośba o edycję';
@@ -2427,22 +2436,84 @@ function loadCompletedCalls() {
 
 // ==================== STATS — BLOK G ====================
 async function loadAndRenderStats() {
-  const container = document.getElementById('statsContent');
-  if (!container) return;
-
-  container.innerHTML = '<div class="loading-state"><div class="spinner"></div><p>Ładowanie statystyk...</p></div>';
-
   try {
     const range = document.getElementById('statsRange')?.value || 'today';
     const days = range === 'today' ? 1 : range === 'week' ? 7 : 30;
     const r = await fetch(`/api/stats?days=${days}`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = await r.json();
-    renderAdminStats(container, data);
-    renderCharts(data); // ← wykresy z realnych danych
+    updateStatCards(data);
+    renderDonutChart(data);
+
+    // Admin: załaduj statystyki raportów (punkt 9)
+    if (currentUser?.role === 'admin') {
+      try {
+        const rr = await fetch(`/api/reports/stats?days=${days}`);
+        if (rr.ok) {
+          const reportStats = await rr.json();
+          renderReportStats(reportStats);
+        }
+      } catch(e) { console.error('Report stats error:', e); }
+    }
   } catch(e) {
-    container.innerHTML = `<div class="stats-error"><p>Błąd ładowania statystyk: ${e.message}</p><button class="btn-secondary" onclick="loadAndRenderStats()">Odśwież</button></div>`;
+    console.error('Stats error:', e);
   }
+}
+
+function renderReportStats(stats) {
+  // Dodaj sekcję statystyk raportów (tylko admin)
+  let container = document.getElementById('adminReportStatsSection');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'adminReportStatsSection';
+    container.className = 'stats-detail-card';
+    container.style.marginTop = '24px';
+    const statsView = document.getElementById('view-stats');
+    if (statsView) statsView.appendChild(container);
+  }
+
+  const contactTypeLabels = {
+    NOWY_PACJENT: 'Nowy pacjent', STALY_PACJENT: 'Stały pacjent',
+    WIZYTA_BIEZACA: 'Wizyta bieżąca', SPAM: 'Spam/Pomyłka'
+  };
+  const effectLabels = {
+    umowil_sie: 'Umówił wizytę', prosi_kontakt: 'Prosi o kontakt',
+    rezygnacja: 'Rezygnacja', zmiana_terminu: 'Zmiana terminu',
+    odwolanie: 'Odwołanie', staly_umowil: 'Stały - umówił', staly_kontakt: 'Stały - kontakt'
+  };
+
+  const renderCountTable = (title, counts, labels) => {
+    const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    const total = entries.reduce((s, [, v]) => s + v, 0);
+    if (entries.length === 0) return '';
+    return `
+      <div style="margin-bottom:16px;">
+        <h4 style="font-size:13px;font-weight:700;color:#1e293b;margin-bottom:8px;">${title}</h4>
+        <table class="stats-table" style="font-size:12px;">
+          <thead><tr><th>Wartość</th><th>Ilość</th><th>%</th></tr></thead>
+          <tbody>
+            ${entries.map(([k, v]) => `<tr>
+              <td>${labels?.[k] || k}</td>
+              <td style="font-weight:600;">${v}</td>
+              <td>${total > 0 ? (v / total * 100).toFixed(1) : 0}%</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  };
+
+  container.innerHTML = `
+    <h3>📊 Statystyki Raportów (Admin)</h3>
+    <div style="padding:12px;background:#f0fdf4;border-radius:8px;margin-bottom:16px;font-weight:600;color:#166534;">
+      Łącznie raportów: ${stats.totalReports || 0}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      ${renderCountTable('Typ pacjenta', stats.contactTypeCounts || {}, contactTypeLabels)}
+      ${renderCountTable('Wynik rozmowy', stats.callEffectCounts || {}, effectLabels)}
+      ${renderCountTable('Program leczenia', stats.programCounts || {}, {})}
+      ${renderCountTable('Raporty wg użytkownika', stats.userCounts || {}, {})}
+    </div>
+  `;
 }
 
 function renderAdminStats(container, data) {

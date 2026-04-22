@@ -3163,3 +3163,121 @@ button {
   font-weight: 700;
   letter-spacing: 0.8px;
 }
+
+/* ===== PENDING REPORTS BAR (punkt 6) ===== */
+.pending-reports-bar {
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  border: 1px solid #f59e0b;
+  border-radius: 10px;
+  padding: 8px 16px;
+  margin: 0 0 16px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  animation: pulse-report 2s ease-in-out infinite;
+}
+
+.pending-report-item {
+  font-size: 12px;
+  color: #92400e;
+  cursor: pointer;
+  padding: 4px 12px;
+  background: rgba(255,255,255,0.6);
+  border-radius: 6px;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.pending-report-item:hover {
+  background: rgba(255,255,255,0.9);
+}
+
+@keyframes pulse-report {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.3); }
+  50% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
+}
+
+/* ===== DONE TASK BUTTON (punkt 10) ===== */
+.btn-done-task {
+  padding: 5px 14px;
+  font-size: 12px;
+  background: #10b981;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.btn-done-task:hover {
+  background: #059669;
+  transform: scale(1.05);
+}
+
+.task-completed {
+  opacity: 0.5;
+  background: #f8fafc;
+}
+
+/* ===== REPORT STATUS TAGS (punkt 8) ===== */
+.report-status-done {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #dcfce7;
+  color: #166534;
+  font-weight: 600;
+}
+
+.report-status-pending {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #fef3c7;
+  color: #92400e;
+  font-weight: 600;
+  cursor: pointer;
+  animation: pulse-report 2s ease-in-out infinite;
+}
+
+/* ===== ADMIN REPORT STATS (punkt 9) ===== */
+#adminReportStatsSection {
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid #e2e8f0;
+}
+
+#adminReportStatsSection h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 16px;
+}
+
+#adminReportStatsSection h4 {
+  font-size: 13px;
+  font-weight: 700;
+  color: #475569;
+}
+
+#adminReportStatsSection .stats-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#adminReportStatsSection .stats-table th,
+#adminReportStatsSection .stats-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid #f1f5f9;
+  text-align: left;
+}
+
+#adminReportStatsSection .stats-table th {
+  color: #64748b;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+}

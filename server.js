@@ -180,19 +180,28 @@ function verifyZadarmaWebhookSign(params, signature) {
 
 async function fetchRecordingFromZadarma(pbxCallId) {
   if (!ZADARMA_KEY || !ZADARMA_SECRET) return null;
-  try {
-    const params = { call_id: pbxCallId };
-    const sign = zadarmaSign('/v1/pbx/record/request/', params);
-    const sorted = {}; Object.keys(params).sort().forEach(k => sorted[k] = params[k]);
-    const qs = new URLSearchParams(sorted).toString();
-    const response = await axios.get(
-      `https://api.zadarma.com/v1/pbx/record/request/?${qs}`,
-      { headers: { 'Authorization': zadarmaAuthHeader(sign) }, timeout: 10000 }
-    );
-    return response.data?.links?.[0] || response.data?.link || null;
-  } catch (e) {
-    return null;
+  // Próbuj oba endpointy: record/request i record/download
+  const endpoints = ['/v1/pbx/record/request/', '/v1/pbx/record/download/'];
+  for (const endpoint of endpoints) {
+    try {
+      const params = { call_id: pbxCallId };
+      const sign = zadarmaSign(endpoint, params);
+      const sorted = {}; Object.keys(params).sort().forEach(k => sorted[k] = params[k]);
+      const qs = new URLSearchParams(sorted).toString();
+      const response = await axios.get(
+        `https://api.zadarma.com${endpoint}?${qs}`,
+        { headers: { 'Authorization': zadarmaAuthHeader(sign) }, timeout: 15000 }
+      );
+      const url = response.data?.links?.[0] || response.data?.link || response.data?.url || null;
+      if (url) {
+        console.log(`[Recording] Found via ${endpoint} for ${pbxCallId}: ${url}`);
+        return url;
+      }
+    } catch (e) {
+      console.log(`[Recording] ${endpoint} failed for ${pbxCallId}: ${e.response?.data?.message || e.message}`);
+    }
   }
+  return null;
 }
 
 function scheduleRecordingFetch(callId, pbxCallId, contactName) {
@@ -469,17 +478,38 @@ app.get('/api/calls/debug', (req, res) => {
 app.get('/api/call/:callId/recording', async (req, res) => {
   const { callId } = req.params;
   const call = callsStore.find(c => c.callId === callId);
+
+  // Sprawdź czy już mamy URL
   if (call?.recordingUrl) {
     return res.json({ url: call.recordingUrl });
   }
-  // Spróbuj pobrać z Zadarma
-  const pbxCallId = call?.pbxCallId || callId;
-  const url = await fetchRecordingFromZadarma(pbxCallId);
-  if (url) {
-    storeCall({ callId, recordingUrl: url });
-    return res.json({ url });
+
+  // Sprawdź w Supabase
+  if (supabase) {
+    try {
+      const { data } = await supabase.from('calls')
+        .select('recording_url, pbx_call_id')
+        .eq('call_id', callId)
+        .single();
+      if (data?.recording_url) {
+        // Zaktualizuj in-memory
+        storeCall({ callId, recordingUrl: data.recording_url });
+        return res.json({ url: data.recording_url });
+      }
+    } catch(e) { /* kontynuuj */ }
   }
-  res.json({ url: null, message: 'Nagranie jeszcze niedostępne' });
+
+  // Spróbuj pobrać z Zadarma — próbuj różne warianty ID
+  const idsToTry = [call?.pbxCallId, callId].filter(Boolean);
+  for (const pid of idsToTry) {
+    const url = await fetchRecordingFromZadarma(pid);
+    if (url) {
+      storeCall({ callId, recordingUrl: url });
+      return res.json({ url });
+    }
+  }
+
+  res.json({ url: null, message: 'Nagranie jeszcze niedostępne — spróbuj ponownie za chwilę' });
 });
 
 // ─── Automatyczne przeniesienie stage przy nieodebranym połączeniu ─────────────
