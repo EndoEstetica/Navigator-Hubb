@@ -3461,3 +3461,21 @@ button {
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
+
+/* ==================== KARTA PACJENTA — ZAKŁADKI ==================== */
+.patient-card-tab {
+  padding: 10px 18px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  transition: all 0.2s;
+}
+.patient-card-tab:hover { color: #3b82f6; }
+.patient-card-tab.active {
+  color: #3b82f6;
+  border-bottom-color: #3b82f6;
+}

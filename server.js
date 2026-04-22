@@ -401,12 +401,22 @@ app.get('/api/opportunities/new', async (req, res) => {
           );
           const contact = contactResp.data.contact || contactResp.data;
           const customFields = contact.customFields || contact.customField || [];
-          const zglosza = customFields.find(f =>
-            f.id === 'z_czym_si_zgasza' ||
-            f.fieldKey === 'contact.z_czym_si_zgasza' ||
-            (f.key && f.key.includes('z_czym')) ||
-            (f.name && f.name.toLowerCase().includes('zgłasza'))
-          );
+          
+          // Mapowanie GHL custom fields po rzeczywistych ID pól
+          const GHL_FIELD_MAIN_PROBLEM     = 'k1OizGtL0V6IaWjGlVBK'; // "z czym się zgłasza"
+          const GHL_FIELD_MARKETING        = 'R0X7n8GG7545mnrGnREg'; // zgoda marketingowa
+          const GHL_FIELD_PREFERRED_CONTACT = 'preferred_contact_method'; // preferowany kanał
+          const GHL_FIELD_PATIENT_PRIORITY  = 'patient_priority';         // priorytet pacjenta
+          const GHL_FIELD_W0_DATE          = 'IUjxWY10y6kuITsSjfSw';     // data W0
+          const GHL_FIELD_W0_NOTES         = 'v04mALNDZzMgyH8YzK46';     // notatki W0
+
+          const getField = (id) => customFields.find(f => f.id === id);
+          
+          const mainProblem = getField(GHL_FIELD_MAIN_PROBLEM);
+          const marketingConsent = getField(GHL_FIELD_MARKETING);
+          const w0DateField = getField(GHL_FIELD_W0_DATE);
+          const w0NotesField = getField(GHL_FIELD_W0_NOTES);
+
           opp.contact = {
             ...opp.contact,
             firstName: contact.firstName || opp.contact?.firstName,
@@ -414,7 +424,11 @@ app.get('/api/opportunities/new', async (req, res) => {
             phone:     contact.phone     || opp.contact?.phone,
             email:     contact.email     || opp.contact?.email,
             tags:      contact.tags      || [],
-            z_czym_si_zgasza: zglosza?.value || zglosza?.fieldValue || ''
+            // Poprawne mapowanie po ID pól GHL
+            z_czym_si_zgasza: mainProblem?.value || '',
+            marketing_consent: marketingConsent?.value === 'tak' || marketingConsent?.value === true,
+            w0_date: w0DateField?.value ? new Date(Number(w0DateField.value)).toISOString() : null,
+            w0_notes: w0NotesField?.value || ''
           };
         }
       } catch (e) { /* ignoruj błędy wzbogacania */ }
@@ -437,6 +451,27 @@ app.get('/api/contacts/new', async (req, res) => {
     
     const contacts = response.data?.contacts || [];
     
+    // Mapowanie GHL custom fields po ID
+    const GHL_FIELD_MAIN_PROBLEM = 'k1OizGtL0V6IaWjGlVBK';
+    const GHL_FIELD_MARKETING    = 'R0X7n8GG7545mnrGnREg';
+    const GHL_FIELD_W0_DATE      = 'IUjxWY10y6kuITsSjfSw';
+    const GHL_FIELD_W0_NOTES     = 'v04mALNDZzMgyH8YzK46';
+    
+    // Wzbogac kontakty o zmapowane custom fields
+    contacts.forEach(c => {
+      const cf = c.customFields || [];
+      const getField = (id) => cf.find(f => f.id === id);
+      const mainProblem = getField(GHL_FIELD_MAIN_PROBLEM);
+      const marketing   = getField(GHL_FIELD_MARKETING);
+      const w0Date      = getField(GHL_FIELD_W0_DATE);
+      const w0Notes     = getField(GHL_FIELD_W0_NOTES);
+      
+      c.z_czym_si_zgasza    = mainProblem?.value || '';
+      c.marketing_consent   = marketing?.value === 'tak' || marketing?.value === true;
+      c.w0_date             = w0Date?.value ? new Date(Number(w0Date.value)).toISOString() : null;
+      c.w0_notes            = w0Notes?.value || '';
+    });
+    
     // Pobierz ostatnie statusy z Supabase dla tych kontaktów
     if (supabase && contacts.length > 0) {
       const contactIds = contacts.map(c => c.id);
@@ -445,7 +480,7 @@ app.get('/api/contacts/new', async (req, res) => {
         // Pobierz najnowsze połączenie dla każdego kontaktu z ghl_contact_id
         const { data: latestCalls, error } = await supabase
           .from('calls')
-          .select('ghl_contact_id, contact_type, call_effect, created_at')
+          .select('ghl_contact_id, contact_type, call_effect, call_program, created_at, scheduled_w0, w0_date')
           .in('ghl_contact_id', contactIds)
           .order('created_at', { ascending: false });
           
@@ -461,9 +496,16 @@ app.get('/api/contacts/new', async (req, res) => {
           // Dołącz do kontaktów
           contacts.forEach(c => {
             if (latestMap[c.id]) {
-              c.latestStatus = latestMap[c.id].contact_type;
-              c.latestOutcome = latestMap[c.id].call_effect;
-              c.latestCallAt = latestMap[c.id].created_at;
+              const lc = latestMap[c.id];
+              c.latestStatus  = lc.contact_type;
+              c.latestOutcome = lc.call_effect;
+              c.latestProgram = lc.call_program;
+              c.latestCallAt  = lc.created_at;
+              // W0 z raportu (jeśli zaznaczono w którejś rozmowie)
+              if (lc.scheduled_w0) {
+                c.w0_scheduled = true;
+                c.w0_date_from_report = lc.w0_date;
+              }
             }
           });
         }
@@ -472,7 +514,8 @@ app.get('/api/contacts/new', async (req, res) => {
       }
     }
     
-    res.json(response.data);
+    // Zwróć dane z wzbogaconymi kontaktami
+    res.json({ ...response.data, contacts });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1267,6 +1310,31 @@ app.get('/api/contact/:id/card', async (req, res) => {
       console.warn('[Patient Card] Supabase call history error:', e.message);
     }
 
+    // Mapowanie GHL custom fields po ID
+    const cf = contact.customFields || [];
+    const getField = (id) => cf.find(f => f.id === id);
+    const mainProblem   = getField('k1OizGtL0V6IaWjGlVBK');
+    const marketing     = getField('R0X7n8GG7545mnrGnREg');
+    const w0DateField   = getField('IUjxWY10y6kuITsSjfSw');
+    const w0NotesField  = getField('v04mALNDZzMgyH8YzK46');
+
+    // Sprawdź W0 z raportów w Supabase
+    let w0FromReports = { scheduled: false, date: null, doctor: null };
+    if (supabase) {
+      try {
+        const { data: w0Calls } = await supabase
+          .from('calls')
+          .select('scheduled_w0, w0_date, w0_doctor, created_at')
+          .eq('ghl_contact_id', contactId)
+          .eq('scheduled_w0', true)
+          .order('created_at', { ascending: false })
+          .limit(1);
+        if (w0Calls && w0Calls.length > 0) {
+          w0FromReports = { scheduled: true, date: w0Calls[0].w0_date, doctor: w0Calls[0].w0_doctor };
+        }
+      } catch(e) {}
+    }
+
     res.json({
       contact: {
         id: contact.id,
@@ -1275,9 +1343,17 @@ app.get('/api/contact/:id/card', async (req, res) => {
         email: contact.email,
         phone: contact.phone,
         source: contact.source,
-        customFields: contact.customFields || [],
         tags: contact.tags || [],
-        createdAt: contact.createdAt
+        createdAt: contact.createdAt,
+        // Zmapowane custom fields
+        mainProblem: mainProblem?.value || '',
+        marketingConsent: marketing?.value === 'tak' || marketing?.value === true,
+        w0_date: w0DateField?.value ? new Date(Number(w0DateField.value)).toISOString() : (w0FromReports.date || null),
+        w0_notes: w0NotesField?.value || '',
+        w0_scheduled: !!(w0DateField?.value || w0FromReports.scheduled),
+        w0_doctor: w0FromReports.doctor || null,
+        // Surowe custom fields (dla debugowania)
+        customFields: cf
       },
       timeline: activities.map(a => ({
         id: a.id,

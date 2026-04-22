@@ -746,13 +746,53 @@
               <div style="font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase;">Źródło</div>
               <div id="patientCardSource" style="font-size: 14px; color: #1e293b;">—</div>
             </div>
+            <div>
+              <div style="font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase;">Zgoda marketingowa</div>
+              <div id="patientCardMarketing" style="font-size: 14px; color: #1e293b;">—</div>
+            </div>
+          </div>
+          
+          <!-- Problem pacjenta -->
+          <div class="patient-card-field" style="margin-top: 8px; padding: 12px; background: #eff6ff; border-left: 3px solid #3b82f6; border-radius: 6px;">
+            <div style="font-size: 11px; color: #3b82f6; font-weight: 700; text-transform: uppercase; margin-bottom: 4px;">Z czym się zgłasza</div>
+            <div id="patientCardMainProblem" style="font-size: 14px; color: #1e293b; font-style: italic;">—</div>
+          </div>
+          
+          <!-- Sekcja W0 -->
+          <div id="patientCardW0Section" class="hidden" style="margin-top: 12px; padding: 12px; background: #f0fdf4; border-left: 3px solid #10b981; border-radius: 6px;">
+            <div style="font-size: 11px; color: #10b981; font-weight: 700; text-transform: uppercase; margin-bottom: 8px;">📅 Wizyta W0 zaplanowana</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <div>
+                <div style="font-size: 11px; color: #64748b;">Data</div>
+                <div id="patientCardW0Date" style="font-weight: 600; color: #1e293b;">—</div>
+              </div>
+              <div>
+                <div style="font-size: 11px; color: #64748b;">Lekarz</div>
+                <div id="patientCardW0Doctor" style="font-weight: 600; color: #1e293b;">—</div>
+              </div>
+            </div>
+            <div id="patientCardW0Notes" style="margin-top: 6px; font-size: 13px; color: #64748b;"></div>
           </div>
         </div>
         
-        <!-- Timeline aktywności -->
-        <div style="padding: 16px;">
-          <h4 style="font-size: 14px; font-weight: 700; margin-bottom: 12px; color: #1e293b;">Historia aktywności</h4>
+        <!-- Zakładki: Aktywność GHL | Historia połączeń -->
+        <div style="padding: 0 16px; border-bottom: 1px solid #e2e8f0;">
+          <div style="display: flex; gap: 0;">
+            <button onclick="switchPatientCardTab('timeline')" id="tabPatientTimeline" class="patient-card-tab active">Aktywność GHL</button>
+            <button onclick="switchPatientCardTab('calls')" id="tabPatientCalls" class="patient-card-tab">Historia połączeń</button>
+          </div>
+        </div>
+        
+        <!-- Timeline aktywności GHL -->
+        <div id="patientCardTimelineSection" style="padding: 16px;">
           <div id="patientCardTimeline" style="display: flex; flex-direction: column; gap: 12px;">
+            <div style="padding: 12px; background: #f8fafc; border-radius: 8px; color: #64748b; text-align: center;">Ładowanie...</div>
+          </div>
+        </div>
+        
+        <!-- Historia połączeń z aplikacji -->
+        <div id="patientCardCallsSection" class="hidden" style="padding: 16px;">
+          <div id="patientCardCallHistory" style="display: flex; flex-direction: column; gap: 10px;">
             <div style="padding: 12px; background: #f8fafc; border-radius: 8px; color: #64748b; text-align: center;">Ładowanie...</div>
           </div>
         </div>

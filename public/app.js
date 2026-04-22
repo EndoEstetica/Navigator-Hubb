@@ -3206,39 +3206,99 @@ async function openPatientCard(contactId, contactName) {
     document.getElementById('patientCardEmail').textContent = contact.email || '—';
     document.getElementById('patientCardSource').textContent = contact.source || '—';
     
-    // Wypełnij timeline (Aktywność GHL + Historia Połączeń Supabase)
+    // Zakładki karty pacjenta
+    window.switchPatientCardTab = function(tab) {
+      document.getElementById('patientCardTimelineSection').classList.toggle('hidden', tab !== 'timeline');
+      document.getElementById('patientCardCallsSection').classList.toggle('hidden', tab !== 'calls');
+      document.getElementById('tabPatientTimeline').classList.toggle('active', tab === 'timeline');
+      document.getElementById('tabPatientCalls').classList.toggle('active', tab === 'calls');
+    };
+    
+    // Wypełnij zmapowane custom fields
+    const mainProblemEl = document.getElementById('patientCardMainProblem');
+    if (mainProblemEl) {
+      if (contact.mainProblem) {
+        mainProblemEl.textContent = contact.mainProblem;
+        mainProblemEl.closest('.patient-card-field')?.classList.remove('hidden');
+      } else {
+        mainProblemEl.closest('.patient-card-field')?.classList.add('hidden');
+      }
+    }
+    
+    // W0
+    const w0SectionEl = document.getElementById('patientCardW0Section');
+    if (w0SectionEl) {
+      if (contact.w0_scheduled || contact.w0_date) {
+        w0SectionEl.classList.remove('hidden');
+        const w0DateEl = document.getElementById('patientCardW0Date');
+        if (w0DateEl && contact.w0_date) {
+          w0DateEl.textContent = new Date(contact.w0_date).toLocaleDateString('pl-PL', { day: '2-digit', month: 'long', year: 'numeric' });
+        }
+        const w0DoctorEl = document.getElementById('patientCardW0Doctor');
+        if (w0DoctorEl) w0DoctorEl.textContent = contact.w0_doctor || '—';
+        const w0NotesEl = document.getElementById('patientCardW0Notes');
+        if (w0NotesEl) w0NotesEl.textContent = contact.w0_notes || '';
+      } else {
+        w0SectionEl.classList.add('hidden');
+      }
+    }
+    
+    // Zgoda marketingowa
+    const marketingEl = document.getElementById('patientCardMarketing');
+    if (marketingEl) {
+      marketingEl.textContent = contact.marketingConsent ? '✅ Tak' : '❌ Nie';
+      marketingEl.style.color = contact.marketingConsent ? '#10b981' : '#ef4444';
+    }
+    
+    // Wypełnij timeline GHL (zakładka 1)
     const timeline = data.timeline || [];
     const callHistory = data.callHistory || [];
     const timelineEl = document.getElementById('patientCardTimeline');
     
-    // Połącz i posortuj aktywności
-    const allActivities = [
-      ...timeline.map(a => ({ ...a, source: 'ghl' })),
-      ...callHistory.map(c => ({
-        createdAt: c.createdAt,
-        description: `📞 Połączenie ${c.direction === 'outbound' ? 'wychodzące' : 'przychodzące'} (${c.tag || c.status})<br/>
-                      ${c.contactType ? `<strong>Status:</strong> ${c.contactType}<br/>` : ''}
-                      ${c.callEffect ? `<strong>Wynik:</strong> ${c.callEffect}<br/>` : ''}
-                      ${c.notes ? `<strong>Notatka:</strong> ${c.notes}` : ''}`,
-        source: 'app'
-      }))
-    ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-    if (allActivities.length === 0) {
-      timelineEl.innerHTML = '<div style="padding: 12px; background: #f8fafc; border-radius: 8px; color: #64748b; text-align: center;">Brak aktywności</div>';
+    if (timeline.length === 0) {
+      timelineEl.innerHTML = '<div style="padding: 12px; background: #f8fafc; border-radius: 8px; color: #64748b; text-align: center;">Brak aktywności GHL</div>';
     } else {
-      timelineEl.innerHTML = allActivities.map(activity => `
-        <div style="padding: 12px; border-left: 3px solid ${activity.source === 'app' ? '#10b981' : '#3b82f6'}; background: #f8fafc; border-radius: 6px; margin-bottom: 8px;">
+      timelineEl.innerHTML = timeline.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(activity => `
+        <div style="padding: 12px; border-left: 3px solid #3b82f6; background: #f8fafc; border-radius: 6px; margin-bottom: 8px;">
           <div style="display:flex; justify-content:space-between; align-items:center;">
             <div style="font-size: 12px; color: #64748b; font-weight: 600;">${new Date(activity.createdAt).toLocaleString('pl-PL')}</div>
-            <span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: ${activity.source === 'app' ? '#d1fae5' : '#dbeafe'}; color: ${activity.source === 'app' ? '#065f46' : '#1e40af'}; font-weight: 700; text-transform: uppercase;">
-              ${activity.source === 'app' ? 'Aplikacja' : 'GHL'}
-            </span>
+            <span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #dbeafe; color: #1e40af; font-weight: 700; text-transform: uppercase;">GHL</span>
           </div>
           <div style="font-size: 13px; color: #1e293b; margin-top: 4px;">${activity.description || activity.type || '—'}</div>
           ${activity.userName ? `<div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">Przez: ${activity.userName}</div>` : ''}
         </div>
       `).join('');
+    }
+    
+    // Wypełnij historię połączeń z aplikacji (zakładka 2)
+    const callHistoryEl = document.getElementById('patientCardCallHistory');
+    if (callHistoryEl) {
+      if (callHistory.length === 0) {
+        callHistoryEl.innerHTML = '<div style="padding: 12px; background: #f8fafc; border-radius: 8px; color: #64748b; text-align: center;">Brak połączeń w historii</div>';
+      } else {
+        const statusColors = { nowy_pacjent: '#3b82f6', staly_pacjent: '#10b981', biezaca_wizyta: '#f59e0b', pomylka: '#94a3b8' };
+        const statusLabels = { nowy_pacjent: 'Nowy pacjent', staly_pacjent: 'Stały pacjent', biezaca_wizyta: 'Bieżąca wizyta', pomylka: 'Pomyłka' };
+        callHistoryEl.innerHTML = callHistory.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(c => {
+          const statusColor = statusColors[c.contactType] || '#94a3b8';
+          const statusLabel = statusLabels[c.contactType] || c.contactType || '—';
+          const tagColor = c.tag === 'connected' ? '#10b981' : c.tag === 'missed' ? '#ef4444' : '#94a3b8';
+          const tagLabel = c.tag === 'connected' ? 'Połączono' : c.tag === 'missed' ? 'Nieodebrane' : c.tag || '—';
+          return `
+          <div style="padding: 12px; border-left: 3px solid ${statusColor}; background: #f8fafc; border-radius: 6px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
+              <div style="font-size: 12px; color: #64748b;">${new Date(c.createdAt || c.timestamp).toLocaleString('pl-PL')}</div>
+              <div style="display:flex; gap: 4px;">
+                <span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: ${tagColor}20; color: ${tagColor}; font-weight: 700;">${tagLabel}</span>
+                ${c.contactType ? `<span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: ${statusColor}20; color: ${statusColor}; font-weight: 700;">${statusLabel}</span>` : ''}
+              </div>
+            </div>
+            ${c.callEffect ? `<div style="font-size: 13px; color: #1e293b; font-weight: 600;">Wynik: ${c.callEffect}</div>` : ''}
+            ${c.program ? `<div style="font-size: 12px; color: #7c3aed; margin-top: 2px;">Program: ${c.program}</div>` : ''}
+            ${c.notes ? `<div style="font-size: 12px; color: #64748b; margin-top: 4px; font-style: italic;">„${c.notes}”</div>` : ''}
+            <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">${c.direction === 'outbound' ? '↗️ Wychodzące' : '↘️ Przychodzące'} • ${c.duration ? `${c.duration}s` : 'brak czasu'}</div>
+          </div>`;
+        }).join('');
+      }
     }
   } catch (err) {
     console.error('[Patient Card] Error:', err);
