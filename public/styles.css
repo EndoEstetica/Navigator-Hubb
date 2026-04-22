@@ -2887,3 +2887,181 @@ body {
 }
 
 .btn-claim:hover { background: #d97706; }
+
+/* ==================== KALENDARZ MIESIĘCZNY ====================  */
+.tasks-calendar {
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  padding: 16px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+.calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.calendar-header h3 {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0;
+}
+.calendar-nav-btn {
+  background: none;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  font-size: 16px;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+.calendar-nav-btn:hover { background: #f1f5f9; }
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.calendar-day-header {
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  padding: 4px 0;
+}
+.calendar-day {
+  min-height: 52px;
+  padding: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+  border: 1px solid transparent;
+}
+.calendar-day:hover { background: #f8fafc; border-color: #e2e8f0; }
+.calendar-day.today { background: #eff6ff; border-color: #3b82f6; }
+.calendar-day.today .day-num { color: #3b82f6; font-weight: 800; }
+.calendar-day.other-month { opacity: 0.3; cursor: default; }
+.day-num {
+  font-size: 11px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 2px;
+}
+.day-tasks { display: flex; flex-direction: column; gap: 1px; }
+.day-task-dot {
+  font-size: 9px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-radius: 3px;
+  padding: 1px 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.day-task-dot.overdue {
+  background: #fee2e2;
+  color: #dc2626;
+}
+.day-more {
+  font-size: 9px;
+  color: #94a3b8;
+  padding: 1px 3px;
+}
+
+/* ==================== PULA ZADAŃ NA KOKPICIE ==================== */
+.pool-section {
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+.pool-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.pool-header h3 {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pool-badge {
+  background: #f59e0b;
+  color: #fff;
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.pool-list { max-height: 200px; overflow-y: auto; }
+.pool-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid #f8fafc;
+  gap: 12px;
+}
+.pool-item:last-child { border-bottom: none; }
+.pool-item-info { flex: 1; min-width: 0; }
+.pool-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pool-item-meta {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+.btn-claim {
+  background: #10b981;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.btn-claim:hover { background: #059669; }
+.btn-claim:disabled { background: #94a3b8; cursor: not-allowed; }
+
+/* ==================== TAGI ETAPÓW LEJKA ==================== */
+.call-stage-tag, .lead-stage-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+.stage-new { background: #dbeafe; color: #1d4ed8; }
+.stage-attempt1 { background: #fef3c7; color: #b45309; }
+.stage-attempt2 { background: #fed7aa; color: #c2410c; }
+.stage-followup { background: #e0e7ff; color: #4338ca; }
+.stage-after-call { background: #d1fae5; color: #065f46; }
+.stage-booked { background: #bbf7d0; color: #14532d; }
+.stage-noshow { background: #fee2e2; color: #991b1b; }
+.stage-refused { background: #f1f5f9; color: #475569; }
