@@ -307,55 +307,69 @@
           </div>
         </div>
 
-        <!-- Metryki główne (zachowane) -->
-        <div class="stats-grid">
-          <div class="stat-card navy">
-            <div class="stat-icon-wrap">📞</div>
-            <div class="stat-value" id="stat-total">1046</div>
-            <div class="stat-label">Suma połączeń</div>
-            <div class="stat-sub">(100%) • Ten miesiąc</div>
+        <!-- Metryki główne (KPI Cards) -->
+        <div class="stats-kpi-grid">
+          <div class="stats-kpi-card">
+            <div class="stats-kpi-icon">📞</div>
+            <div class="stats-kpi-label">SUMA POŁĄCZEŃ</div>
+            <div class="stats-kpi-value" id="stat-total">0</div>
+            <div class="stats-kpi-sub" id="stat-total-sub">Dziś: 0% odebranych</div>
           </div>
-          <div class="stat-card navy">
-            <div class="stat-icon-wrap">👤</div>
-            <div class="stat-value" id="stat-unique">607</div>
-            <div class="stat-label">Unikalni pacjenci</div>
-            <div class="stat-sub">różnych numerów</div>
+          <div class="stats-kpi-card">
+            <div class="stats-kpi-icon">👤</div>
+            <div class="stats-kpi-label">UNIKALNI PACJENCI</div>
+            <div class="stats-kpi-value" id="stat-unique">0</div>
+            <div class="stats-kpi-sub">różnych numerów</div>
           </div>
-          <div class="stat-card navy">
-            <div class="stat-icon-wrap">✅</div>
-            <div class="stat-value" id="stat-answered">74%</div>
-            <div class="stat-label">% Odebranych</div>
-            <div class="stat-sub">776 połączeń</div>
+          <div class="stats-kpi-card">
+            <div class="stats-kpi-icon">📞</div>
+            <div class="stats-kpi-label">% ODEBRANYCH</div>
+            <div class="stats-kpi-value" id="stat-answered">0%</div>
+            <div class="stats-kpi-sub" id="stat-answered-sub">0 połączeń</div>
           </div>
-          <div class="stat-card navy highlight">
-            <div class="stat-icon-wrap">🔄</div>
-            <div class="stat-value" id="stat-callback">90%</div>
-            <div class="stat-label">Oddzwanialność</div>
-            <div class="stat-sub">cel: 90%+</div>
+          <div class="stats-kpi-card">
+            <div class="stats-kpi-icon">📈</div>
+            <div class="stats-kpi-label">ODDZWANIALNOŚĆ</div>
+            <div class="stats-kpi-value" id="stat-callback">0%</div>
+            <div class="stats-kpi-sub" id="stat-callback-sub">0 z 0</div>
           </div>
         </div>
 
-        <!-- Wykresy -->
-        <div class="charts-grid">
-          <div class="chart-card">
+        <!-- Wykresy i Tabele -->
+        <div class="stats-content-grid">
+          <div class="stats-chart-section">
             <h3>Połączenia przychodzące</h3>
-            <canvas id="callsDonutChart" width="300" height="300"></canvas>
-            <div class="chart-legend" id="donutLegend"></div>
+            <div class="stats-donut-wrapper">
+              <canvas id="callsDonutChart" width="200" height="200"></canvas>
+              <div class="chart-legend" id="donutLegend"></div>
+            </div>
           </div>
-          <div class="chart-card">
-            <h3>Oddzwanialność</h3>
-            <canvas id="callbackGaugeChart" width="300" height="200"></canvas>
-            <div class="gauge-value" id="gaugeValue">90%</div>
-          </div>
-          <div class="chart-card wide">
-            <h3>Rozkład połączeń w czasie</h3>
-            <canvas id="callsBarChart" width="600" height="200"></canvas>
+          <div class="stats-table-section">
+            <h3>Szczegółowe statystyki</h3>
+            <table class="stats-table">
+              <thead>
+                <tr>
+                  <th>METRYKA</th>
+                  <th>WARTOŚĆ</th>
+                  <th>%</th>
+                </tr>
+              </thead>
+              <tbody id="statsTableBody">
+                <tr><td>Odebrane</td><td id="stat-table-answered">0</td><td id="stat-table-answered-pct">0%</td></tr>
+                <tr><td>Nieodebrane</td><td id="stat-table-missed">0</td><td id="stat-table-missed-pct">0%</td></tr>
+                <tr><td>Umówione wizyty</td><td id="stat-table-scheduled">0</td><td id="stat-table-scheduled-pct">0%</td></tr>
+                <tr><td>Follow-up</td><td id="stat-table-followup">0</td><td id="stat-table-followup-pct">0%</td></tr>
+                <tr><td>Zadania dziś</td><td id="stat-table-tasks">0</td><td>—</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
 
-        <!-- Statystyki dynamiczne (G — admin) -->
-        <div id="statsContent" class="stats-dynamic-section">
-          <div class="loading-state"><div class="spinner"></div><p>Ładowanie statystyk...</p></div>
+        <!-- Czas trwania rozmów -->
+        <div class="stats-duration-section">
+          <h3>Czas trwania rozmów</h3>
+          <div class="stats-duration-value" id="stat-avg-duration">0:00</div>
+          <div class="stats-duration-sub">Średni czas rozmowy</div>
         </div>
 
         <!-- Tabela szczegółowa (zachowana) -->
