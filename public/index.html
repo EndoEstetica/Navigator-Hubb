@@ -462,6 +462,12 @@
         </div>
         <h3>Raport z rozmowy</h3>
 
+        <!-- Pole Imię i Nazwisko (gdy brak w GHL) -->
+        <div class="form-group" id="manualNameGroup" style="margin-bottom: 16px;">
+          <label>Imię i Nazwisko pacjenta:</label>
+          <input type="text" id="manualPatientName" class="form-input" placeholder="Wpisz imię i nazwisko (jeśli brak powyżej)">
+        </div>
+
         <!-- Wybór statusu — 2x2 kafelki (C7) -->
         <div class="status-selector">
           <label>Status pacjenta:</label>
@@ -621,7 +627,7 @@
           <button class="btn-secondary" onclick="if(currentContact?.id) openPatientCard(currentContact.id, currentContact.name); else showToast('Brak danych pacjenta', 'error')">👤 Karta pacjenta</button>
           <button class="btn-secondary" onclick="openCreateTaskModalFromCall()">➕ Dodaj zadanie</button>
           <button class="btn-secondary" onclick="closeCallPopup()">Anuluj</button>
-          <button class="btn-primary" onclick="saveReport()">💾 Zapisz raport</button>
+          <button class="btn-primary" onclick="saveReport()">💾 Zakończ raport</button>
         </div>
       </div>
     </div>

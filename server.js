@@ -319,6 +319,44 @@ app.get('/api/contacts/new', async (req, res) => {
       `https://services.leadconnectorhq.com/contacts/?locationId=${GHL_LOCATION_ID}&limit=100`,
       { headers: ghlHeaders }
     );
+    
+    const contacts = response.data?.contacts || [];
+    
+    // Pobierz ostatnie statusy z Supabase dla tych kontaktów
+    if (supabase && contacts.length > 0) {
+      const contactIds = contacts.map(c => c.id);
+      
+      try {
+        // Pobierz najnowsze połączenie dla każdego kontaktu z ghl_contact_id
+        const { data: latestCalls, error } = await supabase
+          .from('calls')
+          .select('ghl_contact_id, contact_type, call_effect, created_at')
+          .in('ghl_contact_id', contactIds)
+          .order('created_at', { ascending: false });
+          
+        if (!error && latestCalls) {
+          // Mapuj na obiekt dla szybkiego dostępu: contactId -> latestCall
+          const latestMap = {};
+          latestCalls.forEach(call => {
+            if (!latestMap[call.ghl_contact_id]) {
+              latestMap[call.ghl_contact_id] = call;
+            }
+          });
+          
+          // Dołącz do kontaktów
+          contacts.forEach(c => {
+            if (latestMap[c.id]) {
+              c.latestStatus = latestMap[c.id].contact_type;
+              c.latestOutcome = latestMap[c.id].call_effect;
+              c.latestCallAt = latestMap[c.id].created_at;
+            }
+          });
+        }
+      } catch (e) {
+        console.warn('[Contacts] Supabase status error:', e.message);
+      }
+    }
+    
     res.json(response.data);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1091,6 +1129,23 @@ app.get('/api/contact/:id/card', async (req, res) => {
     );
     const opportunities = oppsResp.data?.opportunities || [];
 
+    // Pobierz historię połączeń z Supabase
+    let callHistory = [];
+    try {
+      const { data: calls, error } = await supabase
+        .from('calls')
+        .select('*')
+        .eq('ghl_contact_id', contactId)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      
+      if (!error && calls) {
+        callHistory = calls;
+      }
+    } catch (e) {
+      console.warn('[Patient Card] Supabase call history error:', e.message);
+    }
+
     res.json({
       contact: {
         id: contact.id,
@@ -1119,6 +1174,18 @@ app.get('/api/contact/:id/card', async (req, res) => {
         stageName: GHL_STAGES[o.pipelineStageId],
         value: o.monetaryValue,
         updatedAt: o.updatedAt
+      })),
+      callHistory: callHistory.map(c => ({
+        id: c.call_id,
+        direction: c.direction,
+        status: c.status,
+        tag: c.call_tag,
+        contactType: c.contact_type,
+        callEffect: c.call_effect,
+        notes: c.notes,
+        duration: c.duration_seconds,
+        recordingUrl: c.recording_url,
+        createdAt: c.created_at
       }))
     });
   } catch (err) {

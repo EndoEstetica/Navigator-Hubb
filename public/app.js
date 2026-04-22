@@ -1134,10 +1134,10 @@ function renderCallsTable(calls) {
           <th>Status pacjenta</th>
           <th>Program</th>
           <th>Kierunek</th>
-          <th>Status</th>
-          <th>Raport</th>
+          <th>Połączenie</th>
+          <th>Wynik rozmowy</th>
           <th>Czas</th>
-          <th>Czas trwania</th>
+          <th>Rozmowa</th>
           <th>Nagranie</th>
           <th>Akcje</th>
         </tr>
@@ -1370,6 +1370,10 @@ async function openCallReport(callId) {
           const noteFields = ['stalyNotatka', 'spamNotatka', 'powodRezygnacji', 'powodOdwolania', 'powodZmiany'];
           noteFields.forEach(fid => { const el = document.getElementById(fid); if (el) el.value = report.notes; });
         }
+        if (report.contactName) {
+          const manualNameInput = document.getElementById('manualPatientName');
+          if (manualNameInput) manualNameInput.value = report.contactName;
+        }
         if (report.recordingUrl) updatePopupRecording(report.recordingUrl, callId);
       }
     }
@@ -1473,6 +1477,12 @@ function openCallPopup(contact) {
     const zBox = document.getElementById('popupZCzymSieZglasza');
     if (zBox) zBox.classList.add('hidden');
     if (contact.id && contact.id !== 'unknown') fetchContactZglosza(contact.id);
+  }
+
+  // Ustawienie nazwy pacjenta w polu manualnym (jeśli mamy ją z obiektu połączenia)
+  const manualNameInput = document.getElementById('manualPatientName');
+  if (manualNameInput) {
+    manualNameInput.value = contact.name || '';
   }
 
   resetReportForm();
@@ -1635,6 +1645,8 @@ function resetReportForm() {
   document.querySelectorAll('.report-form').forEach(f => f.classList.add('hidden'));
   document.querySelectorAll('.outcome-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.outcome-fields').forEach(f => f.classList.add('hidden'));
+  const manualNameInput = document.getElementById('manualPatientName');
+  if (manualNameInput) manualNameInput.value = '';
   selectedStatus = null;
   selectedOutcome = null;
 }
@@ -1725,7 +1737,7 @@ async function saveReport() {
             outcome: selectedOutcome || '',
             userId: currentUser?.id || '',
             contactId: contactId || '',
-            contactName: currentContact?.name || ''
+            contactName: reportData.manualName || currentContact?.name || ''
           })
         });
       } catch(e) { console.warn('[Report] Save error:', e.message); }
@@ -1744,13 +1756,21 @@ async function saveReport() {
     showToast('✅ Raport zapisany pomyślnie', 'success');
     if (activeCallId) removePendingReport(activeCallId);
     closeCallPopup(true); // force close (raport zapisany)
+    
+    // Odśwież listy po zapisaniu raportu (żeby statusy się zaktualizowały)
+    loadCalls();
+    loadContacts();
   } catch (err) {
     showToast(`Błąd zapisu: ${err.message}`, 'error');
   }
 }
 
 function buildReportData() {
-  const data = { status: selectedStatus, outcome: selectedOutcome };
+  const data = { 
+    status: selectedStatus, 
+    outcome: selectedOutcome,
+    manualName: document.getElementById('manualPatientName')?.value || ''
+  };
   if (selectedStatus === 'NOWY_PACJENT') {
     data.program = document.getElementById('programLeczenia')?.value;
     if (selectedOutcome === 'umowil_sie')    data.dataW0 = document.getElementById('dataW0')?.value;
@@ -2400,6 +2420,29 @@ function renderContactRow(c) {
   const tagsHtml = (c.tags || []).map(t => `<span class="contact-tag">${t}</span>`).join('');
   const editBtnLabel = currentUserRole === 'admin' ? '✏️ Edytuj' : '✏️ Prośba o edycję';
   const stageHtml = (c.stageId || c.stageName) ? getStageTagHtml(c.stageId, c.stageName) : '';
+  
+  // Ostatni status z raportu
+  let latestStatusHtml = '<span class="no-data">—</span>';
+  if (c.latestStatus) {
+    const statusLabels = {
+      NOWY_PACJENT: 'Nowy pacjent',
+      STALY_PACJENT: 'Stały pacjent',
+      WIZYTA_BIEZACA: 'Wizyta bieżąca',
+      SPAM: 'SPAM'
+    };
+    const statusClasses = {
+      NOWY_PACJENT: 'st-new',
+      STALY_PACJENT: 'st-regular',
+      WIZYTA_BIEZACA: 'st-visit',
+      SPAM: 'st-spam'
+    };
+    latestStatusHtml = `
+      <div style="display:flex; flex-direction:column; gap:2px;">
+        <span class="report-tag ${statusClasses[c.latestStatus] || ''}">${statusLabels[c.latestStatus] || c.latestStatus}</span>
+        ${c.latestOutcome ? `<span style="font-size:10px; color:#64748b; font-weight:600;">${c.latestOutcome}</span>` : ''}
+      </div>
+    `;
+  }
 
   return `
     <div class="contacts-grid-row">
@@ -2413,6 +2456,7 @@ function renderContactRow(c) {
       <div class="contact-email-cell" onclick="editContactField('${c.id}', 'email', '${c.email || ''}', this)" title="Kliknij aby edytować">
         ${c.email || '<span class="no-data">Brak</span>'}
       </div>
+      <div class="contact-status-cell">${latestStatusHtml}</div>
       <div class="contact-tags-cell">${stageHtml}${tagsHtml}</div>
       <div class="contact-actions-cell">
         ${c.phone ? `<button class="btn-call btn-sm" onclick="initiateCall('${c.phone}', '${escHtml(name)}', '${c.id}')">📞</button>` : ''}
@@ -3162,16 +3206,35 @@ async function openPatientCard(contactId, contactName) {
     document.getElementById('patientCardEmail').textContent = contact.email || '—';
     document.getElementById('patientCardSource').textContent = contact.source || '—';
     
-    // Wypełnij timeline
+    // Wypełnij timeline (Aktywność GHL + Historia Połączeń Supabase)
     const timeline = data.timeline || [];
+    const callHistory = data.callHistory || [];
     const timelineEl = document.getElementById('patientCardTimeline');
     
-    if (timeline.length === 0) {
+    // Połącz i posortuj aktywności
+    const allActivities = [
+      ...timeline.map(a => ({ ...a, source: 'ghl' })),
+      ...callHistory.map(c => ({
+        createdAt: c.createdAt,
+        description: `📞 Połączenie ${c.direction === 'outbound' ? 'wychodzące' : 'przychodzące'} (${c.tag || c.status})<br/>
+                      ${c.contactType ? `<strong>Status:</strong> ${c.contactType}<br/>` : ''}
+                      ${c.callEffect ? `<strong>Wynik:</strong> ${c.callEffect}<br/>` : ''}
+                      ${c.notes ? `<strong>Notatka:</strong> ${c.notes}` : ''}`,
+        source: 'app'
+      }))
+    ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    if (allActivities.length === 0) {
       timelineEl.innerHTML = '<div style="padding: 12px; background: #f8fafc; border-radius: 8px; color: #64748b; text-align: center;">Brak aktywności</div>';
     } else {
-      timelineEl.innerHTML = timeline.map(activity => `
-        <div style="padding: 12px; border-left: 3px solid #3b82f6; background: #f8fafc; border-radius: 6px;">
-          <div style="font-size: 12px; color: #64748b; font-weight: 600;">${new Date(activity.createdAt).toLocaleString('pl-PL')}</div>
+      timelineEl.innerHTML = allActivities.map(activity => `
+        <div style="padding: 12px; border-left: 3px solid ${activity.source === 'app' ? '#10b981' : '#3b82f6'}; background: #f8fafc; border-radius: 6px; margin-bottom: 8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="font-size: 12px; color: #64748b; font-weight: 600;">${new Date(activity.createdAt).toLocaleString('pl-PL')}</div>
+            <span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: ${activity.source === 'app' ? '#d1fae5' : '#dbeafe'}; color: ${activity.source === 'app' ? '#065f46' : '#1e40af'}; font-weight: 700; text-transform: uppercase;">
+              ${activity.source === 'app' ? 'Aplikacja' : 'GHL'}
+            </span>
+          </div>
           <div style="font-size: 13px; color: #1e293b; margin-top: 4px;">${activity.description || activity.type || '—'}</div>
           ${activity.userName ? `<div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">Przez: ${activity.userName}</div>` : ''}
         </div>
