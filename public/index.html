@@ -139,85 +139,55 @@
           </div>
         </div>
 
-        <!-- Zakładki główne -->
-        <div class="tabs-container">
-          <div class="tabs-header">
-            <button class="tab-btn active" data-tab="new-leads" onclick="switchTab('new-leads')">
-              Nowe zgłoszenia
-              <span class="tab-badge" id="badge-new">0</span>
-            </button>
-            <button class="tab-btn" data-tab="in-progress" onclick="switchTab('in-progress')">
-              W obsłudze
-              <span class="tab-badge" id="badge-progress">0</span>
-            </button>
-            <button class="tab-btn" data-tab="completed" onclick="switchTab('completed')">
-              Zakończone
-              <span class="tab-badge" id="badge-completed">0</span>
-            </button>
+        <!-- SEKCJA: ZADANIA -->
+        <div class="dashboard-section-block" style="margin-bottom:24px;">
+          <div class="section-header">
+            <h3>📋 Moje zadania na dziś</h3>
+            <button class="btn-icon" onclick="loadTodayTasks()" title="Odśwież">&#8635;</button>
           </div>
+          <div id="tasksTodayList" class="tasks-list">
+            <div class="empty-state">Ladowanie zadań...</div>
+          </div>
+        </div>
 
-          <!-- Zakładka: Nowe zgłoszenia -->
-          <div id="tab-new-leads" class="tab-content active">
-            <!-- Moduł Zadania na dziś -->
-            <div class="tasks-today-section" id="tasksTodaySection">
-              <div class="section-header">
-                <h3>📋 Zadania na dziś</h3>
-                <button class="btn-icon" onclick="loadTodayTasks()">↻</button>
-              </div>
-              <div id="tasksTodayList" class="tasks-list">
-                <div class="empty-state">Ładowanie zadań...</div>
-              </div>
-            </div>
+        <!-- SEKCJA: PULA ZADAŃ -->
+        <div class="pool-section" id="dashboardPoolSection" style="margin-bottom:24px;">
+          <div class="pool-header">
+            <h3>📅 Pula zadań do wzięcia <span class="pool-badge" id="dashboardPoolBadge">0</span></h3>
+            <button class="btn-secondary" style="font-size:11px;padding:4px 10px;" onclick="loadDashboardPool()">&#8635;</button>
+          </div>
+          <div class="pool-list" id="dashboardPoolList">
+            <div class="empty-state" style="padding:16px;">Brak zadań w puli</div>
+          </div>
+        </div>
 
-            <!-- Pula zadań na kokpicie -->
-            <div class="pool-section" id="dashboardPoolSection" style="margin-bottom:20px;">
-              <div class="pool-header">
-                <h3>&#128197; Pula zadań do wzięcia <span class="pool-badge" id="dashboardPoolBadge">0</span></h3>
-                <button class="btn-secondary" style="font-size:11px;padding:4px 10px;" onclick="loadDashboardPool()">&#8635;</button>
+        <!-- SEKCJA: NOWE ZGŁOSZENIA -->
+        <div class="dashboard-section-block">
+          <div class="section-header">
+            <h3>📥 Nowe zgłoszenia <span class="tab-badge" id="badge-new" style="margin-left:8px;">0</span></h3>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <div id="sourceFilters" class="source-filters" style="margin:0;">
+                <button class="source-filter-btn active" data-source="all" onclick="filterBySource('all')">Wszystkie</button>
               </div>
-              <div class="pool-list" id="dashboardPoolList">
-                <div class="empty-state" style="padding:16px;">Brak zadań w puli</div>
-              </div>
-            </div>
-
-            <!-- Filtry źródła (B4) -->
-            <div class="section-header">
-              <h3>Nowe zgłoszenia z GHL</h3>
               <button class="btn-secondary" onclick="loadNewLeads()">&#8635; Odśwież</button>
             </div>
-            <div id="sourceFilters" class="source-filters">
-              <button class="source-filter-btn active" data-source="all" onclick="filterBySource('all')">Wszystkie</button>
-            </div>
-
-            <!-- Lista nowych zgłoszeń -->
-            <div id="newLeadsList" class="leads-list">
-              <div class="loading-state">
-                <div class="spinner"></div>
-                <p>Ładowanie zgłoszeń...</p>
-              </div>
+          </div>
+          <div id="newLeadsList" class="leads-list">
+            <div class="loading-state">
+              <div class="spinner"></div>
+              <p>Ladowanie zgłoszeń...</p>
             </div>
           </div>
+        </div>
 
-          <!-- Zakładka: W obsłudze -->
-          <div id="tab-in-progress" class="tab-content">
-            <div class="section-header">
-              <h3>Połączenia w trakcie i wymagające raportu</h3>
-            </div>
-            <div id="inProgressList" class="leads-list">
-              <div class="empty-state">Brak aktywnych połączeń</div>
-            </div>
-          </div>
-
-          <!-- Zakładka: Zakończone -->
-          <div id="tab-completed" class="tab-content">
-            <div class="section-header">
-              <h3>Historia połączeń</h3>
-              <button class="btn-secondary" onclick="loadCompletedCalls()">↻ Odśwież</button>
-            </div>
-            <div id="completedList" class="leads-list">
-              <div class="empty-state">Brak zakończonych połączeń</div>
-            </div>
-          </div>
+        <!-- Ukryte elementy zachowane dla kompatybilności JS -->
+        <div style="display:none;">
+          <div id="tab-new-leads"></div>
+          <div id="tab-in-progress"></div>
+          <div id="tab-completed"></div>
+          <div id="inProgressList"></div>
+          <div id="completedList"></div>
+          <div id="tasksTodaySection"></div>
         </div>
       </div>
 
@@ -715,16 +685,23 @@
         <span class="widget-title">📋 <span id="soniaChatTitle">Czat Sonia</span></span>
         <div class="widget-actions">
           <button class="widget-btn" onclick="minimizeSoniaChat(event)">_</button>
-          <button class="widget-btn" onclick="event.stopPropagation(); toggleSoniaChat()">✕</button>
+          <button class="widget-btn" onclick="event.stopPropagation(); toggleSoniaChat()">&#10005;</button>
         </div>
+      </div>
+      <!-- Zakładki: Czat | Historia -->
+      <div class="sonia-tabs" id="soniaTabs">
+        <button class="sonia-tab active" id="soniaChatTab" onclick="switchSoniaTab('chat')">Czat</button>
+        <button class="sonia-tab" id="soniaHistoryTab" onclick="switchSoniaTab('history')">Historia</button>
       </div>
       <!-- Sonia: lista konwersacji -->
       <div id="soniaInbox" style="display:none;"></div>
-      <!-- Zwykły użytkownik / konkretna konwersacja -->
+      <!-- Czat: aktualna konwersacja -->
       <div id="soniaChatMessages" class="sonia-chat-messages"></div>
+      <!-- Historia czatu -->
+      <div id="soniaChatHistory" class="sonia-chat-messages" style="display:none;"></div>
       <div class="sonia-chat-input-row">
         <input id="soniaChatInput" type="text" placeholder="Opisz sprawę lub problem..." onkeydown="if(event.key==='Enter')sendSoniaMessage()"/>
-        <button onclick="sendSoniaMessage()">➤</button>
+        <button onclick="sendSoniaMessage()">&#10148;</button>
       </div>
     </div>
   </div>

@@ -3281,3 +3281,115 @@ button {
   font-size: 10px;
   letter-spacing: 0.5px;
 }
+
+/* ==================== TAGI STATUSU RAPORTU ==================== */
+.report-tag {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: default;
+}
+.report-done {
+  background: #dcfce7;
+  color: #166534;
+}
+.report-missing {
+  background: #fee2e2;
+  color: #991b1b;
+  cursor: pointer;
+  animation: pulse-red 2s infinite;
+  border: 1px solid #fca5a5;
+}
+.report-missing:hover {
+  background: #fecaca;
+  color: #7f1d1d;
+}
+@keyframes pulse-red {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.75; }
+}
+
+/* ==================== KOKPIT — SEKCJE ==================== */
+.dashboard-section-block {
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+}
+.dashboard-section-block .section-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.dashboard-section-block .section-header h3 {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dashboard-section-block .tasks-list,
+.dashboard-section-block .leads-list {
+  padding: 8px 0;
+}
+
+/* ==================== CHAT SONIA — ZAKŁADKI I PRZYCISK ROZWIĄZANY ==================== */
+.sonia-tabs {
+  display: flex;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+.sonia-tab {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+}
+.sonia-tab.active {
+  color: #3b82f6;
+  border-bottom-color: #3b82f6;
+  background: #fff;
+}
+.sonia-tab:hover:not(.active) {
+  background: #f1f5f9;
+  color: #1e293b;
+}
+.btn-resolve-chat {
+  background: #22c55e;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-right: 4px;
+  white-space: nowrap;
+}
+.btn-resolve-chat:hover {
+  background: #16a34a;
+}
+.sonia-date-sep {
+  text-align: center;
+  font-size: 10px;
+  color: #94a3b8;
+  padding: 6px 0 2px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}

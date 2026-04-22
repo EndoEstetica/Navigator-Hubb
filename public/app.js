@@ -420,11 +420,22 @@ async function loadSoniaInbox() {
     inbox.style.display = 'none';
     msgs.style.display = '';
     if (inputRow) inputRow.style.display = '';
-    // Dodaj przycisk "← Wróć" do nagłówka
     const titleEl = document.getElementById('soniaChatTitle');
     const otherUserId = currentConvKey.split(':').find(id => id !== 'sonia');
     if (titleEl) titleEl.innerHTML = `<span onclick="soniaGoBackToInbox()" style="cursor:pointer;opacity:0.7;margin-right:6px;">←</span> ${escHtml(otherUserId)}`;
     loadChatHistory(currentConvKey);
+    // Dodaj przycisk "Problem rozwiązany" w nagłówku
+    let resolveBtn = document.getElementById('soniaChatResolveBtn');
+    if (!resolveBtn) {
+      resolveBtn = document.createElement('button');
+      resolveBtn.id = 'soniaChatResolveBtn';
+      resolveBtn.className = 'btn-resolve-chat';
+      resolveBtn.textContent = '✓ Problem rozwiązany';
+      resolveBtn.onclick = (e) => { e.stopPropagation(); markChatResolved(); };
+      const actions = document.querySelector('.sonia-chat-panel .widget-actions');
+      if (actions) actions.insertBefore(resolveBtn, actions.firstChild);
+    }
+    resolveBtn.style.display = '';
     return;
   }
 
@@ -432,6 +443,8 @@ async function loadSoniaInbox() {
   inbox.style.display = '';
   msgs.style.display = 'none';
   if (inputRow) inputRow.style.display = 'none';
+  const resolveBtn = document.getElementById('soniaChatResolveBtn');
+  if (resolveBtn) resolveBtn.style.display = 'none';
 
   try {
     const r = await fetch('/api/chat/sonia-inbox');
@@ -457,11 +470,120 @@ async function loadSoniaInbox() {
   }
 }
 
+async function markChatResolved() {
+  if (!currentConvKey) return;
+  // Wyślij wiadomość systemową o zamknięciu
+  try {
+    await fetch('/api/chat/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fromUserId: currentUser?.id || 'sonia',
+        toUserId: currentConvKey.split(':').find(id => id !== (currentUser?.id || 'sonia')) || 'sonia',
+        text: '✅ Problem został oznaczony jako rozwiązany.'
+      })
+    });
+    showToast('✅ Problem oznaczony jako rozwiązany', 'success');
+    // Odśwież konwersację
+    loadChatHistory(currentConvKey);
+    // Wróć do listy po 1.5s
+    setTimeout(() => {
+      soniaGoBackToInbox();
+    }, 1500);
+  } catch(e) {
+    showToast('Błąd', 'error');
+  }
+}
+
 function soniaGoBackToInbox() {
   currentConvKey = null;
   const titleEl = document.getElementById('soniaChatTitle');
   if (titleEl) titleEl.textContent = 'Zgłoszenia od zespołu';
+  const resolveBtn = document.getElementById('soniaChatResolveBtn');
+  if (resolveBtn) resolveBtn.style.display = 'none';
   loadSoniaInbox();
+}
+
+function switchSoniaTab(tab) {
+  const chatTab = document.getElementById('soniaChatTab');
+  const historyTab = document.getElementById('soniaHistoryTab');
+  const chatMsgs = document.getElementById('soniaChatMessages');
+  const historyMsgs = document.getElementById('soniaChatHistory');
+  const inputRow = document.querySelector('.sonia-chat-input-row');
+  const inbox = document.getElementById('soniaInbox');
+
+  if (tab === 'chat') {
+    if (chatTab) chatTab.classList.add('active');
+    if (historyTab) historyTab.classList.remove('active');
+    if (historyMsgs) historyMsgs.style.display = 'none';
+    if (inputRow) inputRow.style.display = '';
+    // Pokaż czat lub inbox
+    if (currentUser?.id === 'sonia') {
+      if (inbox) inbox.style.display = '';
+      if (chatMsgs) chatMsgs.style.display = 'none';
+    } else {
+      if (inbox) inbox.style.display = 'none';
+      if (chatMsgs) chatMsgs.style.display = '';
+      if (currentConvKey) loadChatHistory(currentConvKey);
+    }
+  } else {
+    // Historia
+    if (historyTab) historyTab.classList.add('active');
+    if (chatTab) chatTab.classList.remove('active');
+    if (chatMsgs) chatMsgs.style.display = 'none';
+    if (inbox) inbox.style.display = 'none';
+    if (inputRow) inputRow.style.display = 'none';
+    if (historyMsgs) historyMsgs.style.display = '';
+    loadSoniaChatHistory();
+  }
+}
+
+async function loadSoniaChatHistory() {
+  const container = document.getElementById('soniaChatHistory');
+  if (!container) return;
+  container.innerHTML = '<p style="padding:12px;color:#888;font-size:12px;">Wczytywanie historii...</p>';
+  try {
+    // Pobierz pełną historię konwersacji
+    const convKey = currentConvKey || (currentUser ? [currentUser.id, 'sonia'].sort().join(':') : null);
+    if (!convKey) {
+      container.innerHTML = '<p style="padding:12px;color:#888;font-size:12px;">Brak historii</p>';
+      return;
+    }
+    const r = await fetch(`/api/chat/history/${convKey}?limit=100`);
+    const data = await r.json();
+    const messages = data.messages || [];
+    if (messages.length === 0) {
+      container.innerHTML = '<p style="padding:12px;color:#888;font-size:12px;">Brak historii czatu</p>';
+      return;
+    }
+    container.innerHTML = '';
+    // Grupuj po dniach
+    let lastDate = '';
+    messages.forEach(m => {
+      const msgDate = m.ts ? new Date(m.ts).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' }) : '';
+      if (msgDate && msgDate !== lastDate) {
+        const sep = document.createElement('div');
+        sep.className = 'sonia-date-sep';
+        sep.textContent = msgDate;
+        container.appendChild(sep);
+        lastDate = msgDate;
+      }
+      const isMine = m.from === currentUser?.id;
+      const div = document.createElement('div');
+      div.className = `sonia-msg ${isMine ? 'sonia-msg-mine' : 'sonia-msg-other'}`;
+      const time = m.ts ? new Date(m.ts).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }) : '';
+      const senderName = isMine ? 'Ty' : (m.fromName || m.from || '?');
+      div.innerHTML = `
+        <div class="sonia-msg-sender">${escHtml(senderName)}</div>
+        <div class="sonia-msg-text">${escHtml(m.text)}</div>
+        <div class="sonia-msg-time">${time}</div>
+      `;
+      container.appendChild(div);
+    });
+    container.scrollTop = container.scrollHeight;
+  } catch(e) {
+    container.innerHTML = '<p style="padding:12px;color:red;font-size:12px;">Błąd wczytywania historii</p>';
+  }
 }
 
 // ==================== INITIALIZATION ====================
@@ -1078,12 +1200,13 @@ function renderCallRow(c) {
     ? `<span class="program-tag">${escHtml(c.program)}</span>`
     : '<span style="color:#94a3b8;font-size:11px;">—</span>';
 
-  // Status raportu (punkt 8)
-  const hasReport = c.contactType || c.callEffect;
+  // Status raportu — czerwony dla WSZYSTKICH zakończonych bez raportu
+  const hasReport = !!(c.contactType || c.callEffect);
+  const isEnded = c.status === 'ended' || c.tag === 'connected' || c.tag === 'missed' || c.tag === 'ineffective';
   const reportStatusHtml = hasReport
-    ? `<span style="font-size:11px;padding:3px 8px;border-radius:6px;background:#dcfce7;color:#166534;font-weight:600;">✓ Uzupełniony</span>`
-    : (c.tag === 'connected'
-      ? `<span style="font-size:11px;padding:3px 8px;border-radius:6px;background:#fef3c7;color:#92400e;font-weight:600;cursor:pointer;" onclick="event.stopPropagation();openCallReport('${escHtml(c.callId)}')">⚠ Do uzupełnienia</span>`
+    ? `<span class="report-tag report-done">✓ Uzupełniony</span>`
+    : (isEnded
+      ? `<span class="report-tag report-missing" onclick="event.stopPropagation();openCallReport('${escHtml(c.callId)}')" title="Kliknij aby uzupełnić raport">⚠ Uzupełnij raport</span>`
       : '<span style="color:#94a3b8;font-size:11px;">—</span>');
 
   return `
