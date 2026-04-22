@@ -119,6 +119,25 @@
           </div>
         </div>
 
+        <!-- SEKCJA: NOWE ZGŁOSZENIA -->
+        <div class="dashboard-section-block" style="margin-bottom:24px;">
+          <div class="section-header">
+            <h3>📥 Nowe zgłoszenia <span class="tab-badge" id="badge-new" style="margin-left:8px;">0</span></h3>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <div id="sourceFilters" class="source-filters" style="margin:0;">
+                <button class="source-filter-btn active" data-source="all" onclick="filterBySource('all')">Wszystkie</button>
+              </div>
+              <button class="btn-secondary" onclick="loadNewLeads()">&#8635; Odśwież</button>
+            </div>
+          </div>
+          <div id="newLeadsList" class="leads-list">
+            <div class="loading-state">
+              <div class="spinner"></div>
+              <p>Ladowanie zgłoszeń...</p>
+            </div>
+          </div>
+        </div>
+
         <!-- Dashboard Layout: Live Feed & Callback List -->
         <div class="dashboard-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 32px;">
           <div class="dashboard-section">
@@ -158,25 +177,6 @@
           </div>
           <div class="pool-list" id="dashboardPoolList">
             <div class="empty-state" style="padding:16px;">Brak zadań w puli</div>
-          </div>
-        </div>
-
-        <!-- SEKCJA: NOWE ZGŁOSZENIA -->
-        <div class="dashboard-section-block">
-          <div class="section-header">
-            <h3>📥 Nowe zgłoszenia <span class="tab-badge" id="badge-new" style="margin-left:8px;">0</span></h3>
-            <div style="display:flex;gap:8px;align-items:center;">
-              <div id="sourceFilters" class="source-filters" style="margin:0;">
-                <button class="source-filter-btn active" data-source="all" onclick="filterBySource('all')">Wszystkie</button>
-              </div>
-              <button class="btn-secondary" onclick="loadNewLeads()">&#8635; Odśwież</button>
-            </div>
-          </div>
-          <div id="newLeadsList" class="leads-list">
-            <div class="loading-state">
-              <div class="spinner"></div>
-              <p>Ladowanie zgłoszeń...</p>
-            </div>
           </div>
         </div>
 

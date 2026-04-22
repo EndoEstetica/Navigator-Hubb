@@ -1213,10 +1213,10 @@ function renderCallRow(c) {
     <tr class="call-row" onclick="openCallReport('${c.callId}')">
       <td>
         <div style="display:flex;align-items:center;gap:10px;">
-          <div class="call-avatar ${c.direction === 'outbound' ? 'av-out' : 'av-in'}">${(c.contactName || c.from || '?').charAt(0).toUpperCase()}</div>
+          <div class="call-avatar ${c.direction === 'outbound' ? 'av-out' : 'av-in'}">${(c.contactName || (c.from !== '0' ? c.from : '') || (c.to !== '0' ? c.to : '') || '?').charAt(0).toUpperCase()}</div>
           <div class="call-name-cell">
-            <div class="call-name">${c.contactName || c.from || 'Nieznany'}</div>
-            <div class="call-number">${c.from || c.to || ''}</div>
+            <div class="call-name">${escHtml(c.contactName || (c.from !== '0' ? c.from : '') || (c.to !== '0' ? c.to : '') || 'Nieznany')}</div>
+            <div class="call-number">${escHtml((c.from !== '0' ? c.from : '') || (c.to !== '0' ? c.to : '') || '')}</div>
             <div style="margin-top:3px;display:flex;gap:4px;flex-wrap:wrap;">${stageHtml}${outcomeHtml}</div>
           </div>
         </div>

@@ -1561,31 +1561,49 @@ app.get('/api/calls/history', async (req, res) => {
         .select('*')
         .gte('created_at', since)
         .order('created_at', { ascending: false })
-        .limit(200);
+        .limit(300); // Pobierz nieco więcej, aby po odfiltrowaniu '0' zostało wystarczająco
       if (error) throw new Error(error.message);
-      const calls = (data || []).map(row => ({
-        callId: row.call_id,
-        pbxCallId: row.pbx_call_id,
-        from: row.caller_phone,
-        to: row.called_phone,
-        direction: row.direction,
-        status: row.status,
-        duration: row.duration_seconds,
-        recordingUrl: row.recording_url,
-        contactName: row.patient_name,
-        contactId: row.ghl_contact_id,
-        userId: row.user_id,
-        tag: row.contact_type || (row.status === 'ended' && row.duration_seconds > 0 ? 'connected' : row.direction === 'inbound' ? 'missed' : 'ineffective'),
-        contactType: row.contact_type,
-        callEffect: row.call_effect,
-        notes: row.notes,
-        program: row.treatment,
-        outcome: row.call_reason,
-        timestamp: row.created_at,
-        answeredAt: row.answered_at,
-        endedAt: row.ended_at
-      }));
-      return res.json({ calls });
+      
+      const filteredData = (data || []).filter(row => {
+        // Usuń techniczne wpisy "0" lub puste numery, o ile nie mają przypisanego pacjenta
+        const isTechnicalZero = (row.caller_phone === '0' || !row.caller_phone) && 
+                                (row.called_phone === '0' || !row.called_phone) && 
+                                !row.patient_name;
+        return !isTechnicalZero;
+      });
+
+      // Usuń duplikaty pbx_call_id (Zadarma czasem wysyła dwa zdarzenia z różnymi call_id dla tego samego pbx_call_id)
+      const seenPbxIds = new Set();
+      const uniqueCalls = [];
+      for (const row of filteredData) {
+        if (row.pbx_call_id && seenPbxIds.has(row.pbx_call_id)) continue;
+        if (row.pbx_call_id) seenPbxIds.add(row.pbx_call_id);
+        
+        uniqueCalls.push({
+          callId: row.call_id,
+          pbxCallId: row.pbx_call_id,
+          from: row.caller_phone,
+          to: row.called_phone,
+          direction: row.direction,
+          status: row.status,
+          duration: row.duration_seconds,
+          recordingUrl: row.recording_url,
+          contactName: row.patient_name,
+          contactId: row.ghl_contact_id,
+          userId: row.user_id,
+          tag: row.contact_type || (row.status === 'ended' && row.duration_seconds > 0 ? 'connected' : row.direction === 'inbound' ? 'missed' : 'ineffective'),
+          contactType: row.contact_type,
+          callEffect: row.call_effect,
+          notes: row.notes,
+          program: row.treatment,
+          outcome: row.call_reason,
+          timestamp: row.created_at,
+          answeredAt: row.answered_at,
+          endedAt: row.ended_at
+        });
+      }
+
+      return res.json({ calls: uniqueCalls.slice(0, 200) });
     } catch(e) {
       console.error('[History] Supabase error:', e.message);
     }
