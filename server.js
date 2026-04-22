@@ -838,50 +838,78 @@ app.get('/api/call/test-auth', async (req, res) => {
   }
 });
 
-// ─── SYSTEM ZADAŃ (Task Pool) ─────────────────────────────────────────────
-const tasksPool = new Map(); // taskId -> { id, title, description, contactId, contactName, dueDate, assignedTo, status, createdBy, createdAt }
+// ─── SYSTEM ZADAŃ (Task Pool) — Supabase + fallback RAM ──────────────────────
+// Fallback RAM gdy Supabase niedostępne
+const tasksPool = new Map();
 let taskIdCounter = 1000;
+
+// Helper: mapuj wiersz Supabase → obiekt zadania
+function mapTaskRow(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    contactId: row.contact_id,
+    contactName: row.contact_name,
+    dueDate: row.due_date,
+    assignedTo: row.assigned_to,
+    assignedToName: row.assigned_to_name,
+    status: row.status || 'open',
+    pool: row.pool || false,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    ghlTaskId: row.ghl_task_id
+  };
+}
 
 app.post('/api/tasks', async (req, res) => {
   try {
     const { title, description, contactId, contactName, dueDate, assignedTo } = req.body;
     const userId = req.headers['x-user-id'] || 'unknown';
-    
-    const taskId = `task_${taskIdCounter++}`;
-    const task = {
-      id: taskId,
-      title,
-      description,
-      contactId,
-      contactName,
-      dueDate,
-      assignedTo: assignedTo || null,
-      status: 'open',
-      createdBy: userId,
-      createdAt: new Date().toISOString()
-    };
-    
-    tasksPool.set(taskId, task);
-    
-    // Synchronizuj z GHL jeśli contactId istnieje
-    if (contactId && assignedTo) {
-      const assignedUser = Object.values(USERS).find(u => u.id === assignedTo);
-      if (assignedUser?.ghlUserId) {
-        try {
-          await axios.post(
-            `https://services.leadconnectorhq.com/contacts/${contactId}/tasks`,
-            {
-              title,
-              body: description,
-              dueDate: new Date(dueDate).toISOString().split('T')[0],
-              assignedTo: assignedUser.ghlUserId
-            },
-            { headers: ghlHeaders, timeout: 10000 }
-          );
-        } catch(e) { console.error('[GHL Task] Sync error:', e.message); }
-      }
+    const isPool = !assignedTo || assignedTo === 'pool';
+    const assignedUser = assignedTo ? Object.values(USERS).find(u => u.id === assignedTo) : null;
+
+    let task;
+
+    if (supabase) {
+      const { data, error } = await supabase.from('tasks').insert({
+        title,
+        description: description || null,
+        contact_id: contactId || null,
+        contact_name: contactName || null,
+        due_date: dueDate ? new Date(dueDate).toISOString() : null,
+        assigned_to: isPool ? null : (assignedTo || null),
+        assigned_to_name: assignedUser?.name || null,
+        status: 'open',
+        pool: isPool,
+        created_by: userId
+      }).select().single();
+      if (error) throw new Error(error.message);
+      task = mapTaskRow(data);
+    } else {
+      // Fallback RAM
+      const taskId = `task_${taskIdCounter++}`;
+      task = { id: taskId, title, description, contactId, contactName, dueDate,
+        assignedTo: isPool ? null : (assignedTo || null), status: 'open',
+        pool: isPool, createdBy: userId, createdAt: new Date().toISOString() };
+      tasksPool.set(taskId, task);
     }
-    
+
+    // Synchronizuj z GHL jeśli contactId i przypisany użytkownik
+    if (contactId && assignedUser?.ghlUserId) {
+      try {
+        const ghlResp = await axios.post(
+          `https://services.leadconnectorhq.com/contacts/${contactId}/tasks`,
+          { title, body: description, dueDate: new Date(dueDate).toISOString().split('T')[0], assignedTo: assignedUser.ghlUserId },
+          { headers: ghlHeaders, timeout: 10000 }
+        );
+        // Zapisz GHL task ID w Supabase
+        if (supabase && task.id && ghlResp.data?.id) {
+          supabase.from('tasks').update({ ghl_task_id: ghlResp.data.id }).eq('id', task.id).then(() => {});
+        }
+      } catch(e) { console.error('[GHL Task] Sync error:', e.message); }
+    }
+
     broadcast({ type: 'TASK_CREATED', task });
     res.json({ success: true, task });
   } catch (err) {
@@ -889,33 +917,85 @@ app.post('/api/tasks', async (req, res) => {
   }
 });
 
-app.get('/api/tasks', (req, res) => {
+app.get('/api/tasks', async (req, res) => {
   const userId = req.query.userId;
   const filter = req.query.filter || 'all'; // all, mine, unassigned
-  
-  let tasks = Array.from(tasksPool.values());
-  
-  if (filter === 'mine' && userId) {
-    tasks = tasks.filter(t => t.assignedTo === userId);
-  } else if (filter === 'unassigned') {
-    tasks = tasks.filter(t => !t.assignedTo);
+
+  if (supabase) {
+    try {
+      let query = supabase.from('tasks').select('*').neq('status', 'deleted').order('due_date', { ascending: true, nullsFirst: false });
+      if (filter === 'mine' && userId) {
+        query = query.eq('assigned_to', userId);
+      } else if (filter === 'unassigned') {
+        query = query.is('assigned_to', null);
+      }
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      return res.json({ tasks: (data || []).map(mapTaskRow) });
+    } catch(e) {
+      console.error('[Tasks] Supabase error, fallback RAM:', e.message);
+    }
   }
-  
+
+  // Fallback RAM
+  let tasks = Array.from(tasksPool.values());
+  if (filter === 'mine' && userId) tasks = tasks.filter(t => t.assignedTo === userId);
+  else if (filter === 'unassigned') tasks = tasks.filter(t => !t.assignedTo);
   tasks.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
   res.json({ tasks });
 });
 
-app.patch('/api/tasks/:id', (req, res) => {
-  const task = tasksPool.get(req.params.id);
+app.patch('/api/tasks/:id', async (req, res) => {
+  const { assignedTo, status, title, description, dueDate } = req.body;
+  const taskId = req.params.id;
+
+  if (supabase) {
+    try {
+      const updates = {};
+      if (assignedTo !== undefined) {
+        updates.assigned_to = assignedTo || null;
+        const assignedUser = assignedTo ? Object.values(USERS).find(u => u.id === assignedTo) : null;
+        updates.assigned_to_name = assignedUser?.name || null;
+        updates.pool = !assignedTo;
+      }
+      if (status !== undefined) updates.status = status;
+      if (title !== undefined) updates.title = title;
+      if (description !== undefined) updates.description = description;
+      if (dueDate !== undefined) updates.due_date = dueDate ? new Date(dueDate).toISOString() : null;
+      updates.updated_at = new Date().toISOString();
+
+      const { data, error } = await supabase.from('tasks').update(updates).eq('id', taskId).select().single();
+      if (error) throw new Error(error.message);
+      const task = mapTaskRow(data);
+      broadcast({ type: 'TASK_UPDATED', task });
+      return res.json({ success: true, task });
+    } catch(e) {
+      console.error('[Tasks] Patch Supabase error:', e.message);
+    }
+  }
+
+  // Fallback RAM
+  const task = tasksPool.get(taskId);
   if (!task) return res.status(404).json({ error: 'Task not found' });
-  
-  const { assignedTo, status } = req.body;
   if (assignedTo !== undefined) task.assignedTo = assignedTo;
   if (status !== undefined) task.status = status;
-  
-  tasksPool.set(req.params.id, task);
+  tasksPool.set(taskId, task);
   broadcast({ type: 'TASK_UPDATED', task });
   res.json({ success: true, task });
+});
+
+app.delete('/api/tasks/:id', async (req, res) => {
+  const taskId = req.params.id;
+  if (supabase) {
+    try {
+      await supabase.from('tasks').update({ status: 'deleted' }).eq('id', taskId);
+      broadcast({ type: 'TASK_DELETED', id: taskId });
+      return res.json({ success: true });
+    } catch(e) { console.error('[Tasks] Delete error:', e.message); }
+  }
+  tasksPool.delete(taskId);
+  broadcast({ type: 'TASK_DELETED', id: taskId });
+  res.json({ success: true });
 });
 
 // ─── KARTA PACJENTA (Patient Card) ──────────────────────────────────────────────

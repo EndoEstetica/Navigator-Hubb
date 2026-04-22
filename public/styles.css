@@ -644,6 +644,7 @@ body {
 .status-missed { background: #fee2e2; color: #ef4444; }
 .status-no-answer { background: #fef3c7; color: #d97706; }
 .status-connected { background: #dcfce7; color: #10b981; }
+.status-ineffective { background: #fef3c7; color: #d97706; }
 
 /* ============================================================
    DIALER & CHAT WIDGETS
@@ -1906,6 +1907,129 @@ body {
   background: #fee2e2;
   color: #dc2626;
 }
+
+/* ==================== SOURCE FILTER BUTTONS ==================== */
+
+.source-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 0;
+}
+
+.source-filter-btn {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 20px;
+  background: #fff;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: 'Montserrat', sans-serif;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.source-filter-btn:hover {
+  border-color: #94a3b8;
+  color: #1e293b;
+  background: #f8fafc;
+}
+
+.source-filter-btn.active {
+  background: #0a192f;
+  color: #fff;
+  border-color: #0a192f;
+  box-shadow: 0 2px 8px rgba(10,25,47,0.2);
+}
+
+.source-tag-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.source-tag-dot.source-smart-day { background: #3b82f6; }
+.source-tag-dot.source-audyt { background: #8b5cf6; }
+.source-tag-dot.source-other { background: #64748b; }
+
+/* Lead source tags */
+.lead-source-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.lead-source-tag.source-smart-day { background: #dbeafe; color: #1d4ed8; }
+.lead-source-tag.source-audyt { background: #ede9fe; color: #6d28d9; }
+.lead-source-tag.source-other { background: #f1f5f9; color: #475569; }
+
+/* Lead card buttons */
+.new-lead-btn {
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: 'Montserrat', sans-serif;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  border: none;
+  background: linear-gradient(135deg, #0a192f 0%, #1e3a5f 100%);
+  color: #fff;
+}
+
+.new-lead-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(10,25,47,0.25);
+}
+
+.btn-call-back {
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: 'Montserrat', sans-serif;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  border: 1.5px solid #10b981;
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+.btn-call-back:hover {
+  background: #10b981;
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+/* Lead age indicators */
+.lead-age {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.lead-age.age-ok { background: #dcfce7; color: #166534; }
+.lead-age.age-warn { background: #fef3c7; color: #92400e; }
+.lead-age.age-critical { background: #fee2e2; color: #991b1b; }
 
 /* ==================== CALL FILTER BUTTONS ==================== */
 

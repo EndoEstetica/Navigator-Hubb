@@ -82,3 +82,32 @@ CREATE INDEX idx_chat_created_at ON chat_messages(created_at);
 
 ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all chat" ON chat_messages FOR ALL USING (true) WITH CHECK (true);
+
+-- ─── Tabela zadań (tasks) — trwałe przechowywanie zadań ─────────────────────
+-- Uruchom ten SQL w Supabase Dashboard → SQL Editor → New query → Run
+
+CREATE TABLE IF NOT EXISTS tasks (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT,
+  contact_id TEXT,
+  contact_name TEXT,
+  due_date TIMESTAMPTZ,
+  assigned_to TEXT,
+  assigned_to_name TEXT,
+  status TEXT DEFAULT 'open',    -- open | completed | deleted
+  pool BOOLEAN DEFAULT false,    -- true = w puli (nieprzypisane)
+  created_by TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  ghl_task_id TEXT               -- ID zadania w GoHighLevel
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_assigned_to ON tasks(assigned_to);
+CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
+CREATE INDEX IF NOT EXISTS idx_tasks_pool ON tasks(pool);
+CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
+
+ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all tasks" ON tasks FOR ALL USING (true) WITH CHECK (true);

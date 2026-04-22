@@ -175,29 +175,50 @@ async function loadDashboardData() {
   try {
     // Pobierz statystyki i ostatnie połączenia
     const statsResp = await fetch('/api/stats?days=1');
-    const statsData = await statsResp.json();
-    
-    updateKPIs(statsData);
-    renderStatsCharts(statsData);
-    
-    // Pobierz nowe zgłoszenia
-    loadNewLeads();
-    
-    // Pobierz zadania (nowy system)
-    loadTasks();
-  } catch(e) { console.error('Dashboard load error:', e); }
+    if (statsResp.ok) {
+      const statsData = await statsResp.json();
+      updateKPIs(statsData);
+    }
+  } catch(e) { console.error('Stats load error:', e); }
+
+  // Pobierz nowe zgłoszenia (aktualizuje kpi-new)
+  loadNewLeads();
+
+  // Pobierz zadania na dziś
+  loadTodayTasks();
+
+  // Pobierz połączenia (aktualizuje kpi-calls i kpi-missed)
+  try {
+    const callsResp = await fetch('/api/calls?days=1');
+    if (callsResp.ok) {
+      const callsData = await callsResp.json();
+      allCalls = callsData.calls || [];
+      updateCallsKPI(allCalls);
+      updateDashboardLists(allCalls);
+    }
+  } catch(e) { console.error('Calls load error:', e); }
+}
+
+function updateCallsKPI(calls) {
+  // Aktualizuj KPI na podstawie tablicy połączeń
+  const total = calls.length;
+  const missed = calls.filter(c => c.tag === 'missed').length;
+  const ineffective = calls.filter(c => c.tag === 'ineffective').length;
+  const toCall = missed + ineffective;
+  const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  setEl('kpi-calls', total);
+  setEl('kpi-missed', missed);
+  setEl('kpi-to-call', toCall);
 }
 
 function updateKPIs(data) {
   const stats = data.stats || {};
-  if (document.getElementById('kpi-calls')) document.getElementById('kpi-calls').textContent = stats.totalCalls || 0;
-  if (document.getElementById('kpi-new')) document.getElementById('kpi-new').textContent = stats.newLeads || 0;
-  if (document.getElementById('kpi-missed')) document.getElementById('kpi-missed').textContent = stats.missed || 0;
-  
+  const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  // kpi-calls i kpi-missed są aktualizowane przez updateCallsKPI (z /api/calls)
+  // kpi-new jest aktualizowane przez loadNewLeads()
+  // Tutaj aktualizujemy tylko to co pochodzi z /api/stats
   const toCallCount = (stats.missed || 0) + (data.callsByStatus?.ineffective || 0);
-  if (document.getElementById('kpi-to-call')) document.getElementById('kpi-to-call').textContent = toCallCount;
-  
-  updateDashboardLists(data.recentCalls || []);
+  setEl('kpi-to-call', toCallCount);
 }
 
 function updateDashboardLists(calls) {
@@ -637,8 +658,11 @@ function updateMissedKPI() {
     return d.toDateString() === now.toDateString();
   });
   const missed = today.filter(c => c.tag === 'missed').length;
-  const kpiEl = document.getElementById('kpi-missed');
-  if (kpiEl) kpiEl.textContent = missed;
+  const ineffective = today.filter(c => c.tag === 'ineffective').length;
+  const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  setEl('kpi-calls', today.length);
+  setEl('kpi-missed', missed);
+  setEl('kpi-to-call', missed + ineffective);
 }
 
 // ==================== VIEW SWITCHING ====================
@@ -1388,6 +1412,27 @@ async function handleRegularPatientReport(contactId, data) {
 // ==================== TASKS (F1/F2) ====================
 let completedTaskIds = new Set(JSON.parse(localStorage.getItem('completedTaskIds') || '[]'));
 
+async function loadTodayTasks() {
+  const listEl = document.getElementById('tasksTodayList');
+  if (!listEl) return;
+  try {
+    const userId = currentUser?.id;
+    const r = await fetch(`/api/tasks?userId=${userId}&filter=mine`);
+    const data = await r.json();
+    const today = new Date().toDateString();
+    const todayTasks = (data.tasks || []).filter(t => {
+      if (!t.dueDate) return false;
+      return new Date(t.dueDate).toDateString() === today;
+    });
+    renderTodayTasks(listEl, todayTasks);
+    const badge = document.getElementById('badge-tasks-nav');
+    if (badge) badge.textContent = todayTasks.length || '';
+  } catch(e) {
+    console.error('loadTodayTasks error:', e);
+    listEl.innerHTML = '<div class="empty-state">Brak zadań na dziś</div>';
+  }
+}
+
 async function loadTasks() {
   const myTasksEl = document.getElementById('tasksMyList');
   const allTasksEl = document.getElementById('tasksAllList');
@@ -1448,17 +1493,7 @@ async function claimTask(taskId) {
   } catch(e) { showToast('Błąd przypisywania zadania', 'error'); }
 }
 
-async function completeTask(taskId) {
-  try {
-    await fetch(`/api/tasks/${taskId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'completed' })
-    });
-    showToast('Zadanie wykonane', 'success');
-    loadTasks();
-  } catch(e) { showToast('Błąd aktualizacji zadania', 'error'); }
-}
+// completeTask jest zdefiniowana niżej (wersja z animacją i Supabase)
 
 function renderTodayTasks(listEl, tasks) {
   const active = tasks.filter(t => !completedTaskIds.has(t.id));
@@ -1530,9 +1565,9 @@ async function completeTask(taskId, btn) {
   const navBadge = document.getElementById('badge-tasks-nav');
   if (navBadge) navBadge.textContent = todayTasks.length || '';
 
-  // Zapisz w GHL
+  // Zapisz w Supabase (i opcjonalnie GHL)
   try {
-    await fetch(`/api/contact/task/${taskId}`, {
+    await fetch(`/api/tasks/${taskId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: 'completed' })
