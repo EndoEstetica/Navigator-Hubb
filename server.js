@@ -2132,18 +2132,54 @@ app.get('/api/reports/stats', async (req, res) => {
 // Pobierz historię połączeń z Supabase (z raportami i nagraniami)
 app.get('/api/calls/history', async (req, res) => {
   const days = parseInt(req.query.days) || 30;
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const { userId, role, dateFrom, dateTo, search, station, agentId } = req.query;
+
+  // Zakres dat
+  let since;
+  if (dateFrom) {
+    since = new Date(dateFrom).toISOString();
+  } else {
+    since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  }
+  const until = dateTo ? new Date(dateTo + 'T23:59:59').toISOString() : null;
 
   if (supabase) {
     try {
-      const { data, error } = await supabase.from('calls')
+      let query = supabase.from('calls')
         .select('*')
         .gte('created_at', since)
         .order('created_at', { ascending: false })
-        .limit(300); // Pobierz nieco więcej, aby po odfiltrowaniu '0' zostało wystarczająco
+        .limit(500);
+
+      if (until) query = query.lte('created_at', until);
+      if (search && search.trim()) query = query.ilike('patient_name', `%${search.trim()}%`);
+
+      const { data, error } = await query;
+      // Filtrowanie po ext po stronie serwera
+      let filteredRows = data || [];
+      if (role !== 'admin' && userId && USERS[userId]?.ext) {
+        const ext = USERS[userId].ext;
+        filteredRows = filteredRows.filter(row => {
+          const from = String(row.caller_phone || '');
+          const to   = String(row.called_phone || '');
+          return from === ext || to === ext || from.endsWith(ext) || to.endsWith(ext) || row.user_id === userId;
+        });
+      }
+      if (role === 'admin' && station && station !== 'all') {
+        const extMap = { reception: '103', agata_o: '101', aneta_o: '102' };
+        const ext = extMap[station];
+        if (ext) filteredRows = filteredRows.filter(row => {
+          const from = String(row.caller_phone || '');
+          const to   = String(row.called_phone || '');
+          return from === ext || to === ext || from.endsWith(ext) || to.endsWith(ext);
+        });
+      }
+      if (role === 'admin' && agentId && agentId !== 'all') {
+        filteredRows = filteredRows.filter(row => row.user_id === agentId);
+      }
       if (error) throw new Error(error.message);
       
-      const filteredData = (data || []).filter(row => {
+      const filteredData = filteredRows.filter(row => {
         // Usuń techniczne wpisy "0" lub puste numery, o ile nie mają przypisanego pacjenta
         const isTechnicalZero = (row.caller_phone === '0' || !row.caller_phone) && 
                                 (row.called_phone === '0' || !row.called_phone) && 

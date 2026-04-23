@@ -865,7 +865,15 @@ function switchView(view) {
   currentView = view;
 
   if (view === 'contacts') loadContacts();
-  if (view === 'calls') loadCalls();
+  if (view === 'calls') {
+    loadCalls();
+    // Pokaż/ukryj filtry admina
+    const isAdm = currentUser?.role === 'admin';
+    const stEl = document.getElementById('admin-filter-station');
+    const agEl = document.getElementById('admin-filter-agent');
+    if (stEl) stEl.style.display = isAdm ? 'flex' : 'none';
+    if (agEl) agEl.style.display = isAdm ? 'flex' : 'none';
+  }
   if (view === 'stats') loadAndRenderStats();
   if (view === 'tasks') loadTasks();
 }
@@ -3816,7 +3824,21 @@ async function loadCalls() {
   feedEl.innerHTML = '<div class="loading-state"><div class="spinner"></div><p>Ładowanie połączeń...</p></div>';
 
   try {
-    const response = await fetch('/api/calls/history?days=30');
+    const uid = currentUser?.id || '';
+    const rol = currentUser?.role || 'reception';
+    const dateFrom = document.getElementById('filter-date-from')?.value || '';
+    const dateTo   = document.getElementById('filter-date-to')?.value || '';
+    const search   = document.getElementById('filter-search-name')?.value || '';
+    const rangeVal = document.getElementById('filter-range')?.value || '30';
+    const station  = document.getElementById('filter-station')?.value || 'all';
+    const agentId  = document.getElementById('filter-agent')?.value || 'all';
+    const params = new URLSearchParams({ days: rangeVal, userId: uid, role: rol });
+    if (dateFrom) params.set('dateFrom', dateFrom);
+    if (dateTo)   params.set('dateTo', dateTo);
+    if (search)   params.set('search', search);
+    if (station !== 'all') params.set('station', station);
+    if (agentId !== 'all') params.set('agentId', agentId);
+    const response = await fetch(`/api/calls/history?${params}`);
     const data = await response.json();
     allCalls = data.calls || [];
     renderCallsTable(allCalls);
