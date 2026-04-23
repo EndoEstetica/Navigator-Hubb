@@ -1051,14 +1051,22 @@ function getLeadAgeLabel(createdAt) {
   const ageMin = Math.floor(ageMs / 60000);
   const ageH = Math.floor(ageMin / 60);
   const ageM = ageMin % 60;
-
-  let cls = 'age-ok';
-  let label = ageMin < 60 ? `${ageMin} min` : `${ageH}h ${ageM}m`;
-
-  if (ageMin >= 15 && ageMin < 120) cls = 'age-warn';
-  if (ageMin >= 120) { cls = 'age-critical'; }
-
-  return `<span class="lead-age ${cls}">${label}</span>`;
+  const exactTime = ageMin < 60 ? `${ageMin} min` : `${ageH}h ${ageM}m`;
+  let cls, icon, label;
+  if (ageMin < 15) {
+    cls = 'age-ok';
+    icon = '\uD83D\uDFE2'; // 🟢 zielone koło
+    label = 'Świeże';
+  } else if (ageMin < 120) {
+    cls = 'age-warn';
+    icon = '\uD83D\uDFE1'; // 🟡 żółte koło
+    label = 'Oczekuje';
+  } else {
+    cls = 'age-critical';
+    icon = '\uD83D\uDD34'; // 🔴 czerwone koło
+    label = 'Pilne';
+  }
+  return `<span class="lead-age ${cls}" title="Czas oczekiwania: ${exactTime}">${icon} ${label}</span>`;
 }
 
 function createLeadCard(lead) {
