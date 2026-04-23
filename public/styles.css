@@ -3726,3 +3726,33 @@ button {
   color: #10b981;
   font-weight: 600;
 }
+
+/* ── Minimalizacja popupu połączenia ─────────────────────────── */
+#callPopup.minimized .popup-overlay { display: none; }
+#callPopup.minimized .popup-content {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 380px;
+  max-height: 56px;
+  overflow: hidden;
+  border-radius: 12px 12px 0 0;
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.18);
+  cursor: pointer;
+  transition: max-height 0.3s ease;
+  z-index: 9999;
+}
+#callPopup.minimized .popup-content::before {
+  content: 'Polaczenie aktywne - kliknij aby rozwinac';
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 56px;
+  font-weight: 600;
+  font-size: 14px;
+  color: #1a56db;
+  background: #e8f0fe;
+  border-top: 3px solid #1a56db;
+  padding: 0 20px;
+}

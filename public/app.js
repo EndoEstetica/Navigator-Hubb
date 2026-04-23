@@ -764,26 +764,37 @@ function handleCallRinging(data) {
 
   if (currentView === 'calls') renderCallsTable(allCalls);
 
-  // Otwórz popup dla połączeń przychodzących
-  if (data.direction === 'inbound') {
-    openCallPopup({
-      id: data.contactId || 'unknown',
-      name: data.contactName || data.from || 'Nieznany',
-      phone: data.from,
-      callId: data.callId,
-      direction: 'inbound'
-    });
-  } else {
-    // Wychodzące — otwórz popup bez dzwonienia
-    openCallPopup({
-      id: data.contactId || 'unknown',
-      name: data.contactName || data.to || 'Nieznany',
-      phone: data.to,
-      callId: data.callId,
-      direction: 'outbound'
-    });
+  // Otwórz popup tylko dla właściwego agenta (po userId)
+  // Admin widzi wszystkie połączenia, ale popup tylko dla swojego ext
+  const myUserId = currentUser?.id;
+  const myRole = currentUser?.role;
+  // Sprawdź czy to połączenie należy do tego użytkownika
+  // data.userId jest ustawiane przez serwer na podstawie activeExtMap
+  const isMyCall = !data.userId || // stare połączenia bez userId → pokaż wszystkim recepcji
+    data.userId === myUserId ||     // moje połączenie
+    myRole === 'admin';             // admin widzi wszystko
+
+  if (isMyCall) {
+    if (data.direction === 'inbound') {
+      openCallPopup({
+        id: data.contactId || 'unknown',
+        name: data.contactName || data.from || 'Nieznany',
+        phone: data.from,
+        callId: data.callId,
+        direction: 'inbound'
+      });
+    } else {
+      // Wychodzące — otwórz popup bez dzwonienia
+      openCallPopup({
+        id: data.contactId || 'unknown',
+        name: data.contactName || data.to || 'Nieznany',
+        phone: data.to,
+        callId: data.callId,
+        direction: 'outbound'
+      });
+    }
+    activeCallId = data.callId;
   }
-  activeCallId = data.callId;
 }
 
 function handleCallAnswered(data) {
@@ -1685,24 +1696,48 @@ function calculateDelayInDays(targetDateStr) {
 }
 
 function closeCallPopup(force = false) {
-  // Ostrzeżenie jeśli raport nieuzupełniony (punkt 6)
+  // Sprawdź czy połączenie jest aktywne (dzwoni lub trwa)
+  const callInStore = activeCallId ? allCalls.find(c => c.callId === activeCallId) : null;
+  const isCallActive = callInStore && (callInStore.status === 'ringing' || callInStore.status === 'active');
+
+  // Jeśli połączenie aktywne i nie wymuszamy zamknięcia → minimalizuj zamiast zamykać
+  if (!force && isCallActive) {
+    minimizeCallPopup();
+    return;
+  }
+
+  // Ostrzeżenie jeśli raport nieuzupełniony (punkt 6) — tylko dla zakończonych połączeń
   if (!force && activeCallId && !selectedStatus) {
-    const callInStore = allCalls.find(c => c.callId === activeCallId);
-    // Tylko dla zakończonych połączeń, które trwały (nie missed/ineffective)
-    if (callInStore?.tag === 'connected' || callInStore?.status === 'active') {
+    if (callInStore?.tag === 'connected') {
       if (!confirm('⚠️ Raport nieuzupełniony — czy na pewno chcesz wyjść?\n\nMożesz wrócić do raportu z widoku Połączenia.')) {
         return;
       }
-      // Dodaj do listy niedokończonych raportów
       addPendingReport(activeCallId, callInStore?.contactName || callInStore?.from);
     }
   }
   document.getElementById('callPopup').classList.add('hidden');
+  const popup = document.getElementById('callPopup');
+  if (popup) popup.classList.remove('minimized');
   stopCallTimer();
   currentContact = null;
   selectedStatus = null;
   selectedOutcome = null;
   activeCallId = null;
+}
+
+// Minimalizuj popup połączenia (widoczny jako pasek na dole)
+function minimizeCallPopup() {
+  const popup = document.getElementById('callPopup');
+  if (!popup) return;
+  popup.classList.add('minimized');
+  showToast('Połączenie aktywne — kliknij pasek aby wrócić', 'info');
+}
+
+// Przywróć popup z minimalizacji
+function restoreCallPopup() {
+  const popup = document.getElementById('callPopup');
+  if (!popup) return;
+  popup.classList.remove('minimized');
 }
 
 // Lista niedokończonych raportów (punkt 6 — przypomnienia)

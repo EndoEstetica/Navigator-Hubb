@@ -512,7 +512,7 @@
   <!-- ==================== POP-UP: AKTYWNE POŁĄCZENIE ==================== -->
   <div id="callPopup" class="call-popup hidden">
     <div class="popup-overlay" onclick="closeCallPopup()"></div>
-    <div class="popup-content">
+    <div class="popup-content" onclick="if(document.getElementById('callPopup').classList.contains('minimized')) restoreCallPopup();">
       <div class="popup-header">
         <div class="call-status-indicator" id="popupCallStatus">
           <span class="pulse-dot"></span>
