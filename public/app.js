@@ -1198,11 +1198,12 @@ function renderCallsTable(calls) {
         <tr>
           <th>Pacjent / Numer</th>
           <th>Status pacjenta</th>
-          <th>Program</th>
           <th>Kierunek</th>
           <th>Połączenie</th>
           <th>Wynik rozmowy</th>
-          <th>Czas</th>
+          <th>Data</th>
+          <th>Godzina</th>
+          <th>Czas trwania</th>
           ${isAdmin ? '<th>Agent</th>' : ''}
           <th>Rozmowa</th>
           <th>Nagranie</th>
@@ -1218,7 +1219,7 @@ function renderCallsTable(calls) {
 
 function renderCallRow(c, isAdmin = false) {
   const ts = c.timestamp ? new Date(c.timestamp) : null;
-  const date = ts ? ts.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit' }) : '';
+  const date = ts ? ts.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
   const time = ts ? ts.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }) : '';
   const dur = c.duration ? formatDuration(c.duration) : '—';
   const dirIcon = c.direction === 'outbound' ? '📤' : '📞';
@@ -1305,17 +1306,12 @@ function renderCallRow(c, isAdmin = false) {
         </div>
       </td>
       <td>${contactTypeHtml}</td>
-      <td>${programHtml}</td>
       <td><span style="font-size:13px;">${dirIcon}</span> <span style="font-size:12px;color:#64748b;">${dirLabel}</span></td>
       <td>${tagHtml}</td>
       <td>${reportStatusHtml}</td>
-      <td>
-        <div style="font-size:13px;font-weight:600;color:#1e293b;">${time}</div>
-        <div style="font-size:11px;color:#94a3b8;">${date}</div>
-      </td>
-      <td>
-        <div style="font-size:13px;font-weight:600;color:#1e293b;">${dur}</div>
-      </td>
+      <td><div style="font-size:13px;font-weight:600;color:#1e293b;">${date}</div></td>
+      <td><div style="font-size:13px;font-weight:600;color:#1e293b;">${time}</div></td>
+      <td><div style="font-size:13px;font-weight:600;color:#1e293b;">${dur}</div></td>
       ${isAdmin ? `<td onclick="event.stopPropagation()">${agentTagHtml}</td>` : ''}
       <td onclick="event.stopPropagation()">${recHtml}</td>
       <td onclick="event.stopPropagation()">
