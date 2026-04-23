@@ -635,10 +635,10 @@ function setUserRole(role) {
   document.querySelectorAll('.reception-only').forEach(el => {
     el.style.display = (role === 'reception' || role === 'opiekun') ? '' : 'none';
   });
-  // Admin: ukryj widok połączeń w sidebarze (punkt 9)
+  // Admin: pokaż widok połączeń (z filtrami stanowisko/osoba)
   const callsMenuItem = document.querySelector('[data-view="calls"]');
   if (callsMenuItem) {
-    callsMenuItem.style.display = role === 'admin' ? 'none' : '';
+    callsMenuItem.style.display = ''; // Widoczne dla wszystkich ról
   }
   // Etykiety przycisków edycji
   document.querySelectorAll('.edit-request-btn').forEach(btn => {
