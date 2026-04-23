@@ -207,62 +207,6 @@
           <button class="call-filter-btn" data-filter="missed" onclick="filterCalls('missed')">🔴 Nieodebrane</button>
           <button class="call-filter-btn" data-filter="connected" onclick="filterCalls('connected')">🟢 Połączone</button>
         </div>
-
-        <!-- Pasek zaawansowanych filtrów -->
-        <div id="calls-advanced-filters" style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;padding:10px 0 6px 0;border-bottom:1px solid #e2e8f0;margin-bottom:8px;">
-          <!-- Zakres czasowy -->
-          <div style="display:flex;flex-direction:column;gap:3px;">
-            <label style="font-size:11px;font-weight:600;color:#64748b;">Zakres</label>
-            <select id="filter-range" onchange="loadCalls()" style="font-size:12px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;">
-              <option value="7">Ostatni tydzień</option>
-              <option value="30" selected>Ostatni miesiąc</option>
-              <option value="90">Ostatnie 3 miesiące</option>
-              <option value="365">Ostatni rok</option>
-            </select>
-          </div>
-          <!-- Data od -->
-          <div style="display:flex;flex-direction:column;gap:3px;">
-            <label style="font-size:11px;font-weight:600;color:#64748b;">Data od</label>
-            <input type="date" id="filter-date-from" onchange="loadCalls()" style="font-size:12px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;">
-          </div>
-          <!-- Data do -->
-          <div style="display:flex;flex-direction:column;gap:3px;">
-            <label style="font-size:11px;font-weight:600;color:#64748b;">Data do</label>
-            <input type="date" id="filter-date-to" onchange="loadCalls()" style="font-size:12px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;">
-          </div>
-          <!-- Szukaj po nazwisku -->
-          <div style="display:flex;flex-direction:column;gap:3px;">
-            <label style="font-size:11px;font-weight:600;color:#64748b;">Szukaj pacjenta</label>
-            <input type="text" id="filter-search-name" placeholder="Imię lub nazwisko..." oninput="clearTimeout(window._searchTimer); window._searchTimer=setTimeout(loadCalls,400)" style="font-size:12px;padding:5px 10px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;min-width:180px;">
-          </div>
-          <!-- Stanowisko (tylko admin — pokazywane przez JS) -->
-          <div id="admin-filter-station" style="display:none;flex-direction:column;gap:3px;">
-            <label style="font-size:11px;font-weight:600;color:#64748b;">Stanowisko</label>
-            <select id="filter-station" onchange="loadCalls()" style="font-size:12px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;">
-              <option value="all">Wszystkie</option>
-              <option value="reception">📞 Recepcja (103)</option>
-              <option value="agata_o">👤 Agata Opiekun (101)</option>
-              <option value="aneta_o">👤 Aneta Opiekun (102)</option>
-            </select>
-          </div>
-          <!-- Osoba (tylko admin) -->
-          <div id="admin-filter-agent" style="display:none;flex-direction:column;gap:3px;">
-            <label style="font-size:11px;font-weight:600;color:#64748b;">Osoba</label>
-            <select id="filter-agent" onchange="loadCalls()" style="font-size:12px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;">
-              <option value="all">Wszyscy</option>
-              <option value="kasia">Kasia</option>
-              <option value="agnieszka">Agnieszka</option>
-              <option value="asia">Asia</option>
-              <option value="agata_r">Agata (Rec.)</option>
-              <option value="zastepstwo">Zastępstwo</option>
-              <option value="agata_o">Agata Opiekun</option>
-              <option value="aneta_o">Aneta Opiekun</option>
-            </select>
-          </div>
-          <!-- Reset -->
-          <button onclick="document.getElementById('filter-date-from').value='';document.getElementById('filter-date-to').value='';document.getElementById('filter-search-name').value='';document.getElementById('filter-range').value='30';loadCalls();" style="font-size:12px;padding:5px 12px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;cursor:pointer;align-self:flex-end;">✕ Wyczyść</button>
-        </div>
-
         <div id="callsFeed" class="calls-feed">
           <div class="empty-state">Oczekiwanie na połączenia...</div>
         </div>

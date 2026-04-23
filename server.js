@@ -172,6 +172,10 @@ async function loadCallsFromSupabase() {
 
 // ─── Kolejka retry nagrań (D2) ────────────────────────────────────────────────
 const recordingRetryQueue = new Map(); // callId → { attempts, pbxCallId, contactName }
+
+// Mapa aktywnych użytkowników: ext → userId (aktualizowana przy logowaniu/heartbeat)
+// Jedna osoba na jedno stanowisko jednocześnie
+const activeExtMap = new Map(); // '103' → 'kasia', '101' → 'agata_o', '102' → 'aneta_o'
 // Strategia retry: 5s, 30s, 1m, 2m, 5m, 10m, 20m, 30m, 60m
 const RETRY_DELAYS = [5000, 30000, 60000, 120000, 300000, 600000, 1200000, 1800000, 3600000];
 
@@ -834,18 +838,26 @@ app.post('/webhook/zadarma', async (req, res) => {
       recordingUrl: null,
       tag: null
     };
+    // Przypisz userId z mapy aktywnych użytkowników
+    const inboundExt = called || caller;
+    const assignedUserId = activeExtMap.get(inboundExt) || activeExtMap.get(caller) || null;
+    if (assignedUserId) { callObj.userId = assignedUserId; console.log(`[ActiveExt] Inbound ${callId}: ext ${inboundExt} → ${assignedUserId}`); }
     storeCall(callObj);
     broadcast({ type: 'CALL_RINGING', ...callObj });
   }
 
   else if (event === 'NOTIFY_OUT_START' || event === 'OUTGOING') {
     // Połączenie wychodzące — jeśli już istnieje z click-to-call, tylko aktualizuj pbxCallId
+    // Przypisz userId z mapy aktywnych użytkowników (wychodzące)
+    const outboundExt = caller || called;
+    const outUserId = activeExtMap.get(outboundExt) || null;
+    if (outUserId) console.log(`[ActiveExt] Outbound ${callId}: ext ${outboundExt} → ${outUserId}`);
     const existing = callsStore.find(c => c.callId === callId);
     if (existing) {
-      storeCall({ callId, pbxCallId, status: 'ringing' });
+      storeCall({ callId, pbxCallId, status: 'ringing', userId: outUserId || existing.userId });
     } else {
       storeCall({
-        callId, pbxCallId, direction: 'outbound', status: 'ringing',
+        callId, pbxCallId, direction: 'outbound', status: 'ringing', userId: outUserId,
         from: caller || called, to: called || caller,
         timestamp: new Date().toISOString(), recordingUrl: null, tag: null
       });
@@ -1683,6 +1695,12 @@ app.get('/api/user/:id', async (req, res) => {
       }, { onConflict: 'user_id' });
     } catch(e) { console.error('[Activity] Error:', e.message); }
   }
+
+  // Zaktualizuj mapę aktywnych użytkowników (ext → userId)
+  if (user.ext) {
+    activeExtMap.set(user.ext, user.id);
+    console.log(`[ActiveExt] Login: ext ${user.ext} → ${user.id}`);
+  }
   
   res.json(user);
 });
@@ -2157,23 +2175,60 @@ app.get('/api/calls/history', async (req, res) => {
       const { data, error } = await query;
       // Filtrowanie po ext po stronie serwera
       let filteredRows = data || [];
-      if (role !== 'admin' && userId && USERS[userId]?.ext) {
-        const ext = USERS[userId].ext;
-        filteredRows = filteredRows.filter(row => {
-          const from = String(row.caller_phone || '');
-          const to   = String(row.called_phone || '');
-          return from === ext || to === ext || from.endsWith(ext) || to.endsWith(ext) || row.user_id === userId;
-        });
+
+      // Zbierz user_id dla każdego stanowiska (recepcja/opiekunowie)
+      const receptionIds = Object.values(USERS).filter(u => u.role === 'reception').map(u => u.id);
+      const agataOIds    = ['agata_o'];
+      const anetaOIds    = ['aneta_o'];
+
+      if (role !== 'admin' && userId) {
+        const userObj = USERS[userId];
+        if (userObj?.role === 'reception') {
+          // Recepcja: pokaż połączenia z user_id recepcji LUB stare rekordy bez user_id z numeru 103
+          filteredRows = filteredRows.filter(row => {
+            if (row.user_id && receptionIds.includes(row.user_id)) return true;
+            // Stare rekordy: brak user_id ale numer wewnętrzny 103 w from/to
+            if (!row.user_id) {
+              const from = String(row.caller_phone || '');
+              const to   = String(row.called_phone || '');
+              return from === '103' || to === '103' || from.endsWith('103') || to.endsWith('103');
+            }
+            return false;
+          });
+        } else if (userObj?.role === 'opiekun') {
+          const ext = userObj.ext;
+          filteredRows = filteredRows.filter(row => {
+            if (row.user_id === userId) return true;
+            if (!row.user_id) {
+              const from = String(row.caller_phone || '');
+              const to   = String(row.called_phone || '');
+              return from === ext || to === ext;
+            }
+            return false;
+          });
+        }
       }
+
+      // Admin: filtr po stanowisku (po user_id, nie po numerze telefonu)
       if (role === 'admin' && station && station !== 'all') {
-        const extMap = { reception: '103', agata_o: '101', aneta_o: '102' };
-        const ext = extMap[station];
-        if (ext) filteredRows = filteredRows.filter(row => {
-          const from = String(row.caller_phone || '');
-          const to   = String(row.called_phone || '');
-          return from === ext || to === ext || from.endsWith(ext) || to.endsWith(ext);
-        });
+        let stationIds;
+        if (station === 'reception') stationIds = receptionIds;
+        else if (station === 'agata_o') stationIds = agataOIds;
+        else if (station === 'aneta_o') stationIds = anetaOIds;
+        if (stationIds) {
+          filteredRows = filteredRows.filter(row => {
+            if (row.user_id && stationIds.includes(row.user_id)) return true;
+            // Stare rekordy bez user_id — dla recepcji sprawdź ext 103
+            if (!row.user_id && station === 'reception') {
+              const from = String(row.caller_phone || '');
+              const to   = String(row.called_phone || '');
+              return from === '103' || to === '103' || from.endsWith('103') || to.endsWith('103');
+            }
+            return false;
+          });
+        }
       }
+      // Admin: filtr po konkretnej osobie
       if (role === 'admin' && agentId && agentId !== 'all') {
         filteredRows = filteredRows.filter(row => row.user_id === agentId);
       }
@@ -2355,6 +2410,10 @@ app.post('/api/users/:id/heartbeat', async (req, res) => {
         updated_at: new Date().toISOString()
       }, { onConflict: 'user_id' });
     } catch(e) { /* ignoruj */ }
+  }
+  // Odśwież mapę aktywnych użytkowników
+  if (user.ext) {
+    activeExtMap.set(user.ext, user.id);
   }
   res.json({ success: true });
 });
