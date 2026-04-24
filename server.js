@@ -269,6 +269,18 @@ const recordingRetryQueue = new Map(); // callId → { attempts, pbxCallId, cont
 // Mapa aktywnych użytkowników: ext → userId (aktualizowana przy logowaniu/heartbeat)
 // Jedna osoba na jedno stanowisko jednocześnie
 const activeExtMap = new Map(); // '103' → 'kasia', '101' → 'agata_o', '102' → 'aneta_o'
+
+// Pre-populacja przy starcie serwera — numery DEDYKOWANE (unikalne ext, nie współdzielone)
+// Dzięki temu połączenia opiekunów są przypisywane poprawnie nawet po restarcie Render,
+// bez potrzeby logowania do aplikacji.
+// Ext 103 (recepcja) celowo pomijamy — współdzielony, ustawiany dynamicznie przy logowaniu.
+const SHARED_EXTENSIONS = new Set(['103']);
+Object.values(USERS).forEach(u => {
+  if (u.ext && !SHARED_EXTENSIONS.has(u.ext)) {
+    activeExtMap.set(u.ext, u.id);
+    console.log(`[ActiveExt] Startup: ext ${u.ext} → ${u.id} (${u.name})`);
+  }
+});
 // Strategia retry: 5s, 30s, 1m, 2m, 5m, 10m, 20m, 30m, 60m
 const RETRY_DELAYS = [5000, 30000, 60000, 120000, 300000, 600000, 1200000, 1800000, 3600000];
 
@@ -2770,6 +2782,21 @@ app.post('/api/users/:id/heartbeat', async (req, res) => {
   // Odśwież mapę aktywnych użytkowników
   if (user.ext) {
     activeExtMap.set(user.ext, user.id);
+  }
+  res.json({ success: true });
+});
+
+// Wylogowanie użytkownika — czyści wpis w activeExtMap dla ext współdzielonych
+app.post('/api/users/:id/logout', (req, res) => {
+  const user = USERS[req.params.id];
+  if (!user) return res.status(404).json({ error: 'Nie znaleziono' });
+  // Usuń z mapy tylko jeśli to ext współdzielony (dedykowane pozostają aktywne)
+  if (user.ext && SHARED_EXTENSIONS.has(user.ext)) {
+    const currentHolder = activeExtMap.get(user.ext);
+    if (currentHolder === user.id) {
+      activeExtMap.delete(user.ext);
+      console.log(`[ActiveExt] Logout: ext ${user.ext} zwolniony przez ${user.id}`);
+    }
   }
   res.json({ success: true });
 });

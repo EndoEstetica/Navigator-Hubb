@@ -152,6 +152,10 @@ function loginAs(user) {
 }
 
 function logoutUser() {
+  // Poinformuj serwer o wylogowaniu (zwalnia ext współdzielone w activeExtMap)
+  if (currentUser?.id) {
+    fetch(`/api/users/${currentUser.id}/logout`, { method: 'POST' }).catch(() => {});
+  }
   currentUser = null;
   sessionStorage.removeItem('nav_user');
   sessionStorage.removeItem('nav_loginAt');
