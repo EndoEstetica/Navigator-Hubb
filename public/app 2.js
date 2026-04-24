@@ -1270,11 +1270,10 @@ function renderCallRow(c, isAdmin = false) {
   const noteHtml = c.notes
     ? `<div style="font-size:11px;color:#94a3b8;margin-top:2px;font-style:italic;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(c.notes)}">${escHtml(c.notes)}</div>` : '';
 
-  // Nagranie (D1) — używa proxy do pobierania świeżego linka z Zadarma
-  const proxyUrl = `/api/call/${encodeURIComponent(c.callId)}/recording/proxy`;
+  // Nagranie (D1)
   const recHtml = c.recordingUrl
-    ? `<audio controls src="${proxyUrl}" class="call-recording-player"></audio>
-       <a href="${proxyUrl}" target="_blank" class="btn-download-rec" title="Pobierz">↓</a>`
+    ? `<audio controls src="${c.recordingUrl}" class="call-recording-player"></audio>
+       <a href="${c.recordingUrl}" download class="btn-download-rec" title="Pobierz">↓</a>`
     : c.tag === 'connected'
       ? `<span data-rec-callid="${escHtml(c.callId)}" class="btn-rec-pending" title="Nagranie pojawi się po zakończeniu przetwarzania">⏳ Oczekuje...</span>`
       : `<button class="btn-fetch-rec" onclick="fetchRecording('${c.callId}', this)" title="Sprawdź nagranie">▶ Sprawdź</button>`;
@@ -1406,12 +1405,11 @@ async function fetchRecording(callId, btn) {
     if (data.url) {
       const idx = allCalls.findIndex(c => c.callId === callId);
       if (idx >= 0) allCalls[idx].recordingUrl = data.url;
-      const proxyUrl = `/api/call/${encodeURIComponent(callId)}/recording/proxy`;
       // Zaktualizuj tylko komórkę — bez przeładowania całej tabeli
       const cell = btn.closest('td');
       if (cell) {
-        cell.innerHTML = `<audio controls src="${proxyUrl}" class="call-recording-player"></audio>
-          <a href="${proxyUrl}" target="_blank" class="btn-download-rec" title="Pobierz">↓</a>`;
+        cell.innerHTML = `<audio controls src="${data.url}" class="call-recording-player"></audio>
+          <a href="${data.url}" download class="btn-download-rec" title="Pobierz">↓</a>`;
       }
       showToast('🎙️ Nagranie gotowe', 'success');
     } else {
@@ -1501,13 +1499,12 @@ async function openCallReport(callId) {
 function updatePopupRecording(url, callId) {
   const recContainer = document.getElementById('popupRecordingSection');
   if (!recContainer) return;
-  if (url && callId) {
-    const proxyUrl = `/api/call/${encodeURIComponent(callId)}/recording/proxy`;
+  if (url) {
     recContainer.innerHTML = `
       <div style="margin-top:8px;padding:10px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0;">
         <div style="font-size:12px;font-weight:600;color:#166534;margin-bottom:6px;">🎙️ Nagranie rozmowy</div>
-        <audio controls src="${proxyUrl}" style="width:100%;height:36px;"></audio>
-        <a href="${proxyUrl}" target="_blank" style="font-size:11px;color:#3b82f6;margin-top:4px;display:inline-block;">⬇ Pobierz</a>
+        <audio controls src="${url}" style="width:100%;height:36px;"></audio>
+        <a href="${url}" download style="font-size:11px;color:#3b82f6;margin-top:4px;display:inline-block;">⬇ Pobierz</a>
       </div>`;
     recContainer.style.display = '';
   } else if (callId) {
@@ -3556,9 +3553,8 @@ function startRecordingPoller(callId) {
         // Odśwież przycisk nagrania inline (bez przeładowania całej tabeli)
         const btn = document.querySelector(`[data-rec-callid="${CSS.escape(callId)}"]`);
         if (btn) {
-          const proxyUrl = `/api/call/${encodeURIComponent(callId)}/recording/proxy`;
-          btn.outerHTML = `<audio controls src="${proxyUrl}" class="call-recording-player"></audio>
-            <a href="${proxyUrl}" target="_blank" class="btn-download-rec" title="Pobierz">↓</a>`;
+          btn.outerHTML = `<audio controls src="${data.url}" class="call-recording-player"></audio>
+            <a href="${data.url}" download class="btn-download-rec" title="Pobierz">↓</a>`;
         }
         showToast('🎙️ Nagranie gotowe', 'success');
       }
@@ -3948,7 +3944,7 @@ function createCallRow(call) {
       <div style="font-size:12px; color:#64748b;">${new Date(call.timestamp).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })} • ${call.duration || 0}s</div>
     </div>
     <div style="background:${statusBg}; color:${statusColor}; padding:4px 12px; border-radius:6px; font-size:11px; font-weight:700;">${statusLabel}</div>
-    ${call.recordingUrl ? `<button class="btn-secondary" style="padding:6px 12px; font-size:11px;" onclick="playRecording('/api/call/${encodeURIComponent(call.callId)}/recording/proxy')">🎙️ Odtwórz</button>` : ''}
+    ${call.recordingUrl ? `<button class="btn-secondary" style="padding:6px 12px; font-size:11px;" onclick="playRecording('${call.recordingUrl}')">🎙️ Odtwórz</button>` : ''}
   `;
   return div;
 }

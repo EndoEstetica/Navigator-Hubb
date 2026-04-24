@@ -809,6 +809,40 @@ app.get('/api/call/:callId/recording', async (req, res) => {
   res.json({ url: null });
 });
 
+// Proxy nagrania — zawsze pobiera świeży link z Zadarma (linki tymczasowe wygasają)
+app.get('/api/call/:callId/recording/proxy', async (req, res) => {
+  const { callId } = req.params;
+  const call = callsStore.find(c => c.callId === callId);
+  
+  // Znajdź pbxCallId (potrzebny do Zadarma API)
+  let pbxCallId = call?.pbxCallId;
+  if (!pbxCallId && supabase) {
+    try {
+      const { data } = await supabase.from('calls')
+        .select('pbx_call_id')
+        .eq('call_id', callId)
+        .single();
+      pbxCallId = data?.pbx_call_id;
+    } catch(e) { /* kontynuuj */ }
+  }
+  
+  if (!pbxCallId) {
+    return res.status(404).json({ error: 'Brak pbx_call_id — nie można pobrać nagrania' });
+  }
+  
+  // Pobierz ŚWIEŻY link z Zadarma (stary mógł wygasnąć)
+  const freshUrl = await fetchRecordingFromZadarma(pbxCallId);
+  if (!freshUrl) {
+    return res.status(404).json({ error: 'Nagranie niedostępne w Zadarma — mogło zostać usunięte lub nie było nagrane' });
+  }
+  
+  // Zaktualizuj zapisany URL
+  storeCall({ callId, recordingUrl: freshUrl });
+  
+  // Przekieruj do świeżego linka (przeglądarka pobierze plik)
+  res.redirect(freshUrl);
+});
+
 // ─── Automatyczne przeniesienie stage przy nieodebranym połączeniu ─────────────
 async function autoMoveStageForMissedCall(phone) {
   if (!phone || !GHL_TOKEN) return;
@@ -1769,6 +1803,10 @@ app.get('/api/stats', async (req, res) => {
         }
       } catch(e) { console.warn('[Stats] Supabase error:', e.message); }
     }
+
+    // Oblicz firstCallsCount z połączeń (połączenia wychodzące zakończone sukcesem)
+    firstCallsCount = periodCalls.filter(c => c.direction === 'outbound' && c.tag === 'connected').length;
+
         res.json({
       totalContacts: contacts.length,
       totalOpportunities: opps.length,
@@ -1785,7 +1823,8 @@ app.get('/api/stats', async (req, res) => {
         newPatients: newPatientsCount,
         firstCalls: firstCallsCount,
         avgResponseTimeMins,
-        followUp: followUpStats
+        followUp: followUpStats,
+        metrics  // ← metryki czasu (leadToFirstCallAvg, firstCallToW0Avg, w0WaitAvg)
       },
       callsByStatus: {
         connected: periodCalls.filter(c => c.tag === 'connected').length,
