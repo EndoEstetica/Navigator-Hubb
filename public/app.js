@@ -1607,6 +1607,17 @@ function openCallPopup(contact) {
     if (zBox) zBox.classList.add('hidden');
     if (contact.id && contact.id !== 'unknown') fetchContactZglosza(contact.id);
   }
+  // Wyczyść i załaduj wzbogacone dane popupu (etap GHL, W0, ostatnia notatka)
+  const enrichSection = document.getElementById('popupEnrichSection');
+  if (enrichSection) { enrichSection.classList.add('hidden'); enrichSection.style.display = 'none'; }
+  ['popupStageRow','popupW0Row','popupLastNoteRow'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  });
+  if (contact.id && contact.id !== 'unknown') {
+    // Pobierz wzbogacone dane asynchronicznie (nie blokuje otwarcia popupu)
+    fetchPopupEnrichment(contact.id);
+  }
 
   // Ustawienie nazwy pacjenta w polu manualnym (jeśli mamy ją z obiektu połączenia)
   const manualNameInput = document.getElementById('manualPatientName');
@@ -1694,6 +1705,67 @@ async function fetchContactZglosza(contactId) {
       if (zBox) zBox.classList.remove('hidden');
     }
   } catch (err) { console.error('Fetch zglosza error:', err); }
+}
+
+async function fetchPopupEnrichment(contactId) {
+  try {
+    const response = await fetch(`/api/contact/${contactId}/popup`);
+    if (!response.ok) return;
+    const data = await response.json();
+    const enrichSection = document.getElementById('popupEnrichSection');
+    if (!enrichSection) return;
+    enrichSection.classList.remove('hidden');
+    enrichSection.style.display = 'flex';
+    // Etap GHL
+    if (data.stageName) {
+      const stageRow = document.getElementById('popupStageRow');
+      const stageName = document.getElementById('popupStageName');
+      if (stageRow) stageRow.classList.remove('hidden');
+      if (stageName) stageName.textContent = data.stageName;
+    }
+    // W0
+    if (data.w0_scheduled && data.w0_date) {
+      const w0Row = document.getElementById('popupW0Row');
+      const w0Info = document.getElementById('popupW0Info');
+      if (w0Row) w0Row.classList.remove('hidden');
+      if (w0Info) {
+        const w0DateStr = new Date(data.w0_date).toLocaleDateString('pl-PL', { day: '2-digit', month: 'short', year: 'numeric' });
+        w0Info.textContent = `${w0DateStr}${data.w0_doctor ? ` — dr ${data.w0_doctor}` : ''}`;
+      }
+      // Aktualizuj blokadę W0 w raporcie
+      if (currentContact) currentContact.w0_scheduled = true;
+      const w0Notice = document.getElementById('w0BlockNotice');
+      const newPatientTile = document.getElementById('tile-NOWY_PACJENT');
+      if (w0Notice && newPatientTile) {
+        w0Notice.classList.remove('hidden');
+        newPatientTile.style.opacity = '0.4';
+        newPatientTile.style.cursor = 'not-allowed';
+        newPatientTile.title = 'Ten pacjent ma już zaplanowane W0';
+      }
+    }
+    // Ostatnia notatka
+    if (data.lastNote?.text) {
+      const noteRow = document.getElementById('popupLastNoteRow');
+      const noteText = document.getElementById('popupLastNoteText');
+      if (noteRow) noteRow.classList.remove('hidden');
+      if (noteText) noteText.textContent = data.lastNote.text.slice(0, 120) + (data.lastNote.text.length > 120 ? '…' : '');
+    }
+    // Uzupełnij zglosza jeśli nie było
+    if (data.zglosza) {
+      const zEl = document.getElementById('popupZglosza');
+      if (zEl && (!zEl.textContent || zEl.textContent === '—')) zEl.textContent = data.zglosza;
+      const zBox = document.getElementById('popupZCzymSieZglasza');
+      if (zBox) zBox.classList.remove('hidden');
+    }
+    // Aktualizuj currentContact z danymi z popup
+    if (currentContact && data.opportunityId) {
+      currentContact.opportunityId = data.opportunityId;
+      if (!currentOpportunity) currentOpportunity = { id: data.opportunityId };
+    }
+    if (currentContact) {
+      currentContact.lead_created_at = currentContact.lead_created_at || data.lead_created_at;
+    }
+  } catch (err) { console.error('[Popup Enrichment] Error:', err); }
 }
 
 function answerCall() {
@@ -3695,24 +3767,51 @@ async function openPatientCard(contactId, contactName) {
       marketingEl.style.color = contact.marketingConsent ? '#10b981' : '#ef4444';
     }
     
-    // Wypełnij timeline GHL (zakładka 1)
-    const timeline = data.timeline || [];
+    // Wypełnij ujednolicony Timeline (zakładka 1)
+    const unifiedTimeline = data.unifiedTimeline || [];
+    const legacyTimeline = data.timeline || [];
     const callHistory = data.callHistory || [];
     const timelineEl = document.getElementById('patientCardTimeline');
     
-    if (timeline.length === 0) {
-      timelineEl.innerHTML = '<div style="padding: 12px; background: #f8fafc; border-radius: 8px; color: #64748b; text-align: center;">Brak aktywności GHL</div>';
+    const allEvents = unifiedTimeline.length > 0 ? unifiedTimeline : legacyTimeline.map(a => ({
+      id: a.id, type: a.type, source: 'ghl', description: a.description || a.type,
+      createdAt: a.createdAt, userId: a.userId, userName: a.userName
+    }));
+    
+    const EVENT_COLORS = {
+      visit_cancelled: '#ef4444', follow_up_created: '#f59e0b', first_call: '#3b82f6',
+      w0_scheduled: '#10b981', ghl_note: '#8b5cf6', task_assigned: '#f97316', other: '#94a3b8'
+    };
+    const EVENT_LABELS = {
+      visit_cancelled: 'Odwołanie wizyty', follow_up_created: 'Follow-up', first_call: 'Pierwszy kontakt',
+      w0_scheduled: 'W0 umówione', ghl_note: 'Notatka GHL', task_assigned: 'Zadanie', other: 'Zdarzenie'
+    };
+    
+    if (allEvents.length === 0) {
+      timelineEl.innerHTML = '<div style="padding: 12px; background: #f8fafc; border-radius: 8px; color: #64748b; text-align: center;">Brak zdarzeń w historii</div>';
     } else {
-      timelineEl.innerHTML = timeline.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(activity => `
-        <div style="padding: 12px; border-left: 3px solid #3b82f6; background: #f8fafc; border-radius: 6px; margin-bottom: 8px;">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div style="font-size: 12px; color: #64748b; font-weight: 600;">${new Date(activity.createdAt).toLocaleString('pl-PL')}</div>
-            <span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #dbeafe; color: #1e40af; font-weight: 700; text-transform: uppercase;">GHL</span>
-          </div>
-          <div style="font-size: 13px; color: #1e293b; margin-top: 4px;">${activity.description || activity.type || '—'}</div>
-          ${activity.userName ? `<div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">Przez: ${activity.userName}</div>` : ''}
-        </div>
-      `).join('');
+      timelineEl.innerHTML = allEvents.sort((a,b) => new Date(b.createdAt || b.created_at) - new Date(a.createdAt || a.created_at)).map(event => {
+        const eventType = event.type || event.event_type || 'other';
+        const color = EVENT_COLORS[eventType] || EVENT_COLORS.other;
+        const label = EVENT_LABELS[eventType] || eventType;
+        const source = event.source || 'app';
+        const sourceBadge = source === 'ghl'
+          ? '<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:#dbeafe;color:#1e40af;font-weight:700;">GHL</span>'
+          : '<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:#f0fdf4;color:#166534;font-weight:700;">APP</span>';
+        const desc = (event.description || '—').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        const uname = event.userName ? event.userName.replace(/</g,'&lt;') : '';
+        return '<div style="padding:12px;border-left:3px solid ' + color + ';background:#f8fafc;border-radius:6px;margin-bottom:8px;">'
+          + '<div style="display:flex;justify-content:space-between;align-items:center;">'
+          + '<div style="display:flex;align-items:center;gap:6px;">'
+          + '<span style="font-size:10px;padding:2px 8px;border-radius:12px;background:' + color + '20;color:' + color + ';font-weight:700;">' + label + '</span>'
+          + sourceBadge
+          + '</div>'
+          + '<div style="font-size:11px;color:#94a3b8;">' + new Date(event.createdAt || event.created_at).toLocaleString('pl-PL') + '</div>'
+          + '</div>'
+          + '<div style="font-size:13px;color:#1e293b;margin-top:6px;">' + desc + '</div>'
+          + (uname ? '<div style="font-size:11px;color:#94a3b8;margin-top:4px;">Przez: ' + uname + '</div>' : '')
+          + '</div>';
+      }).join('');
     }
     
     // Wypełnij historię połączeń z aplikacji (zakładka 2)

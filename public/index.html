@@ -578,6 +578,21 @@
             <span class="zglosza-label">Z czym się zgłasza:</span>
             <span class="zglosza-value" id="popupZglosza">—</span>
           </div>
+          <!-- Wzbogacenie popupu: etap GHL, W0, ostatnia notatka -->
+          <div id="popupEnrichSection" class="hidden" style="margin-top:8px; display:flex; flex-direction:column; gap:4px;">
+            <div id="popupStageRow" class="hidden" style="display:flex; align-items:center; gap:6px; font-size:12px;">
+              <span style="color:#64748b; font-weight:600;">Etap GHL:</span>
+              <span id="popupStageName" style="padding:2px 8px; border-radius:12px; background:#dbeafe; color:#1e40af; font-weight:700; font-size:11px;">—</span>
+            </div>
+            <div id="popupW0Row" class="hidden" style="display:flex; align-items:center; gap:6px; font-size:12px;">
+              <span style="color:#10b981; font-weight:600;">📅 W0:</span>
+              <span id="popupW0Info" style="color:#065f46; font-weight:600;">—</span>
+            </div>
+            <div id="popupLastNoteRow" class="hidden" style="font-size:12px; color:#64748b; font-style:italic; border-left:2px solid #e2e8f0; padding-left:8px; margin-top:2px;">
+              <span style="font-weight:600; color:#475569; font-style:normal;">Ostatnia notatka: </span>
+              <span id="popupLastNoteText">—</span>
+            </div>
+          </div>
         </div>
         <div class="popup-actions-top">
           <button class="btn-call-action" onclick="initiateCall(currentContact?.phone, currentContact?.name, currentContact?.id)" title="Zadzwoń">
@@ -958,7 +973,7 @@
         <!-- Zakładki: Aktywność GHL | Historia połączeń -->
         <div style="padding: 0 16px; border-bottom: 1px solid #e2e8f0;">
           <div style="display: flex; gap: 0;">
-            <button onclick="switchPatientCardTab('timeline')" id="tabPatientTimeline" class="patient-card-tab active">Aktywność GHL</button>
+            <button onclick="switchPatientCardTab('timeline')" id="tabPatientTimeline" class="patient-card-tab active">Timeline (App + GHL)</button>
             <button onclick="switchPatientCardTab('calls')" id="tabPatientCalls" class="patient-card-tab">Historia połączeń</button>
           </div>
         </div>

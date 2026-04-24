@@ -1326,88 +1326,6 @@ app.delete('/api/tasks/:id', async (req, res) => {
   res.json({ success: true });
 });
 
-// ─── POPUP DANYCH KONTAKTU (szybkie dane dla popupu połączenia) ─────────────────
-// Zwraca: etap GHL, status operacyjny, W0, ostatnią notatkę — bez pełnych activities
-app.get('/api/contact/:id/popup', async (req, res) => {
-  const contactId = req.params.id;
-  try {
-    // 1. Pobierz dane z GHL (kontakt + szansa sprzedaży)
-    const [contactResp, oppsResp] = await Promise.allSettled([
-      axios.get(`https://services.leadconnectorhq.com/contacts/${contactId}`, { headers: ghlHeaders, timeout: 8000 }),
-      axios.get(`https://services.leadconnectorhq.com/opportunities/search?location_id=${GHL_LOCATION_ID}&contact_id=${contactId}&limit=1`, { headers: ghlHeaders, timeout: 8000 })
-    ]);
-    const contact = contactResp.status === 'fulfilled' ? (contactResp.value.data?.contact || {}) : {};
-    const opps    = oppsResp.status === 'fulfilled'    ? (oppsResp.value.data?.opportunities || []) : [];
-    const latestOpp = opps[0] || null;
-    // 2. Mapuj custom fields
-    const cf = contact.customFields || [];
-    const getField = (id) => cf.find(f => f.id === id);
-    const mainProblem = getField('k1OizGtL0V6IaWjGlVBK');
-    const w0DateField = getField('IUjxWY10y6kuITsSjfSw');
-    // 3. Pobierz dane z Supabase (contacts + last event/note)
-    let contactRow = null, lastNote = null, w0FromDB = null;
-    if (supabase) {
-      try {
-        const { data: cRow } = await supabase.from('contacts')
-          .select('w0_scheduled, w0_date, w0_doctor, contact_status, first_call_at, last_note, last_note_at, ghl_stage_name')
-          .eq('ghl_contact_id', contactId)
-          .single();
-        contactRow = cRow;
-      } catch(e) { /* kontakt może nie istnieć w Supabase */ }
-      // Ostatnia notatka z events
-      try {
-        const { data: lastEvent } = await supabase.from('events')
-          .select('description, created_at, event_type, source')
-          .eq('contact_id', contactId)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single();
-        if (lastEvent) lastNote = { text: lastEvent.description, at: lastEvent.created_at, type: lastEvent.event_type, source: lastEvent.source };
-      } catch(e) { /* brak eventów */ }
-      // W0 z calls (fallback)
-      if (!contactRow?.w0_scheduled) {
-        try {
-          const { data: w0Calls } = await supabase.from('calls')
-            .select('scheduled_w0, w0_date, w0_doctor')
-            .eq('ghl_contact_id', contactId)
-            .eq('scheduled_w0', true)
-            .order('created_at', { ascending: false })
-            .limit(1);
-          if (w0Calls && w0Calls.length > 0) {
-            w0FromDB = { scheduled: true, date: w0Calls[0].w0_date, doctor: w0Calls[0].w0_doctor };
-          }
-        } catch(e) { /* brak W0 */ }
-      }
-    }
-    // 4. Ustal W0 (priorytet: contacts > calls > GHL custom field)
-    const w0Scheduled = contactRow?.w0_scheduled || w0FromDB?.scheduled || !!(w0DateField?.value);
-    const w0Date = contactRow?.w0_date || w0FromDB?.date || (w0DateField?.value ? new Date(Number(w0DateField.value)).toISOString() : null);
-    const w0Doctor = contactRow?.w0_doctor || w0FromDB?.doctor || null;
-    // 5. Ustal etap GHL
-    const stageName = latestOpp ? (GHL_STAGES[latestOpp.pipelineStageId] || latestOpp.pipelineStageId || null) : null;
-    res.json({
-      id: contactId,
-      firstName: contact.firstName || '',
-      lastName: contact.lastName || '',
-      phone: contact.phone || '',
-      zglosza: mainProblem?.value || '',
-      stageName,
-      stageId: latestOpp?.pipelineStageId || null,
-      opportunityId: latestOpp?.id || null,
-      contactStatus: contactRow?.contact_status || null,
-      firstCallAt: contactRow?.first_call_at || null,
-      w0_scheduled: w0Scheduled,
-      w0_date: w0Date,
-      w0_doctor: w0Doctor,
-      lastNote,
-      lead_created_at: contact.dateAdded || null
-    });
-  } catch (err) {
-    console.error('[Popup] Error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // ─── KARTA PACJENTA (Patient Card) ──────────────────────────────────────────────
 app.get('/api/contact/:id/card', async (req, res) => {
   try {
@@ -1430,42 +1348,6 @@ app.get('/api/contact/:id/card', async (req, res) => {
     );
     const opportunities = oppsResp.data?.opportunities || [];
 
-    // Pobierz notatki z GHL (i zsynchronizuj z events)
-    let ghlNotes = [];
-    try {
-      const notesResp = await axios.get(
-        `https://services.leadconnectorhq.com/contacts/${contactId}/notes`,
-        { headers: ghlHeaders, timeout: 8000 }
-      );
-      ghlNotes = notesResp.data?.notes || [];
-      // Synchronizuj notatki GHL do tabeli events (upsert po ghl_note_id w metadata)
-      if (supabase && ghlNotes.length > 0) {
-        for (const note of ghlNotes) {
-          try {
-            // Sprawdź czy notatka już istnieje w events
-            const { data: existing } = await supabase.from('events')
-              .select('id')
-              .eq('contact_id', contactId)
-              .eq('source', 'ghl')
-              .filter('metadata->ghl_note_id', 'eq', note.id)
-              .limit(1);
-            if (!existing || existing.length === 0) {
-              await supabase.from('events').insert({
-                event_type: 'ghl_note',
-                contact_id: contactId,
-                contact_name: `${contact.firstName || ''} ${contact.lastName || ''}`.trim(),
-                source: 'ghl',
-                description: note.body || note.text || '(notatka bez treści)',
-                metadata: { ghl_note_id: note.id, userId: note.userId },
-                created_at: note.dateAdded || new Date().toISOString()
-              });
-            }
-          } catch(e) { /* ignoruj błędy synchronizacji pojedynczej notatki */ }
-        }
-      }
-    } catch (e) {
-      console.warn('[Patient Card] GHL notes error:', e.message);
-    }
     // Pobierz historię połączeń z Supabase
     let callHistory = [];
     try {
@@ -1481,18 +1363,6 @@ app.get('/api/contact/:id/card', async (req, res) => {
       }
     } catch (e) {
       console.warn('[Patient Card] Supabase call history error:', e.message);
-    }
-    // Pobierz ujednolicony Timeline z tabeli events (app + ghl)
-    let unifiedTimeline = [];
-    if (supabase) {
-      try {
-        const { data: eventsData } = await supabase.from('events')
-          .select('*')
-          .eq('contact_id', contactId)
-          .order('created_at', { ascending: false })
-          .limit(50);
-        if (eventsData) unifiedTimeline = eventsData;
-      } catch(e) { console.warn('[Patient Card] Events fetch error:', e.message); }
     }
 
     // Mapowanie GHL custom fields po ID
@@ -1520,19 +1390,6 @@ app.get('/api/contact/:id/card', async (req, res) => {
       } catch(e) {}
     }
 
-    // Pobierz W0 z contacts table (globalne — priorytet nad calls)
-    let contactW0 = { scheduled: w0FromReports.scheduled, date: w0FromReports.date, doctor: w0FromReports.doctor };
-    if (supabase) {
-      try {
-        const { data: cRow } = await supabase.from('contacts')
-          .select('w0_scheduled, w0_date, w0_doctor, contact_status, first_call_at')
-          .eq('ghl_contact_id', contactId)
-          .single();
-        if (cRow) {
-          if (cRow.w0_scheduled) contactW0 = { scheduled: true, date: cRow.w0_date, doctor: cRow.w0_doctor };
-        }
-      } catch(e) { /* kontakt może nie istnieć w Supabase */ }
-    }
     res.json({
       contact: {
         id: contact.id,
@@ -1546,24 +1403,13 @@ app.get('/api/contact/:id/card', async (req, res) => {
         // Zmapowane custom fields
         mainProblem: mainProblem?.value || '',
         marketingConsent: marketing?.value === 'tak' || marketing?.value === true,
-        w0_date: contactW0.date || (w0DateField?.value ? new Date(Number(w0DateField.value)).toISOString() : null),
+        w0_date: w0DateField?.value ? new Date(Number(w0DateField.value)).toISOString() : (w0FromReports.date || null),
         w0_notes: w0NotesField?.value || '',
-        w0_scheduled: !!(contactW0.scheduled || w0DateField?.value),
-        w0_doctor: contactW0.doctor || null,
+        w0_scheduled: !!(w0DateField?.value || w0FromReports.scheduled),
+        w0_doctor: w0FromReports.doctor || null,
         // Surowe custom fields (dla debugowania)
         customFields: cf
       },
-      // Ujednolicony Timeline (app + ghl) — z tabeli events
-      unifiedTimeline: unifiedTimeline.map(e => ({
-        id: e.id,
-        type: e.event_type,
-        source: e.source || 'app',
-        description: e.description,
-        createdAt: e.created_at,
-        userId: e.user_id,
-        metadata: e.metadata
-      })),
-      // GHL Activities (legacy — zachowane dla kompatybilności)
       timeline: activities.map(a => ({
         id: a.id,
         type: a.type,
@@ -2023,33 +1869,9 @@ app.patch('/api/calls/:callId/report', async (req, res) => {
           updates.w0_booked_at = new Date().toISOString();
         }
         if (firstCallAt) updates.first_call_at = new Date(firstCallAt).toISOString();
-        // Ustaw scheduled_w0 = true na calls gdy w0Date jest ustawione
-        if (w0Date) updates.scheduled_w0 = true;
 
         const { error } = await supabase.from('calls').update(updates).eq('call_id', callId);
         if (error) throw error;
-        // Globalne W0 — aktualizuj contacts gdy w0Date jest ustawione
-        if (w0Date && contactId) {
-          try {
-            const w0Doctor = req.body.w0Doctor || null;
-            await supabase.from('contacts').update({
-              w0_scheduled: true,
-              w0_date: new Date(w0Date).toISOString(),
-              w0_doctor: w0Doctor,
-              updated_at: new Date().toISOString()
-            }).eq('ghl_contact_id', contactId);
-            // Event: W0 umówione
-            await supabase.from('events').insert({
-              event_type: 'w0_scheduled',
-              contact_id: contactId,
-              contact_name: contactName,
-              user_id: userId,
-              source: 'app',
-              description: `Umówiono wizytę W0 na ${new Date(w0Date).toLocaleDateString('pl-PL')}${w0Doctor ? ` u dr ${w0Doctor}` : ''}`,
-              metadata: { callId, w0Date, w0Doctor }
-            });
-          } catch(e) { console.warn('[ReceptionOS] W0 global update error:', e.message); }
-        }
 
         // Logika Eventów: Odwołanie wizyty
         if (callEffect === 'visit_cancelled' || outcome === 'odwolanie_wizyty') {
@@ -2088,7 +1910,6 @@ app.patch('/api/calls/:callId/report', async (req, res) => {
             contact_id: contactId,
             contact_name: contactName,
             user_id: userId,
-            source: 'app',
             description: `Utworzono automatyczny follow-up na za ${delay}`
           });
         }
@@ -2129,7 +1950,6 @@ app.patch('/api/calls/:callId/report', async (req, res) => {
                 contact_id: contactId,
                 contact_name: contactName,
                 user_id: userId,
-                source: 'app',
                 description: `Pierwszy kontakt. Czas reakcji: ${responseTimeMins} min`,
                 metadata: { callId, responseTimeMins }
               });
