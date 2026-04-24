@@ -246,26 +246,28 @@
 
         <!-- Pasek zaawansowanych filtrów -->
         <div id="calls-advanced-filters" style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;padding:10px 0 6px 0;border-bottom:1px solid #e2e8f0;margin-bottom:8px;">
-          <!-- Zakres czasowy -->
+          <!-- Szybki wybór zakresu -->
           <div style="display:flex;flex-direction:column;gap:3px;">
-            <label style="font-size:11px;font-weight:600;color:#64748b;">Zakres</label>
-            <select id="filter-range" onchange="loadCalls()" style="font-size:12px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;">
-              <option value="7">Ostatni tydzień</option>
-              <option value="30" selected>Ostatni miesiąc</option>
-              <option value="90">Ostatnie 3 miesiące</option>
-              <option value="365">Ostatni rok</option>
-            </select>
+            <label style="font-size:11px;font-weight:600;color:#64748b;">Szybki zakres</label>
+            <div class="date-quick-btns">
+              <button class="date-quick-btn active" id="dqb-today"   onclick="setDateQuick('today')">Dziś</button>
+              <button class="date-quick-btn"        id="dqb-week"    onclick="setDateQuick('week')">Tydzień</button>
+              <button class="date-quick-btn"        id="dqb-month"   onclick="setDateQuick('month')">Miesiąc</button>
+              <button class="date-quick-btn"        id="dqb-quarter" onclick="setDateQuick('quarter')">3 mies.</button>
+            </div>
           </div>
           <!-- Data od -->
           <div style="display:flex;flex-direction:column;gap:3px;">
-            <label style="font-size:11px;font-weight:600;color:#64748b;">Data od</label>
-            <input type="date" id="filter-date-from" onchange="loadCalls()" style="font-size:12px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;">
+            <label style="font-size:11px;font-weight:600;color:#64748b;">📅 Data od</label>
+            <input type="date" id="filter-date-from" onchange="onDateFilterChange()" style="font-size:12px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;">
           </div>
           <!-- Data do -->
           <div style="display:flex;flex-direction:column;gap:3px;">
-            <label style="font-size:11px;font-weight:600;color:#64748b;">Data do</label>
-            <input type="date" id="filter-date-to" onchange="loadCalls()" style="font-size:12px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;">
+            <label style="font-size:11px;font-weight:600;color:#64748b;">📅 Data do</label>
+            <input type="date" id="filter-date-to" onchange="onDateFilterChange()" style="font-size:12px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;">
           </div>
+          <!-- hidden range for legacy loadCalls compat -->
+          <input type="hidden" id="filter-range" value="30">
           <!-- Szukaj po nazwisku -->
           <div style="display:flex;flex-direction:column;gap:3px;">
             <label style="font-size:11px;font-weight:600;color:#64748b;">Szukaj pacjenta</label>
@@ -296,7 +298,7 @@
             </select>
           </div>
           <!-- Reset -->
-          <button onclick="document.getElementById('filter-date-from').value='';document.getElementById('filter-date-to').value='';document.getElementById('filter-search-name').value='';document.getElementById('filter-range').value='30';loadCalls();" style="font-size:12px;padding:5px 12px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;cursor:pointer;align-self:flex-end;">✕ Wyczyść</button>
+          <button onclick="resetCallsFilter()" style="font-size:12px;padding:5px 12px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;cursor:pointer;align-self:flex-end;">✕ Wyczyść</button>
         </div>
 
         <div id="callsFeed" class="calls-feed">
@@ -553,6 +555,7 @@
           <button class="btn-hangup hidden" id="popupHangupBtn" onclick="hangupCall()">
             🔴 Rozłącz
           </button>
+          <button class="btn-minimize-popup" onclick="minimizeCallPopup()" title="Minimalizuj">_</button>
           <button class="popup-close" onclick="closeCallPopup()">✕</button>
         </div>
       </div>
@@ -902,87 +905,69 @@
 </body>
 </html>
 
-  <!-- ==================== PATIENT CARD MODAL ==================== -->
+  <!-- ==================== PATIENT CARD MODAL (4 tabs) ==================== -->
   <div id="patientCardModal" class="modal-popup hidden">
     <div class="popup-overlay" onclick="closePatientCard()"></div>
-    <div class="modal-content" style="width: 600px; max-height: 90vh; overflow-y: auto;">
-      <div class="modal-header">
+    <div class="modal-content" style="width:700px;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;">
+      <div class="modal-header" style="flex-shrink:0;">
         <h3 id="patientCardTitle">Karta Pacjenta</h3>
         <button class="popup-close" onclick="closePatientCard()">✕</button>
       </div>
-      <div class="modal-body">
-        <!-- Informacje pacjenta -->
-        <div id="patientCardInfo" style="padding: 16px; border-bottom: 1px solid #e2e8f0;">
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
-            <div>
-              <div style="font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase;">Imię i nazwisko</div>
-              <div id="patientCardName" style="font-size: 16px; font-weight: 700; color: #1e293b;">—</div>
-            </div>
-            <div>
-              <div style="font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase;">Telefon</div>
-              <div id="patientCardPhone" style="font-size: 16px; font-weight: 700; color: #3b82f6;">—</div>
-            </div>
-            <div>
-              <div style="font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase;">Email</div>
-              <div id="patientCardEmail" style="font-size: 14px; color: #1e293b;">—</div>
-            </div>
-            <div>
-              <div style="font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase;">Źródło</div>
-              <div id="patientCardSource" style="font-size: 14px; color: #1e293b;">—</div>
-            </div>
-            <div>
-              <div style="font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase;">Zgoda marketingowa</div>
-              <div id="patientCardMarketing" style="font-size: 14px; color: #1e293b;">—</div>
-            </div>
+      <!-- 4-tab nav -->
+      <div class="pc-tabs" style="flex-shrink:0;">
+        <button class="pc-tab active" id="pc-tab-dane"      onclick="switchPcTab('dane')">👤 Dane</button>
+        <button class="pc-tab"        id="pc-tab-aktywnosc" onclick="switchPcTab('aktywnosc')">📋 Aktywność GHL</button>
+        <button class="pc-tab"        id="pc-tab-rozmowy"   onclick="switchPcTab('rozmowy')">🎙️ Rozmowy</button>
+        <button class="pc-tab"        id="pc-tab-taski"     onclick="switchPcTab('taski')">✅ Taski</button>
+      </div>
+      <!-- Scrollable body -->
+      <div style="overflow-y:auto;flex:1;">
+        <!-- TAB: DANE -->
+        <div class="pc-tab-content active" id="pc-content-dane" style="padding:16px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+            <div><div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:3px;">Imię i nazwisko</div><div id="patientCardName" style="font-size:16px;font-weight:700;color:#1e293b;">—</div></div>
+            <div><div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:3px;">Telefon</div><div id="patientCardPhone" style="font-size:16px;font-weight:700;color:#3b82f6;">—</div></div>
+            <div><div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:3px;">Email</div><div id="patientCardEmail" style="font-size:14px;color:#1e293b;">—</div></div>
+            <div><div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:3px;">Źródło</div><div id="patientCardSource" style="font-size:14px;color:#1e293b;">—</div></div>
+            <div><div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:3px;">Zgoda marketingowa</div><div id="patientCardMarketing" style="font-size:14px;color:#1e293b;">—</div></div>
           </div>
-          
-          <!-- Problem pacjenta -->
-          <div class="patient-card-field" style="margin-top: 8px; padding: 12px; background: #eff6ff; border-left: 3px solid #3b82f6; border-radius: 6px;">
-            <div style="font-size: 11px; color: #3b82f6; font-weight: 700; text-transform: uppercase; margin-bottom: 4px;">Z czym się zgłasza</div>
-            <div id="patientCardMainProblem" style="font-size: 14px; color: #1e293b; font-style: italic;">—</div>
+          <div class="patient-card-field" style="padding:12px;background:#eff6ff;border-left:3px solid #3b82f6;border-radius:6px;margin-bottom:12px;">
+            <div style="font-size:11px;color:#3b82f6;font-weight:700;text-transform:uppercase;margin-bottom:4px;">Z czym się zgłasza</div>
+            <div id="patientCardMainProblem" style="font-size:14px;color:#1e293b;font-style:italic;">—</div>
           </div>
-          
-          <!-- Sekcja W0 -->
-          <div id="patientCardW0Section" class="hidden" style="margin-top: 12px; padding: 12px; background: #f0fdf4; border-left: 3px solid #10b981; border-radius: 6px;">
-            <div style="font-size: 11px; color: #10b981; font-weight: 700; text-transform: uppercase; margin-bottom: 8px;">📅 Wizyta W0 zaplanowana</div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-              <div>
-                <div style="font-size: 11px; color: #64748b;">Data</div>
-                <div id="patientCardW0Date" style="font-weight: 600; color: #1e293b;">—</div>
-              </div>
-              <div>
-                <div style="font-size: 11px; color: #64748b;">Lekarz</div>
-                <div id="patientCardW0Doctor" style="font-weight: 600; color: #1e293b;">—</div>
-              </div>
+          <div id="patientCardW0Section" class="hidden" style="padding:12px;background:#f0fdf4;border-left:3px solid #10b981;border-radius:6px;">
+            <div style="font-size:11px;color:#10b981;font-weight:700;text-transform:uppercase;margin-bottom:8px;">📅 Wizyta W0 zaplanowana</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <div><div style="font-size:11px;color:#64748b;">Data</div><div id="patientCardW0Date" style="font-weight:600;color:#1e293b;">—</div></div>
+              <div><div style="font-size:11px;color:#64748b;">Lekarz</div><div id="patientCardW0Doctor" style="font-weight:600;color:#1e293b;">—</div></div>
             </div>
-            <div id="patientCardW0Notes" style="margin-top: 6px; font-size: 13px; color: #64748b;"></div>
+            <div id="patientCardW0Notes" style="margin-top:6px;font-size:13px;color:#64748b;"></div>
           </div>
         </div>
-        
-        <!-- Zakładki: Aktywność GHL | Historia połączeń -->
-        <div style="padding: 0 16px; border-bottom: 1px solid #e2e8f0;">
-          <div style="display: flex; gap: 0;">
-            <button onclick="switchPatientCardTab('timeline')" id="tabPatientTimeline" class="patient-card-tab active">Timeline (App + GHL)</button>
-            <button onclick="switchPatientCardTab('calls')" id="tabPatientCalls" class="patient-card-tab">Historia połączeń</button>
+        <!-- TAB: AKTYWNOŚĆ GHL -->
+        <div class="pc-tab-content" id="pc-content-aktywnosc" style="padding:16px;">
+          <div id="patientCardTimeline" style="display:flex;flex-direction:column;gap:10px;">
+            <div style="padding:12px;background:#f8fafc;border-radius:8px;color:#64748b;text-align:center;">Ładowanie...</div>
           </div>
         </div>
-        
-        <!-- Timeline aktywności GHL -->
-        <div id="patientCardTimelineSection" style="padding: 16px;">
-          <div id="patientCardTimeline" style="display: flex; flex-direction: column; gap: 12px;">
-            <div style="padding: 12px; background: #f8fafc; border-radius: 8px; color: #64748b; text-align: center;">Ładowanie...</div>
+        <!-- TAB: ROZMOWY -->
+        <div class="pc-tab-content" id="pc-content-rozmowy" style="padding:16px;">
+          <div id="patientCardCallHistory" style="display:flex;flex-direction:column;gap:10px;">
+            <div style="padding:12px;background:#f8fafc;border-radius:8px;color:#64748b;text-align:center;">Ładowanie...</div>
           </div>
         </div>
-        
-        <!-- Historia połączeń z aplikacji -->
-        <div id="patientCardCallsSection" class="hidden" style="padding: 16px;">
-          <div id="patientCardCallHistory" style="display: flex; flex-direction: column; gap: 10px;">
-            <div style="padding: 12px; background: #f8fafc; border-radius: 8px; color: #64748b; text-align: center;">Ładowanie...</div>
+        <!-- TAB: TASKI -->
+        <div class="pc-tab-content" id="pc-content-taski" style="padding:16px;">
+          <div id="patientCardTasks" style="display:flex;flex-direction:column;gap:10px;">
+            <div style="padding:12px;background:#f8fafc;border-radius:8px;color:#64748b;text-align:center;">Ładowanie...</div>
           </div>
         </div>
       </div>
     </div>
   </div>
+
+  <!-- ==================== REPORT NOTIFICATIONS ==================== -->
+  <div class="report-notify-bar" id="reportNotifyBar"></div>
 
     <!-- MODAL: TWORZENIE ZADANIA -->
     <div id="createTaskModal" class="modal hidden">

@@ -489,6 +489,11 @@ wss.on('connection', (ws) => {
       if (msg.type === 'CHAT_MESSAGE') {
         broadcast({ type: 'CHAT_MESSAGE', from: msg.from, text: msg.text, ts: new Date().toISOString() });
       }
+      // Klient prosi o odświeżenie historii po reconnect
+      if (msg.type === 'GET_CALLS_HISTORY') {
+        const days = msg.days || 1;
+        ws.send(JSON.stringify({ type: 'CALLS_HISTORY', calls: getRecentCalls(days).slice(0, 50) }));
+      }
     } catch(e) {}
   });
 });
@@ -953,7 +958,11 @@ app.post('/webhook/zadarma', async (req, res) => {
     // Przypisz userId z mapy aktywnych użytkowników
     const inboundExt = called || caller;
     const assignedUserId = activeExtMap.get(inboundExt) || activeExtMap.get(caller) || null;
-    if (assignedUserId) { callObj.userId = assignedUserId; console.log(`[ActiveExt] Inbound ${callId}: ext ${inboundExt} → ${assignedUserId}`); }
+    if (assignedUserId) {
+      callObj.userId    = assignedUserId;
+      callObj.agentName = USERS[assignedUserId]?.name || null;
+      console.log(`[ActiveExt] Inbound ${callId}: ext ${inboundExt} → ${assignedUserId}`);
+    }
     storeCall(callObj);
     broadcast({ type: 'CALL_RINGING', ...callObj });
   }
@@ -979,7 +988,10 @@ app.post('/webhook/zadarma', async (req, res) => {
 
   else if (event === 'NOTIFY_ANSWER' || event === 'ANSWERED') {
     storeCall({ callId, status: 'active', answeredAt: new Date().toISOString(), tag: 'connected' });
-    broadcast({ type: 'CALL_ANSWERED', callId, tag: 'connected' });
+    const answeredCall = callsStore.find(c => c.callId === callId);
+    broadcast({ type: 'CALL_ANSWERED', callId, tag: 'connected',
+      agentName: answeredCall?.agentName || (answeredCall?.userId ? USERS[answeredCall.userId]?.name : null) || null
+    });
   }
 
   else if (event === 'NOTIFY_END' || event === 'ENDED' || event === 'MISSED') {
@@ -993,7 +1005,9 @@ app.post('/webhook/zadarma', async (req, res) => {
     if (isMissed && direction === 'outbound') tag = 'ineffective';
 
     storeCall({ callId, status: 'ended', duration, tag, endedAt: new Date().toISOString() });
-    broadcast({ type: 'CALL_ENDED', callId, duration, tag, direction });
+    broadcast({ type: 'CALL_ENDED', callId, duration, tag, direction,
+      agentName: call?.agentName || (call?.userId ? USERS[call.userId]?.name : null) || null
+    });
 
     if (!isMissed && pbxCallId) {
       scheduleRecordingFetch(callId, pbxCallId, call?.from || caller);
@@ -1971,7 +1985,9 @@ app.get('/api/server-ip', async (req, res) => {
 // ─── SYSTEM UŻYTKOWNIKÓW — definicja przeniesiona na górę pliku ───────────────
 
 app.get('/api/users', (req, res) => {
-  const list = Object.values(USERS).map(u => ({ id: u.id, name: u.name, role: u.role, ghlUserId: u.ghlUserId }));
+  const list = Object.values(USERS).map(u => ({
+    id: u.id, name: u.name, role: u.role, ext: u.ext || null, ghlUserId: u.ghlUserId
+  }));
   res.json({ users: list });
 });
 

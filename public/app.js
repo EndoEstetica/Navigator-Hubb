@@ -272,7 +272,16 @@ function loadCallbackList(callsData) {
   const missed = calls.filter(c => c.tag === 'missed' || c.status === 'missed');
   const ineffective = calls.filter(c => (c.tag === 'ineffective' || c.status === 'ineffective') && c.direction === 'outbound');
 
-  const renderCallbackItem = (c) => `
+  const renderCallbackItem = (c) => {
+    const agentNameMap2 = {
+      kasia:'Kasia',agnieszka:'Agnieszka',asia:'Asia',agata_r:'Agata (Rec.)',
+      zastepstwo:'Zastępstwo',agata_o:'Agata Opiekun',aneta_o:'Aneta Opiekun',
+      bartosz:'Bartosz',sandra:'Sandra',aneta_a:'Aneta (A)',patrycja:'Patrycja',sonia:'Sonia'
+    };
+    const aName = c.agentName || (c.userId ? (agentNameMap2[c.userId] || c.userId) : null);
+    const agentBadge = aName ? `<span class="agent-tag role-${c.userId && ['agata_o','aneta_o'].includes(c.userId) ? 'opiekun':'reception'}" style="font-size:10px;padding:1px 6px;">👤 ${escHtml(aName)}</span>` : '';
+    const outsideBadge = c.outsideWorkingHours ? `<span class="badge-outside-hours">🌙 Poza godz.</span>` : '';
+    return `
     <div class="callback-item">
       <div class="callback-item-avatar ${c.tag === 'missed' ? 'avatar-missed' : 'avatar-ineffective'}">
         ${(c.contactName || c.from || '?')[0].toUpperCase()}
@@ -280,12 +289,13 @@ function loadCallbackList(callsData) {
       <div class="callback-item-info">
         <div class="callback-item-name">${escHtml(c.contactName || c.from || 'Nieznany')}</div>
         <div class="callback-item-time">${new Date(c.timestamp).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })} · ${new Date(c.timestamp).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit' })}</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px;">${outsideBadge}${agentBadge}</div>
       </div>
       <button class="btn-callback-call" onclick="initiateCall('${escHtml(c.from || '')}', '${escHtml(c.contactName || '')}', '${c.contactId || ''}')">
         &#128222; Oddzwoń
       </button>
     </div>
-  `;
+  `;};
 
   missedEl.innerHTML = missed.length
     ? missed.slice(0, 15).map(renderCallbackItem).join('')
@@ -781,15 +791,26 @@ function handleCallRinging(data) {
 
   if (currentView === 'calls') renderCallsTable(allCalls);
 
-  // Otwórz popup tylko dla właściwego agenta (po userId)
-  // Admin widzi wszystkie połączenia, ale popup tylko dla swojego ext
+  // Otwórz popup tylko dla właściwego stanowiska (po targetExt) lub userId
   const myUserId = currentUser?.id;
   const myRole = currentUser?.role;
-  // Sprawdź czy to połączenie należy do tego użytkownika
-  // data.userId jest ustawiane przez serwer na podstawie activeExtMap
-  const isMyCall = !data.userId || // stare połączenia bez userId → pokaż wszystkim recepcji
-    data.userId === myUserId ||     // moje połączenie
-    myRole === 'admin';             // admin widzi wszystko
+
+  // Mapa userId → ext (odpowiada USERS w server.js)
+  const USER_EXT_MAP = {
+    kasia: '103', agnieszka: '103', asia: '103', agata_r: '103', zastepstwo: '103',
+    agata_o: '101', aneta_o: '102'
+  };
+  const myExt = USER_EXT_MAP[myUserId] || null;
+
+  // Logika dopasowania:
+  // 1) Admin widzi wszystko (popup i tabelę)
+  // 2) Jeśli targetExt jest znany → popup tylko dla stanowiska o tym numerze
+  // 3) Fallback: stara logika po userId
+  const isMyCall = myRole === 'admin' || (
+    data.targetExt
+      ? (myExt && String(data.targetExt) === String(myExt))
+      : (!data.userId || data.userId === myUserId)
+  );
 
   if (isMyCall) {
     if (data.direction === 'inbound') {
@@ -843,6 +864,15 @@ function handleCallEnded(data) {
     stopCallTimer(); // ← zawsze zatrzymaj timer
     if (data.tag === 'missed' || data.tag === 'ineffective') {
       closeCallPopup();
+    } else if (data.tag === 'connected') {
+      // Połączenie zakończone — sprawdź za chwilę czy raport uzupełniony
+      setTimeout(() => {
+        if (!selectedStatus) {
+          const contactName = allCalls.find(c => c.callId === data.callId)?.contactName
+            || currentContact?.name || 'Nieznany';
+          showReportNotification(data.callId, contactName);
+        }
+      }, 4000); // 4s opóźnienia — dajemy czas na wypełnienie
     }
     const tagEl = document.getElementById('popupCallTag');
     if (tagEl) {
@@ -894,6 +924,7 @@ function switchView(view) {
 
   if (view === 'contacts') loadContacts();
   if (view === 'calls') {
+    initDatePickerDefaults();
     loadCalls();
     // Pokaż/ukryj filtry admina
     const isAdm = currentUser?.role === 'admin';
@@ -1283,14 +1314,13 @@ function renderCallRow(c, isAdmin = false) {
       ? `<span data-rec-callid="${escHtml(c.callId)}" class="btn-rec-pending" title="Nagranie pojawi się po zakończeniu przetwarzania">⏳ Oczekuje...</span>`
       : `<button class="btn-fetch-rec" onclick="fetchRecording('${c.callId}', this)" title="Sprawdź nagranie">▶ Sprawdź</button>`;
 
-  // Kto obsługiwał
-  // Agent name mapping
-  const agentNames = {
+  // Kto obsługiwał — agentName przychodzi z serwera; fallback do lokalnej mapy
+  const agentNameMap = {
     kasia: 'Kasia', agnieszka: 'Agnieszka', asia: 'Asia', agata_r: 'Agata (Rec.)',
     zastepstwo: 'Zastępstwo', agata_o: 'Agata Opiekun', aneta_o: 'Aneta Opiekun',
     bartosz: 'Bartosz', sandra: 'Sandra', aneta_a: 'Aneta (A)', patrycja: 'Patrycja', sonia: 'Sonia'
   };
-  const agentName = c.userId ? (agentNames[c.userId] || c.userId) : null;
+  const agentName = c.agentName || (c.userId ? (agentNameMap[c.userId] || c.userId) : null);
   const agentHtml = agentName
     ? `<div style="font-size:11px;color:#64748b;">👤 ${escHtml(agentName)}</div>` : '';
   // Agent role tag for admin column
@@ -1298,10 +1328,14 @@ function renderCallRow(c, isAdmin = false) {
   const agentRole = c.userId ? (agentRoles[c.userId] || 'reception') : null;
   const agentTagHtml = agentName
     ? `<div style="display:flex;flex-direction:column;gap:2px;">
-        <span style="font-size:12px;font-weight:600;color:#1e293b;">👤 ${escHtml(agentName)}</span>
+        <span class="agent-tag role-${agentRole}">👤 ${escHtml(agentName)}</span>
         <span style="font-size:10px;padding:1px 6px;border-radius:4px;background:${agentRole === 'opiekun' ? '#dbeafe' : '#dcfce7'};color:${agentRole === 'opiekun' ? '#1d4ed8' : '#166534'};font-weight:600;">${agentRole === 'opiekun' ? 'Opiekun' : 'Recepcja'}</span>
        </div>`
     : '<span style="color:#94a3b8;font-size:11px;">—</span>';
+
+  // Badge: poza godzinami pracy
+  const outsideHoursBadge = c.outsideWorkingHours
+    ? `<span class="badge-outside-hours">🌙 Poza godz.</span>` : '';
 
   // Etap lejka
   const stageHtml = getStageTagHtml(c.stageId, c.stageName);
@@ -1340,7 +1374,8 @@ function renderCallRow(c, isAdmin = false) {
           <div class="call-name-cell">
             <div class="call-name">${escHtml(c.contactName || (c.from !== '0' ? c.from : '') || (c.to !== '0' ? c.to : '') || 'Nieznany')}</div>
             <div class="call-number">${escHtml((c.from !== '0' ? c.from : '') || (c.to !== '0' ? c.to : '') || '')}</div>
-            <div style="margin-top:3px;display:flex;gap:4px;flex-wrap:wrap;">${stageHtml}${outcomeHtml}</div>
+            <div style="margin-top:3px;display:flex;gap:4px;flex-wrap:wrap;">${stageHtml}${outsideHoursBadge}${outcomeHtml}</div>
+            ${agentHtml}
           </div>
         </div>
       </td>
@@ -1872,6 +1907,117 @@ function updatePendingReportsBadge() {
   }
 }
 
+// ── Powiadomienie o niezapisanym raporcie ─────────────────────────────────
+function showReportNotification(callId, contactName) {
+  // Nie pokazuj jeśli raport jest już zapisany lub popup aktywny
+  if (selectedStatus) return;
+
+  const bar = document.getElementById('reportNotifyBar');
+  if (!bar) return;
+  // Unikaj duplikatów
+  if (bar.querySelector(`[data-callid="${callId}"]`)) return;
+
+  const item = document.createElement('div');
+  item.className = 'report-notify-item';
+  item.dataset.callid = callId;
+  item.innerHTML = `
+    <div class="report-notify-icon">⚠️</div>
+    <div class="report-notify-text">
+      <div class="report-notify-name">Raport: ${escHtml(contactName)}</div>
+      <div class="report-notify-hint">Rozmowa zakończona — kliknij aby uzupełnić raport</div>
+    </div>
+    <div class="report-notify-dismiss" onclick="event.stopPropagation();dismissReportNotification('${callId}')">✕</div>
+  `;
+  item.onclick = () => {
+    dismissReportNotification(callId);
+    openCallReport(callId);
+  };
+  bar.appendChild(item);
+
+  // Auto-dismiss po 60 sekundach
+  setTimeout(() => dismissReportNotification(callId), 60000);
+}
+
+function dismissReportNotification(callId) {
+  const bar = document.getElementById('reportNotifyBar');
+  if (!bar) return;
+  const item = bar.querySelector(`[data-callid="${callId}"]`);
+  if (item) item.remove();
+}
+
+// ── Date picker: quick range buttons ─────────────────────────────────────
+function setDateQuick(range) {
+  const today = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+
+  const fromInput = document.getElementById('filter-date-from');
+  const toInput   = document.getElementById('filter-date-to');
+  if (!fromInput || !toInput) return;
+
+  const todayStr = fmt(today);
+  let fromStr = todayStr;
+
+  if (range === 'today') {
+    fromStr = todayStr;
+  } else if (range === 'week') {
+    const d = new Date(today); d.setDate(d.getDate() - 6);
+    fromStr = fmt(d);
+  } else if (range === 'month') {
+    const d = new Date(today); d.setMonth(d.getMonth() - 1);
+    fromStr = fmt(d);
+  } else if (range === 'quarter') {
+    const d = new Date(today); d.setMonth(d.getMonth() - 3);
+    fromStr = fmt(d);
+  }
+
+  fromInput.value = fromStr;
+  toInput.value   = todayStr;
+
+  // Highlight active button
+  document.querySelectorAll('.date-quick-btn').forEach(b => b.classList.remove('active'));
+  const activeBtn = document.getElementById(`dqb-${range}`);
+  if (activeBtn) activeBtn.classList.add('active');
+
+  loadCalls();
+}
+
+function onDateFilterChange() {
+  // Wyczyść podświetlenie przycisków szybkiego zakresu
+  document.querySelectorAll('.date-quick-btn').forEach(b => b.classList.remove('active'));
+  loadCalls();
+}
+
+function resetCallsFilter() {
+  const today = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const todayStr = `${today.getFullYear()}-${pad(today.getMonth()+1)}-${pad(today.getDate())}`;
+  const fromInput = document.getElementById('filter-date-from');
+  const toInput   = document.getElementById('filter-date-to');
+  if (fromInput) fromInput.value = todayStr;
+  if (toInput)   toInput.value   = todayStr;
+  const searchInput = document.getElementById('filter-search-name');
+  if (searchInput) searchInput.value = '';
+  document.querySelectorAll('.date-quick-btn').forEach(b => b.classList.remove('active'));
+  const todayBtn = document.getElementById('dqb-today');
+  if (todayBtn) todayBtn.classList.add('active');
+  loadCalls();
+}
+
+// ── Inicjalizacja date pickera (wywoływana przy przełączeniu na widok calls) ─
+function initDatePickerDefaults() {
+  const fromInput = document.getElementById('filter-date-from');
+  const toInput   = document.getElementById('filter-date-to');
+  if (!fromInput || !toInput || fromInput.value) return; // już ustawione
+  const today = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const todayStr = `${today.getFullYear()}-${pad(today.getMonth()+1)}-${pad(today.getDate())}`;
+  fromInput.value = todayStr;
+  toInput.value   = todayStr;
+  const todayBtn = document.getElementById('dqb-today');
+  if (todayBtn) { todayBtn.classList.add('active'); }
+}
+
 function startCallTimer() {
   callStartTime = Date.now();
   // Pokaż timer i przycisk rozłącz
@@ -2054,7 +2200,10 @@ async function saveReport() {
     }
 
     showToast('✅ Raport zapisany pomyślnie', 'success');
-    if (activeCallId) removePendingReport(activeCallId);
+    if (activeCallId) {
+      removePendingReport(activeCallId);
+      dismissReportNotification(activeCallId);
+    }
     closeCallPopup(true); // force close (raport zapisany)
     
     // Odśwież listy po zapisaniu raportu (żeby statusy się zaktualizowały)
@@ -3712,52 +3861,56 @@ function showToast(message, type = 'info') {
 // updateKPIs(data) jest zdefiniowana wyżej — nie nadpisywać pustym placeholderem
 
 
-// ==================== PATIENT CARD ====================
+// ==================== PATIENT CARD (4 tabs) ====================
+function switchPcTab(tab) {
+  document.querySelectorAll('.pc-tab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.pc-tab-content').forEach(c => c.classList.remove('active'));
+  const btn = document.getElementById(`pc-tab-${tab}`);
+  const content = document.getElementById(`pc-content-${tab}`);
+  if (btn) btn.classList.add('active');
+  if (content) content.classList.add('active');
+}
+
 async function openPatientCard(contactId, contactName) {
   const modal = document.getElementById('patientCardModal');
   if (!modal) return;
-  
+
   modal.classList.remove('hidden');
   modal.style.display = 'flex';
-  
-  // Ustaw tytuł
+
   document.getElementById('patientCardTitle').textContent = `Karta Pacjenta: ${contactName || 'Ładowanie...'}`;
-  
-  // Wyczyść timeline
-  document.getElementById('patientCardTimeline').innerHTML = '<div style="padding: 12px; background: #f8fafc; border-radius: 8px; color: #64748b; text-align: center;">Ładowanie...</div>';
-  
+
+  // Reset tabs to first tab
+  switchPcTab('dane');
+
+  // Set loading placeholders
+  ['patientCardTimeline','patientCardCallHistory','patientCardTasks'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '<div style="padding:12px;background:#f8fafc;border-radius:8px;color:#64748b;text-align:center;">Ładowanie...</div>';
+  });
+
   try {
-    const response = await fetch(`/api/contact/${contactId}/card`);
-    if (!response.ok) throw new Error('Błąd pobierania karty pacjenta');
-    const data = await response.json();
-    
-    // Wypełnij dane kontaktu
+    // Fetch all data in parallel
+    const [cardResp, tasksResp] = await Promise.all([
+      fetch(`/api/contact/${contactId}/card`),
+      fetch(`/api/contact/${contactId}/tasks`).catch(() => null)
+    ]);
+
+    if (!cardResp.ok) throw new Error('Błąd pobierania karty pacjenta');
+    const data = await cardResp.json();
     const contact = data.contact || {};
+
+    // ── TAB: DANE ──────────────────────────────────────────────
     document.getElementById('patientCardName').textContent = `${contact.firstName || ''} ${contact.lastName || ''}`.trim() || '—';
     document.getElementById('patientCardPhone').textContent = contact.phone || '—';
     document.getElementById('patientCardEmail').textContent = contact.email || '—';
     document.getElementById('patientCardSource').textContent = contact.source || '—';
-    
-    // Zakładki karty pacjenta
-    window.switchPatientCardTab = function(tab) {
-      document.getElementById('patientCardTimelineSection').classList.toggle('hidden', tab !== 'timeline');
-      document.getElementById('patientCardCallsSection').classList.toggle('hidden', tab !== 'calls');
-      document.getElementById('tabPatientTimeline').classList.toggle('active', tab === 'timeline');
-      document.getElementById('tabPatientCalls').classList.toggle('active', tab === 'calls');
-    };
-    
-    // Wypełnij zmapowane custom fields
+
     const mainProblemEl = document.getElementById('patientCardMainProblem');
     if (mainProblemEl) {
-      if (contact.mainProblem) {
-        mainProblemEl.textContent = contact.mainProblem;
-        mainProblemEl.closest('.patient-card-field')?.classList.remove('hidden');
-      } else {
-        mainProblemEl.closest('.patient-card-field')?.classList.add('hidden');
-      }
+      mainProblemEl.textContent = contact.mainProblem || '—';
     }
-    
-    // W0
+
     const w0SectionEl = document.getElementById('patientCardW0Section');
     if (w0SectionEl) {
       if (contact.w0_scheduled || contact.w0_date) {
@@ -3774,105 +3927,153 @@ async function openPatientCard(contactId, contactName) {
         w0SectionEl.classList.add('hidden');
       }
     }
-    
-    // Zgoda marketingowa
+
     const marketingEl = document.getElementById('patientCardMarketing');
     if (marketingEl) {
       marketingEl.textContent = contact.marketingConsent ? '✅ Tak' : '❌ Nie';
       marketingEl.style.color = contact.marketingConsent ? '#10b981' : '#ef4444';
     }
-    
-    // Wypełnij ujednolicony Timeline (zakładka 1)
-    const unifiedTimeline = data.unifiedTimeline || [];
-    const legacyTimeline = data.timeline || [];
-    const callHistory = data.callHistory || [];
+
+    // ── TAB: AKTYWNOŚĆ GHL ────────────────────────────────────
     const timelineEl = document.getElementById('patientCardTimeline');
-    
+    const unifiedTimeline = data.unifiedTimeline || [];
+    const legacyTimeline  = data.timeline || [];
     const allEvents = unifiedTimeline.length > 0 ? unifiedTimeline : legacyTimeline.map(a => ({
-      id: a.id, type: a.type, source: 'ghl', description: a.description || a.type,
-      createdAt: a.createdAt, userId: a.userId, userName: a.userName
+      id: a.id, type: a.type, source: 'ghl',
+      description: a.description || a.type, createdAt: a.createdAt,
+      userId: a.userId, userName: a.userName
     }));
-    
+
     const EVENT_COLORS = {
-      visit_cancelled: '#ef4444', follow_up_created: '#f59e0b', first_call: '#3b82f6',
-      w0_scheduled: '#10b981', ghl_note: '#8b5cf6', task_assigned: '#f97316', other: '#94a3b8'
+      visit_cancelled:'#ef4444', follow_up_created:'#f59e0b', first_call:'#3b82f6',
+      w0_scheduled:'#10b981', ghl_note:'#8b5cf6', task_assigned:'#f97316', other:'#94a3b8'
     };
     const EVENT_LABELS = {
-      visit_cancelled: 'Odwołanie wizyty', follow_up_created: 'Follow-up', first_call: 'Pierwszy kontakt',
-      w0_scheduled: 'W0 umówione', ghl_note: 'Notatka GHL', task_assigned: 'Zadanie', other: 'Zdarzenie'
+      visit_cancelled:'Odwołanie wizyty', follow_up_created:'Follow-up',
+      first_call:'Pierwszy kontakt', w0_scheduled:'W0 umówione',
+      ghl_note:'Notatka GHL', task_assigned:'Zadanie', other:'Zdarzenie'
     };
-    
+
     if (allEvents.length === 0) {
-      timelineEl.innerHTML = '<div style="padding: 12px; background: #f8fafc; border-radius: 8px; color: #64748b; text-align: center;">Brak zdarzeń w historii</div>';
+      timelineEl.innerHTML = '<div style="padding:12px;background:#f8fafc;border-radius:8px;color:#64748b;text-align:center;">Brak zdarzeń w historii</div>';
     } else {
-      timelineEl.innerHTML = allEvents.sort((a,b) => new Date(b.createdAt || b.created_at) - new Date(a.createdAt || a.created_at)).map(event => {
-        const eventType = event.type || event.event_type || 'other';
-        const color = EVENT_COLORS[eventType] || EVENT_COLORS.other;
-        const label = EVENT_LABELS[eventType] || eventType;
-        const source = event.source || 'app';
-        const sourceBadge = source === 'ghl'
-          ? '<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:#dbeafe;color:#1e40af;font-weight:700;">GHL</span>'
-          : '<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:#f0fdf4;color:#166534;font-weight:700;">APP</span>';
-        const desc = (event.description || '—').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-        const uname = event.userName ? event.userName.replace(/</g,'&lt;') : '';
-        return '<div style="padding:12px;border-left:3px solid ' + color + ';background:#f8fafc;border-radius:6px;margin-bottom:8px;">'
-          + '<div style="display:flex;justify-content:space-between;align-items:center;">'
-          + '<div style="display:flex;align-items:center;gap:6px;">'
-          + '<span style="font-size:10px;padding:2px 8px;border-radius:12px;background:' + color + '20;color:' + color + ';font-weight:700;">' + label + '</span>'
-          + sourceBadge
-          + '</div>'
-          + '<div style="font-size:11px;color:#94a3b8;">' + new Date(event.createdAt || event.created_at).toLocaleString('pl-PL') + '</div>'
-          + '</div>'
-          + '<div style="font-size:13px;color:#1e293b;margin-top:6px;">' + desc + '</div>'
-          + (uname ? '<div style="font-size:11px;color:#94a3b8;margin-top:4px;">Przez: ' + uname + '</div>' : '')
-          + '</div>';
-      }).join('');
-    }
-    
-    // Wypełnij historię połączeń z aplikacji (zakładka 2)
-    const callHistoryEl = document.getElementById('patientCardCallHistory');
-    if (callHistoryEl) {
-      if (callHistory.length === 0) {
-        callHistoryEl.innerHTML = '<div style="padding: 12px; background: #f8fafc; border-radius: 8px; color: #64748b; text-align: center;">Brak połączeń w historii</div>';
-      } else {
-        const statusColors = { nowy_pacjent: '#3b82f6', staly_pacjent: '#10b981', biezaca_wizyta: '#f59e0b', pomylka: '#94a3b8' };
-        const statusLabels = { nowy_pacjent: 'Nowy pacjent', staly_pacjent: 'Stały pacjent', biezaca_wizyta: 'Bieżąca wizyta', pomylka: 'Pomyłka' };
-        callHistoryEl.innerHTML = callHistory.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(c => {
-          const statusColor = statusColors[c.contactType] || '#94a3b8';
-          const statusLabel = statusLabels[c.contactType] || c.contactType || '—';
-          const tagColor = c.tag === 'connected' ? '#10b981' : c.tag === 'missed' ? '#ef4444' : '#94a3b8';
-          const tagLabel = c.tag === 'connected' ? 'Połączono' : c.tag === 'missed' ? 'Nieodebrane' : c.tag || '—';
-          return `
-          <div style="padding: 12px; border-left: 3px solid ${statusColor}; background: #f8fafc; border-radius: 6px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
-              <div style="font-size: 12px; color: #64748b;">${new Date(c.createdAt || c.timestamp).toLocaleString('pl-PL')}</div>
-              <div style="display:flex; gap: 4px;">
-                <span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: ${tagColor}20; color: ${tagColor}; font-weight: 700;">${tagLabel}</span>
-                ${c.contactType ? `<span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: ${statusColor}20; color: ${statusColor}; font-weight: 700;">${statusLabel}</span>` : ''}
+      timelineEl.innerHTML = allEvents
+        .sort((a,b) => new Date(b.createdAt||b.created_at) - new Date(a.createdAt||a.created_at))
+        .map(event => {
+          const evType = event.type || event.event_type || 'other';
+          const color = EVENT_COLORS[evType] || EVENT_COLORS.other;
+          const label = EVENT_LABELS[evType] || evType;
+          const source = event.source || 'app';
+          const sourceBadge = source === 'ghl'
+            ? '<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:#dbeafe;color:#1e40af;font-weight:700;">GHL</span>'
+            : '<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:#f0fdf4;color:#166534;font-weight:700;">APP</span>';
+          const desc = (event.description || '—').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+          const uname = event.userName ? escHtml(event.userName) : '';
+          return `<div style="padding:12px;border-left:3px solid ${color};background:#f8fafc;border-radius:6px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-size:10px;padding:2px 8px;border-radius:12px;background:${color}20;color:${color};font-weight:700;">${label}</span>
+                ${sourceBadge}
               </div>
+              <div style="font-size:11px;color:#94a3b8;">${new Date(event.createdAt||event.created_at).toLocaleString('pl-PL')}</div>
             </div>
-            ${c.callEffect ? `<div style="font-size: 13px; color: #1e293b; font-weight: 600;">Wynik: ${c.callEffect}</div>` : ''}
-            ${c.program ? `<div style="font-size: 12px; color: #7c3aed; margin-top: 2px;">Program: ${c.program}</div>` : ''}
-            ${c.notes ? `<div style="font-size: 12px; color: #64748b; margin-top: 4px; font-style: italic;">„${c.notes}”</div>` : ''}
-            <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">${c.direction === 'outbound' ? '↗️ Wychodzące' : '↘️ Przychodzące'} • ${c.duration ? `${c.duration}s` : 'brak czasu'}</div>
+            <div style="font-size:13px;color:#1e293b;">${desc}</div>
+            ${uname ? `<div style="font-size:11px;color:#94a3b8;margin-top:4px;">Przez: ${uname}</div>` : ''}
           </div>`;
         }).join('');
-      }
     }
+
+    // ── TAB: ROZMOWY ──────────────────────────────────────────
+    const callHistoryEl = document.getElementById('patientCardCallHistory');
+    const callHistory   = data.callHistory || [];
+    if (callHistory.length === 0) {
+      callHistoryEl.innerHTML = '<div style="padding:12px;background:#f8fafc;border-radius:8px;color:#64748b;text-align:center;">Brak rozmów w historii</div>';
+    } else {
+      const tagColors  = { connected:'#10b981', missed:'#ef4444', ineffective:'#f59e0b' };
+      const tagLabels  = { connected:'Połączono', missed:'Nieodebrane', ineffective:'Nieskuteczne' };
+      const ctColors   = { nowy_pacjent:'#3b82f6', staly_pacjent:'#10b981', biezaca_wizyta:'#f59e0b', pomylka:'#94a3b8' };
+      const ctLabels   = { nowy_pacjent:'Nowy pacjent', staly_pacjent:'Stały pacjent', biezaca_wizyta:'Bieżąca wizyta', pomylka:'Pomyłka' };
+      callHistoryEl.innerHTML = callHistory
+        .sort((a,b) => new Date(b.createdAt||b.timestamp) - new Date(a.createdAt||a.timestamp))
+        .map(c => {
+          const tc = tagColors[c.tag] || '#94a3b8';
+          const tl = tagLabels[c.tag] || c.tag || '—';
+          const cc = ctColors[c.contactType] || '#94a3b8';
+          const cl = ctLabels[c.contactType] || c.contactType || '';
+          const recUrl = c.recordingUrl ? `/api/call/${encodeURIComponent(c.callId)}/recording/proxy` : null;
+          const agentStr = c.agentName || c.userName || '';
+          return `<div class="pc-call-row tag-${c.tag || ''}">
+            <div class="pc-call-meta">
+              <div style="font-size:12px;color:#64748b;">${new Date(c.createdAt||c.timestamp).toLocaleString('pl-PL')}</div>
+              <div style="display:flex;gap:4px;">
+                <span style="font-size:10px;padding:2px 6px;border-radius:4px;background:${tc}20;color:${tc};font-weight:700;">${tl}</span>
+                ${cl ? `<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:${cc}20;color:${cc};font-weight:700;">${cl}</span>` : ''}
+                ${c.outsideWorkingHours ? '<span class="badge-outside-hours">🌙 Poza godz.</span>' : ''}
+              </div>
+            </div>
+            ${c.callEffect ? `<div style="font-size:13px;color:#1e293b;font-weight:600;">Wynik: ${escHtml(c.callEffect)}</div>` : ''}
+            ${c.program    ? `<div style="font-size:12px;color:#7c3aed;margin-top:2px;">Program: ${escHtml(c.program)}</div>` : ''}
+            ${c.notes      ? `<div style="font-size:12px;color:#64748b;margin-top:4px;font-style:italic;">„${escHtml(c.notes)}"</div>` : ''}
+            <div style="font-size:11px;color:#94a3b8;margin-top:4px;">
+              ${c.direction === 'outbound' ? '↗️ Wychodzące' : '↘️ Przychodzące'} • ${c.duration ? formatDuration(c.duration) : 'brak czasu'}
+              ${agentStr ? ` • 👤 ${escHtml(agentStr)}` : ''}
+            </div>
+            ${recUrl ? `<div class="pc-call-recording">
+              <audio controls src="${recUrl}" preload="none"></audio>
+              <a href="${recUrl}" target="_blank" title="Pobierz" style="font-size:13px;color:#3b82f6;text-decoration:none;">↓ Pobierz</a>
+            </div>` : ''}
+          </div>`;
+        }).join('');
+    }
+
+    // ── TAB: TASKI ────────────────────────────────────────────
+    const tasksEl = document.getElementById('patientCardTasks');
+    if (tasksResp && tasksResp.ok) {
+      const tasksData = await tasksResp.json();
+      const tasks = tasksData.tasks || tasksData || [];
+      if (!Array.isArray(tasks) || tasks.length === 0) {
+        tasksEl.innerHTML = '<div style="padding:12px;background:#f8fafc;border-radius:8px;color:#64748b;text-align:center;">Brak zadań dla tego pacjenta</div>';
+      } else {
+        const now = new Date();
+        tasksEl.innerHTML = tasks
+          .sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate))
+          .map(t => {
+            const isCompleted = t.status === 'completed';
+            const dueDate = t.dueDate ? new Date(t.dueDate) : null;
+            const isOverdue = dueDate && dueDate < now && !isCompleted;
+            const cls = isCompleted ? 'completed' : (isOverdue ? 'overdue' : '');
+            const dueDateStr = dueDate
+              ? dueDate.toLocaleDateString('pl-PL', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })
+              : '—';
+            return `<div class="pc-task-row ${cls}">
+              <div class="pc-task-title">
+                ${isCompleted ? '✅' : isOverdue ? '🔴' : '🔵'} ${escHtml(t.title || 'Zadanie')}
+              </div>
+              ${t.body ? `<div style="font-size:12px;color:#64748b;margin-top:3px;">${escHtml(t.body)}</div>` : ''}
+              <div class="pc-task-meta">
+                Termin: ${dueDateStr}
+                ${t.assignedTo ? ` • Przypisane: ${escHtml(t.assignedTo)}` : ''}
+                ${isCompleted ? ' • <span style="color:#10b981;">Ukończone</span>' : ''}
+                ${isOverdue   ? ' • <span style="color:#ef4444;">Po terminie</span>' : ''}
+              </div>
+            </div>`;
+          }).join('');
+      }
+    } else {
+      tasksEl.innerHTML = '<div style="padding:12px;background:#f8fafc;border-radius:8px;color:#64748b;text-align:center;">Brak danych o zadaniach</div>';
+    }
+
   } catch (err) {
     console.error('[Patient Card] Error:', err);
-    document.getElementById('patientCardTimeline').innerHTML = `<div style="padding: 12px; background: #fef2f2; border-radius: 8px; color: #ef4444; text-align: center;">Błąd: ${err.message}</div>`;
+    const tl = document.getElementById('patientCardTimeline');
+    if (tl) tl.innerHTML = `<div style="padding:12px;background:#fef2f2;border-radius:8px;color:#ef4444;text-align:center;">Błąd: ${err.message}</div>`;
   }
 }
 
 function closePatientCard() {
   const modal = document.getElementById('patientCardModal');
-  if (modal) {
-    modal.classList.add('hidden');
-    modal.style.display = 'none';
-  }
+  if (modal) { modal.classList.add('hidden'); modal.style.display = 'none'; }
 }
-
 
 // ==================== CALLS — ULEPSZONY WIDOK ====================
 function groupCallsByDay(calls) {

@@ -4189,3 +4189,186 @@ button {
 .pool-task {
   border-left: 4px solid #3b82f6;
 }
+
+/* ══════════════════════════════════════════════════════════════
+   FEATURE ADDITIONS v7 — agentName / outsideHours / routing / tabs
+   ══════════════════════════════════════════════════════════════ */
+
+/* 1 ─ Badge: poza godzinami pracy */
+.badge-outside-hours {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 12px;
+  background: #fff7ed;
+  color: #c2410c;
+  border: 1px solid #fed7aa;
+  white-space: nowrap;
+}
+
+/* agent tag in call table */
+.agent-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+.agent-tag.role-reception { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
+.agent-tag.role-opiekun   { background: #dbeafe; color: #1d4ed8; border-color: #bfdbfe; }
+
+/* 2 ─ Minimize button in call popup */
+.btn-minimize-popup {
+  background: none;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #64748b;
+  cursor: pointer;
+  line-height: 1;
+  transition: background 0.15s;
+}
+.btn-minimize-popup:hover { background: #f1f5f9; color: #1e293b; }
+
+/* Minimized popup bar shows active call info */
+#callPopup.minimized .popup-content::before {
+  content: '📞 Połączenie aktywne — kliknij aby rozwinąć';
+}
+
+/* 3 ─ Date range quick buttons */
+.date-quick-btns {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.date-quick-btn {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.date-quick-btn:hover, .date-quick-btn.active {
+  background: #3b82f6;
+  color: #fff;
+  border-color: #3b82f6;
+}
+
+/* 4 ─ Patient card 4-tab layout */
+.pc-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid #e2e8f0;
+  padding: 0 16px;
+  background: #f8fafc;
+}
+.pc-tab {
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  border: none;
+  background: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.pc-tab:hover { color: #3b82f6; }
+.pc-tab.active { color: #3b82f6; border-bottom-color: #3b82f6; }
+.pc-tab-content { display: none; padding: 16px; }
+.pc-tab-content.active { display: block; }
+
+/* call history row with recording in patient card */
+.pc-call-row {
+  padding: 12px;
+  border-left: 3px solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+.pc-call-row.tag-connected  { border-left-color: #10b981; }
+.pc-call-row.tag-missed     { border-left-color: #ef4444; }
+.pc-call-row.tag-ineffective{ border-left-color: #f59e0b; }
+.pc-call-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.pc-call-recording {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pc-call-recording audio { height: 28px; flex: 1; max-width: 260px; }
+
+/* task item in patient card */
+.pc-task-row {
+  padding: 12px;
+  border-left: 3px solid #3b82f6;
+  background: #f8fafc;
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+.pc-task-row.completed { border-left-color: #10b981; opacity: 0.7; }
+.pc-task-row.overdue   { border-left-color: #ef4444; background: #fff5f5; }
+.pc-task-title { font-size: 13px; font-weight: 600; color: #1e293b; margin-bottom: 3px; }
+.pc-task-meta  { font-size: 11px; color: #94a3b8; }
+
+/* 5 ─ Unfilled report notification */
+.report-notify-bar {
+  position: fixed;
+  top: 70px;
+  right: 20px;
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.report-notify-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #fff;
+  border: 2px solid #f59e0b;
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  pointer-events: all;
+  cursor: pointer;
+  animation: slideInRight 0.3s ease;
+  max-width: 320px;
+}
+.report-notify-item:hover { background: #fffbeb; }
+.report-notify-icon { font-size: 20px; flex-shrink: 0; }
+.report-notify-text { flex: 1; }
+.report-notify-name { font-weight: 700; font-size: 13px; color: #92400e; }
+.report-notify-hint { font-size: 11px; color: #78716c; margin-top: 2px; }
+.report-notify-dismiss { font-size: 14px; color: #a3a3a3; padding: 4px; cursor: pointer; }
+.report-notify-dismiss:hover { color: #ef4444; }
+
+@keyframes slideInRight {
+  from { transform: translateX(40px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
