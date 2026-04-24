@@ -665,6 +665,18 @@
             </select>
           </div>
           <div class="form-group">
+            <label>Źródło leada <span style="color:#94a3b8;font-size:11px;">(skąd wpłynęło zgłoszenie)</span>:</label>
+            <input type="text" id="zrodloLeada" class="form-input" placeholder="np. Facebook, Google, polecenie...">
+          </div>
+          <div class="form-group">
+            <label>Źródło kontaktu:</label>
+            <input type="text" id="zrodloKontaktu" class="form-input" placeholder="np. formularz www, telefon, chat...">
+          </div>
+          <div class="form-group">
+            <label style="color:#d97706;font-weight:700;">📝 Notatka z pierwszej rozmowy <span style="font-weight:400;font-size:11px;color:#94a3b8;">(wymagane dla nowego pacjenta)</span>:</label>
+            <textarea id="notatkaZPierwszejRozmowy" class="form-textarea" rows="3" placeholder="Opisz przebieg pierwszej rozmowy, ustalenia, wnioski..." style="border-color:#f59e0b;"></textarea>
+          </div>
+          <div class="form-group">
             <label>Wynik rozmowy:</label>
             <div class="outcome-buttons">
               <button class="outcome-btn" data-outcome="umowil_sie" onclick="selectOutcome('umowil_sie')">✅ Umówił się</button>

@@ -840,7 +840,7 @@ function handleCallAnswered(data) {
 function handleCallEnded(data) {
   const idx = allCalls.findIndex(c => c.callId === data.callId);
   if (idx >= 0) allCalls[idx] = { ...allCalls[idx], status: 'ended', tag: data.tag, duration: data.duration };
-  if (currentView === 'calls') renderCallsTable(allCalls);
+  if (currentView === 'calls' && !isAudioActiveInCallsFeed()) renderCallsTable(allCalls);
 
   if (data.tag === 'connected') startRecordingPoller(data.callId);
 
@@ -857,6 +857,25 @@ function handleCallEnded(data) {
       tagEl.className = `call-tag ${classes[data.tag] || ''}`;
       tagEl.style.display = 'inline-block';
     }
+
+    // Powiadomienie o brakującym raporcie — po 20s od zakończenia rozmowy
+    if (data.tag === 'connected') {
+      const endedCallId = data.callId;
+      const endedContactName = allCalls.find(c => c.callId === endedCallId)?.contactName || 'pacjent';
+      setTimeout(() => {
+        // Sprawdź czy raport został uzupełniony
+        if (activeCallId === endedCallId && !selectedStatus) {
+          showToast(`⚠️ Raport z rozmowy z ${endedContactName} nie został uzupełniony!`, 'error');
+          addPendingReport(endedCallId, endedContactName);
+        }
+      }, 20000);
+      // Drugie przypomnienie po 60s
+      setTimeout(() => {
+        if (activeCallId === endedCallId && !selectedStatus) {
+          showToast(`🔴 PILNE: Uzupełnij raport z rozmowy z ${endedContactName}!`, 'error');
+        }
+      }, 60000);
+    }
   }
   updateMissedKPI();
 }
@@ -865,8 +884,8 @@ function handleRecordingReady(data) {
   // Zaktualizuj store
   const idx = allCalls.findIndex(c => c.callId === data.callId);
   if (idx >= 0) allCalls[idx].recordingUrl = data.recordingUrl;
-  // Odśwież widok połączeń (D3)
-  if (currentView === 'calls') renderCallsTable(allCalls);
+  // Odśwież widok połączeń (tylko jeśli audio nie jest aktywne)
+  if (currentView === 'calls' && !isAudioActiveInCallsFeed()) renderCallsTable(allCalls);
   showToast('🎙️ Nagranie połączenia gotowe', 'success');
 }
 
@@ -899,12 +918,6 @@ function switchView(view) {
 
   if (view === 'contacts') loadContacts();
   if (view === 'calls') {
-    // Ustaw domyślną datę na dzisiaj (jeśli brak)
-    const today = new Date().toISOString().slice(0, 10);
-    const dfrom = document.getElementById('filter-date-from');
-    const dto = document.getElementById('filter-date-to');
-    if (dfrom && !dfrom.value) dfrom.value = today;
-    if (dto && !dto.value) dto.value = today;
     loadCalls();
     // Pokaż/ukryj filtry admina
     const isAdm = currentUser?.role === 'admin';
@@ -1788,21 +1801,34 @@ function answerCall() {
 
 async function hangupCall() {
   const tagEl = document.getElementById('popupCallTag');
-  if (tagEl) { tagEl.textContent = 'ROZŁĄCZONO'; tagEl.className = 'call-tag tag-missed'; tagEl.style.display = 'inline-block'; }
+  if (tagEl) { tagEl.textContent = 'ROZŁĄCZANIE...'; tagEl.className = 'call-tag tag-missed'; tagEl.style.display = 'inline-block'; }
   stopCallTimer();
 
-  // Wyślij żądanie rozłączenia do serwera → Zadarma API
+  // Wyślij żądanie rozłączenia do serwera → Zadarma API (rozłącza też w aplikacji Zadarma na telefonie)
   if (activeCallId) {
     try {
-      await fetch('/api/call/hangup', {
+      const resp = await fetch('/api/call/hangup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ callId: activeCallId })
       });
-    } catch(e) { console.error('[Hangup] Error:', e); }
+      const result = await resp.json();
+      if (result.success) {
+        showToast('📵 Rozłączono — połączenie zakończone również w Zadarma', 'info');
+        if (tagEl) tagEl.textContent = 'ROZŁĄCZONO';
+      } else {
+        showToast('⚠️ Rozłączono lokalnie (Zadarma mogła nie odpowiedzieć)', 'info');
+        if (tagEl) tagEl.textContent = 'ROZŁĄCZONO';
+      }
+    } catch(e) {
+      console.error('[Hangup] Error:', e);
+      showToast('⚠️ Błąd rozłączenia — sprawdź połączenie', 'error');
+      if (tagEl) tagEl.textContent = 'ROZŁĄCZONO';
+    }
+  } else {
+    showToast('📵 Rozłączono', 'info');
+    if (tagEl) tagEl.textContent = 'ROZŁĄCZONO';
   }
-
-  showToast('📵 Rozłączono', 'info');
   // Nie zamykaj popup od razu — pozwól uzupełnić raport
 }
 
@@ -1928,7 +1954,7 @@ function resetReportForm() {
   ['programLeczenia', 'dataW0', 'contactDateTime', 'powodRezygnacji',
    'powodZmiany', 'nowyTermin', 'powodOdwolania', 'wizytaContactDateTime',
    'stalyNotatka', 'stalyDataWizyty', 'stalyContactDateTime', 'spamNotatka',
-   'manualPatientName'].forEach(id => {
+   'manualPatientName', 'notatkaZPierwszejRozmowy', 'zrodloLeada', 'zrodloKontaktu'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { if (el.tagName === 'SELECT') el.selectedIndex = 0; else el.value = ''; }
   });
@@ -2049,7 +2075,11 @@ async function saveReport() {
           cancellationReason: reportData.powodOdwolania || '',
           w0Date: reportData.w0DateTime || null,
           isFollowUp: !!followUpDelay,
-          followUpDelay: followUpDelay
+          followUpDelay: followUpDelay,
+          // Nowe pola NOWY_PACJENT
+          notatkaZPierwszejRozmowy: reportData.notatkaZPierwszejRozmowy || '',
+          zrodloLeada: reportData.zrodloLeada || '',
+          zrodloKontaktu: reportData.zrodloKontaktu || ''
         };
 
         await fetch(`/api/calls/${activeCallId}/report`, {
@@ -2091,6 +2121,9 @@ function buildReportData() {
   };
   if (selectedStatus === 'NOWY_PACJENT') {
     data.program = document.getElementById('programLeczenia')?.value;
+    data.notatkaZPierwszejRozmowy = document.getElementById('notatkaZPierwszejRozmowy')?.value || '';
+    data.zrodloLeada = document.getElementById('zrodloLeada')?.value || '';
+    data.zrodloKontaktu = document.getElementById('zrodloKontaktu')?.value || '';
     if (selectedOutcome === 'umowil_sie') {
       data.dataW0 = document.getElementById('dataW0')?.value;
       data.w0DateTime = data.dataW0;
@@ -2119,6 +2152,23 @@ function buildReportData() {
 }
 
 async function handleNewPatientReport(contactId, data) {
+  // Zapisz nowe pola do kontaktu GHL (notatka z pierwszej rozmowy, źródła)
+  if (contactId && contactId !== 'unknown') {
+    const customFieldsToUpdate = [];
+    if (data.notatkaZPierwszejRozmowy) customFieldsToUpdate.push({ id: 'notatka_z_pierwszej_rozmowy', value: data.notatkaZPierwszejRozmowy });
+    if (data.zrodloLeada) customFieldsToUpdate.push({ id: 'rdo_leada', value: data.zrodloLeada });
+    if (data.zrodloKontaktu) customFieldsToUpdate.push({ id: 'rdo_kontaktu', value: data.zrodloKontaktu });
+    if (data.program) customFieldsToUpdate.push({ id: 'potencjalny_program', value: data.program });
+    if (customFieldsToUpdate.length > 0) {
+      try {
+        await fetch(`/api/contact/${contactId}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customFields: customFieldsToUpdate })
+        });
+      } catch(e) { console.warn('[Report] GHL custom fields error:', e.message); }
+    }
+  }
+
   if (data.outcome === 'umowil_sie' && data.dataW0) {
     if (currentOpportunity?.id) {
       await fetch(`/api/opportunity/${currentOpportunity.id}`, {

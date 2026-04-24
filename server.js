@@ -2163,7 +2163,10 @@ app.patch('/api/calls/:callId/report', async (req, res) => {
           cancellationReason,
           isFollowUp,
           w0Date,
-          firstCallAt
+          firstCallAt,
+          notatkaZPierwszejRozmowy,
+          zrodloLeada,
+          zrodloKontaktu
         } = req.body;
 
         const updates = {
@@ -2215,6 +2218,45 @@ app.patch('/api/calls/:callId/report', async (req, res) => {
               metadata: { callId, w0Date, w0Doctor }
             });
           } catch(e) { console.warn('[ReceptionOS] W0 global update error:', e.message); }
+        }
+
+        // Notatka z pierwszej rozmowy (NOWY_PACJENT) — zapisz na stałe w kontakcie
+        if (contactType === 'NOWY_PACJENT' && contactId && notatkaZPierwszejRozmowy) {
+          try {
+            // Zapisz do contacts w Supabase
+            await supabase.from('contacts').upsert({
+              ghl_contact_id: contactId,
+              first_call_note: notatkaZPierwszejRozmowy,
+              contact_status: 'nowy_pacjent',
+              first_call_at: new Date().toISOString(),
+              first_call_by: userId,
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'ghl_contact_id' });
+            // Event
+            await supabase.from('events').insert({
+              event_type: 'first_call',
+              contact_id: contactId,
+              contact_name: contactName,
+              user_id: userId,
+              source: 'app',
+              description: `Pierwsza rozmowa (nowy pacjent): ${notatkaZPierwszejRozmowy.substring(0, 200)}`,
+              metadata: { callId, program, zrodloLeada, zrodloKontaktu }
+            });
+            // Wyślij do GHL jako custom field
+            if (GHL_TOKEN) {
+              try {
+                await axios.patch(
+                  `https://services.leadconnectorhq.com/contacts/${contactId}`,
+                  { customFields: [
+                    { key: 'notatka_z_pierwszej_rozmowy', field_value: notatkaZPierwszejRozmowy },
+                    ...(zrodloLeada ? [{ key: 'rdo_leada', field_value: zrodloLeada }] : []),
+                    ...(zrodloKontaktu ? [{ key: 'rdo_kontaktu', field_value: zrodloKontaktu }] : [])
+                  ]},
+                  { headers: ghlHeaders, timeout: 10000 }
+                );
+              } catch(e) { console.warn('[Report] GHL custom fields update error:', e.message); }
+            }
+          } catch(e) { console.warn('[Report] First call note save error:', e.message); }
         }
 
         // Logika Eventów: Odwołanie wizyty
@@ -2625,7 +2667,7 @@ app.get('/api/calls/history', async (req, res) => {
           userId: row.user_id,
           agentName: row.user_id && USERS[row.user_id] ? USERS[row.user_id].name : null,
           outsideWorkingHours: row.created_at ? isOutsideWorkingHours(row.created_at) : false,
-          tag: row.call_tag || (row.status === 'ended' && row.duration_seconds > 0 ? 'connected' : row.direction === 'inbound' ? 'missed' : 'ineffective'),
+          tag: row.call_tag || row.contact_type || (row.status === 'ended' && row.duration_seconds > 0 ? 'connected' : row.direction === 'inbound' ? 'missed' : 'ineffective'),
           contactType: row.contact_type,
           callEffect: row.call_effect,
           notes: row.notes,
