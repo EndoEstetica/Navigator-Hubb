@@ -663,33 +663,39 @@ body {
 
 .sonia-chat-widget {
   bottom: 24px;
-  left: 260px;
+  left: calc(var(--sidebar-width) + 20px);
 }
 
 .dialer-widget > button, .sonia-chat-widget > button {
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
+  position: relative;
+  height: 44px;
+  padding: 0 18px;
+  border-radius: 22px;
   background: var(--navy);
   border: none;
   cursor: pointer;
-  font-size: 22px;
+  font-size: 13px;
+  font-weight: 600;
   color: #fff;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 7px;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
   transition: var(--transition);
 }
 
 .dialer-widget > button:hover, .sonia-chat-widget > button:hover {
-  transform: scale(1.08);
+  transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.32);
+  background: #1e293b;
 }
 
 .dialer-panel, .sonia-chat-panel {
   position: absolute;
-  bottom: 70px;
+  bottom: 58px;
   background: #fff;
   border-radius: 16px;
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.15);
@@ -725,38 +731,9 @@ body {
   color: #fff;
 }
 
-.sonia-msg-text {
-  padding: 12px 16px;
-  border-radius: 18px;
-  font-size: 14px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-}
+/* .sonia-msg-text styles defined below in the chat section */
 
-.sonia-chat-input-row {
-  padding: 16px;
-  background: #fff;
-}
-
-.sonia-chat-input-row input {
-  padding: 12px 16px;
-  border-radius: 24px;
-  background: #f1f5f9;
-  border: 1px solid transparent;
-}
-
-.sonia-chat-input-row input:focus {
-  background: #fff;
-  border-color: var(--accent-blue);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-.sonia-chat-input-row button {
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  background: var(--accent-blue);
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
-}
+/* sonia-chat-input-row styles defined below in the chat section */
 
 .dialer-panel {
   right: 0;
@@ -1154,7 +1131,7 @@ body {
   }
   
   .sonia-chat-widget {
-    left: 100px;
+    left: 100px; /* sidebar 80px + 20px margin */
   }
   
   .kpi-grid {
@@ -1175,6 +1152,10 @@ body {
   .main-content {
     margin-left: 60px;
     padding: 16px;
+  }
+
+  .sonia-chat-widget {
+    left: 80px; /* sidebar 60px + 20px margin */
   }
   
   .kpi-grid {
