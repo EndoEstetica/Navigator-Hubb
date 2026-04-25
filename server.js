@@ -369,14 +369,12 @@ function scheduleRecordingFetch(callId, pbxCallId, contactName) {
   
   // Idempotentność: Jeśli już w kolejce, nie dodawaj ponownie
   if (recordingRetryQueue.has(callId)) {
-    console.log(`[Recording] Skip schedule: ${callId} already in retry queue.`);
-    return;
+    return; // cicho — nie loguj każdego skipa
   }
   
-  // Sprawdź czy już mamy nagranie (idempotentność bazy danych)
+  // Sprawdź czy już mamy nagranie w RAM
   const existing = callsStore.find(c => c.callId === callId);
   if (existing?.recordingUrl) {
-    console.log(`[Recording] Skip schedule: ${callId} already has recording URL.`);
     return;
   }
 
@@ -386,27 +384,41 @@ function scheduleRecordingFetch(callId, pbxCallId, contactName) {
     const entry = recordingRetryQueue.get(callId);
     if (!entry) return;
     
+    // Sprawdź ponownie czy nagranie nie pojawiło się w międzyczasie (inny mechanizm mógł je zapisać)
+    const current = callsStore.find(c => c.callId === callId);
+    if (current?.recordingUrl) {
+      recordingRetryQueue.delete(callId);
+      return;
+    }
+    
     const { attempts, pbxCallId: pid } = entry;
     const url = await fetchRecordingFromZadarma(pid);
     
     if (url) {
+      // Zapisz do RAM
       storeCall({ callId, recordingUrl: url });
       broadcast({ type: 'CALL_RECORDING_READY', callId, recordingUrl: url });
       recordingRetryQueue.delete(callId);
+      
+      // Zapisz do Supabase SYNCHRONICZNIE (żeby fallback poller nie re-dodał)
+      if (supabase) {
+        try {
+          await supabase.from('calls').update({ recording_url: url }).eq('call_id', callId);
+        } catch(e) { console.warn(`[Recording] Supabase save error for ${callId}:`, e.message); }
+      }
+      console.log(`[Recording] ✅ Saved for ${callId}`);
     } else {
       const nextAttempt = attempts + 1;
       if (nextAttempt < RETRY_DELAYS.length) {
         recordingRetryQueue.set(callId, { ...entry, attempts: nextAttempt });
         setTimeout(tryFetch, RETRY_DELAYS[nextAttempt]);
-        console.log(`[Recording] RETRY ${nextAttempt}/${RETRY_DELAYS.length} for ${callId} in ${RETRY_DELAYS[nextAttempt]/1000}s`);
       } else {
         recordingRetryQueue.delete(callId);
-        console.log(`[Recording] ERROR: Max retries reached for ${callId}. Recording might not be available on Zadarma.`);
+        console.log(`[Recording] ❌ Max retries for ${callId} — recording unavailable on Zadarma`);
       }
     }
   }
 
-  // Pierwsza próba po 5s
   setTimeout(tryFetch, RETRY_DELAYS[0]);
 }
 
@@ -459,8 +471,24 @@ async function startRecordingFallbackPoller() {
     const limited = allCandidates.slice(0, 5);
 
     if (limited.length > 0) {
-      console.log(`[Poller] Found ${limited.length} calls missing recordings. Scheduling...`);
-      limited.forEach(c => scheduleRecordingFetch(c.callId, c.pbxCallId, c.contactName));
+      console.log(`[Poller] Found ${limited.length} calls missing recordings. Checking...`);
+      for (const c of limited) {
+        // Dodatkowe sprawdzenie: może nagranie jest w Supabase ale nie w RAM
+        if (supabase) {
+          try {
+            const { data } = await supabase.from('calls')
+              .select('recording_url')
+              .eq('call_id', c.callId)
+              .single();
+            if (data?.recording_url) {
+              // Jest w Supabase — zaktualizuj RAM i nie dodawaj do kolejki
+              storeCall({ callId: c.callId, recordingUrl: data.recording_url });
+              continue;
+            }
+          } catch(e) { /* kontynuuj do schedule */ }
+        }
+        scheduleRecordingFetch(c.callId, c.pbxCallId, c.contactName);
+      }
     }
   }
   
@@ -2665,7 +2693,8 @@ app.get('/api/calls/history', async (req, res) => {
           direction: row.direction,
           status: row.status,
           duration: row.duration_seconds,
-          recordingUrl: row.recording_url,
+          // Merge recordingUrl: RAM ma priorytet (Supabase update może być opóźniony)
+          recordingUrl: row.recording_url || (callsStore.find(c => c.callId === row.call_id)?.recordingUrl) || null,
           contactName: row.patient_name,
           contactId: row.ghl_contact_id,
           userId: row.user_id,
