@@ -1,0 +1,80 @@
+═══════════════════════════════════════════════════════════════════════════════
+ZADARMA API - KRYTYCZNE NOTATKI
+═══════════════════════════════════════════════════════════════════════════════
+
+⚠️  BŁĄD KTÓRY ZAJĄŁ 2 GODZINY:
+─────────────────────────────────
+Problem: API zwracał 401 Not authorized
+Przyczyna: Błędny algorytm podpisu
+
+❌ BŁĘDY:
+  1. crypto.createHmac().digest('base64')  ← base64(binary_hmac) - ŹRÓDŁO BŁĘDU
+  2. encodeURIComponent() w query string   ← Zadarma nie chce tego
+  3. Brak base64 encoding HEX signature    ← Zadarma wymaga base64(hex)
+
+✅ ROZWIĄZANIE:
+  1. crypto.createHmac().digest('hex')     ← Zwróć HEX
+  2. Buffer.from(hex).toString('base64')   ← Koduj HEX w base64
+  3. Brak encodeURIComponent()             ← Proste key=value
+
+═══════════════════════════════════════════════════════════════════════════════
+ALGORYTM PODPISU
+═══════════════════════════════════════════════════════════════════════════════
+
+Zadarma API implementuje:
+  $sign = base64_encode(hash_hmac('sha1', $method . $params . md5($params), $secret));
+
+W PHP:
+  - hash_hmac() zwraca HEX string (domyślnie)
+  - base64_encode() koduje ten HEX string
+
+W Node.js:
+  - .digest('hex') zwraca HEX string
+  - Buffer.from(hex).toString('base64') koduje HEX w base64
+
+═══════════════════════════════════════════════════════════════════════════════
+IMPLEMENTACJA
+═══════════════════════════════════════════════════════════════════════════════
+
+function zadarmaSign(method, params) {
+  // 1. Sort params
+  const sortedKeys = Object.keys(params).sort();
+  
+  // 2. Build query string (NO encodeURIComponent!)
+  const paramString = sortedKeys.map(k => `${k}=${params[k]}`).join('&');
+  
+  // 3. MD5 of params (HEX)
+  const md5Hash = crypto.createHash('md5').update(paramString).digest('hex');
+  
+  // 4. Sign string
+  const signString = `${method}${paramString}${md5Hash}`;
+  
+  // 5. HMAC-SHA1 (HEX!)
+  const hexSignature = crypto.createHmac('sha1', SECRET)
+    .update(signString)
+    .digest('hex');  // ← KEY: digest('hex') nie digest('base64')
+  
+  // 6. Base64 of HEX
+  return Buffer.from(hexSignature).toString('base64');
+}
+
+═══════════════════════════════════════════════════════════════════════════════
+TESTY
+═══════════════════════════════════════════════════════════════════════════════
+
+# Test balance
+curl -H "Authorization: KEY:SIGNATURE" https://api.zadarma.com/v1/info/balance/
+Expected: {"status":"success","balance":...}
+
+# Test callback
+curl -H "Authorization: KEY:SIGNATURE" \
+  "https://api.zadarma.com/v1/request/callback/?from=225340&to=%2B48123456789"
+Expected: {"status":"success",...}
+
+═══════════════════════════════════════════════════════════════════════════════
+ZAPAMIĘTAJ
+═══════════════════════════════════════════════════════════════════════════════
+
+base64(hmac_hex) ≠ base64(hmac_binary)
+
+Zadarma wymaga: base64(hmac_hex)
