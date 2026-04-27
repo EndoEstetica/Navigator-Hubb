@@ -4,6 +4,26 @@
    ============================================================ */
 
 // ==================== GHL STAGES ====================
+// ==================== PATIENT STATUS TAGS ====================
+const PATIENT_STATUS_TAGS = {
+  czeka_na_kontakt:       { label: 'Czeka na kontakt',        color: '#c2410c', bg: '#fff7ed', border: '#fb923c' },
+  nie_odbiera_w_procesie: { label: 'Nie odbiera — w procesie', color: '#1d4ed8', bg: '#eff6ff', border: '#93c5fd' },
+  nie_odbiera_przegrana:  { label: 'Nie odbiera — przegrana',  color: '#475569', bg: '#f1f5f9', border: '#94a3b8' },
+  prosi_o_kontakt:        { label: 'Prosi o kontakt',          color: '#6d28d9', bg: '#f5f3ff', border: '#a78bfa' },
+  umowiony_na_w0:         { label: 'Umówiony na W0',           color: '#065f46', bg: '#f0fdf4', border: '#6ee7b7' },
+  niekwalifikowany:       { label: 'Niekwalifikowany',          color: '#991b1b', bg: '#fef2f2', border: '#fca5a5' },
+  rezygnacja:             { label: 'Rezygnacja',                color: '#991b1b', bg: '#fef2f2', border: '#fca5a5' },
+};
+
+function getPatientStatusBadge(tags) {
+  if (!tags || !Array.isArray(tags)) return '';
+  for (const tag of tags) {
+    const def = PATIENT_STATUS_TAGS[tag];
+    if (def) return `<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;background:${def.bg};color:${def.color};border:1px solid ${def.border};white-space:nowrap;">${def.label}</span>`;
+  }
+  return '';
+}
+
 const GHL_STAGE_IDS = {
   NEW:          '4d006021-f3b2-4efc-8efc-4f049522379c',
   ATTEMPT_1:    '002dbc5a-c6a4-4931-a9a3-af4877b2c525',
@@ -162,25 +182,7 @@ function initApp() {
     setInterval(sendHeartbeat, 5 * 60 * 1000); // Co 5 minut
   }
   
-  // Automatycznie pokaż chat Sonia i dialer po zalogowaniu
-  setTimeout(() => {
-    // Pokaż panel czatu Sonia (nie minimalizowany)
-    const soniaPanel = document.getElementById('soniaChatPanel');
-    if (soniaPanel) {
-      soniaPanel.classList.remove('hidden');
-      soniaPanel.classList.remove('minimized');
-      soniaChatOpen = true;
-    }
-    // Pokaż dialer
-    const dialerPanel = document.getElementById('dialerPanel');
-    const dialerIcon = document.getElementById('dialerToggleIcon');
-    if (dialerPanel) {
-      dialerPanel.classList.remove('hidden');
-      dialerPanel.classList.remove('minimized');
-      dialerOpen = true;
-      if (dialerIcon) dialerIcon.textContent = '✕';
-    }
-  }, 300);
+  // Czat Sonia i dialer NIE otwierają się automatycznie — użytkownik klika miniaturkę
 }
 
 // startHeaderClock() usunięta — logika jest w updateClock()
@@ -380,7 +382,20 @@ async function loadChatHistory(convKey) {
   try {
     const r = await fetch(`/api/chat/history/${convKey}`);
     const data = await r.json();
-    renderChatMessages(container, data.messages || []);
+    let messages = data.messages || [];
+
+    // Pokaż tylko wiadomości PO ostatnim zamknięciu sprawy
+    // (wszystko przed "Problem rozwiązany" → tylko w historii)
+    const lastResolvedIdx = messages.map(m => m.text).lastIndexOf('✅ Problem został oznaczony jako rozwiązany.');
+    if (lastResolvedIdx >= 0) {
+      messages = messages.slice(lastResolvedIdx + 1);
+    }
+
+    if (messages.length === 0) {
+      container.innerHTML = '<p style="padding:12px;color:#888;font-size:12px;">Rozpocznij rozmowę z Sonią</p>';
+      return;
+    }
+    renderChatMessages(container, messages);
   } catch(e) {
     container.innerHTML = '<p style="padding:12px;color:#888;font-size:12px;">Rozpocznij rozmowę z Sonią</p>';
   }
@@ -508,12 +523,17 @@ async function markChatResolved() {
       })
     });
     showToast('✅ Problem oznaczony jako rozwiązany', 'success');
-    // Odśwież konwersację
-    loadChatHistory(currentConvKey);
-    // Wróć do listy po 1.5s
-    setTimeout(() => {
-      soniaGoBackToInbox();
-    }, 1500);
+
+    // Wyczyść czat — czysta karta, historia zostaje w zakładce "Historia"
+    const container = document.getElementById('soniaChatMessages');
+    if (container) {
+      container.innerHTML = '<p style="padding:12px;color:#888;font-size:12px;">Sprawa zamknięta. Opisz nową sprawę lub problem.</p>';
+    }
+
+    // Jeśli Sonia — wróć do listy konwersacji
+    if (currentUser?.id === 'sonia') {
+      setTimeout(() => soniaGoBackToInbox(), 1500);
+    }
   } catch(e) {
     showToast('Błąd', 'error');
   }
@@ -660,15 +680,30 @@ function setUserRole(role) {
 }
 
 // ==================== POLLING FALLBACK (C4) ====================
+// Sprawdź czy audio w tabeli połączeń jest aktywne lub było odtwarzane
+function isAudioActiveInCallsFeed() {
+  const feed = document.getElementById('callsFeed');
+  if (!feed) return false;
+  const audios = feed.querySelectorAll('audio');
+  return [...audios].some(a => !a.paused || a.currentTime > 0);
+}
+
 function startPolling() {
   if (pollingInterval) clearInterval(pollingInterval);
+  // Polling rzadszy gdy WebSocket działa
   pollingInterval = setInterval(() => {
-    if (currentView === 'calls') loadCalls();
+    // Nie odświeżaj jeśli popup jest otwarty — to główna przyczyna zawieszania
+    if (activeCallId || document.getElementById('reportFormPanel').style.display === 'flex') return;
+    
+    if (currentView === 'calls' && !isAudioActiveInCallsFeed()) loadCalls();
     if (currentView === 'dashboard') loadNewLeads();
-  }, 30000);
+  }, 120000); // 2 minuty
 }
 
 // ==================== WEBSOCKET (C4) ====================
+let _wsReconnectDelay = 3000;
+const _WS_MAX_DELAY = 30000;
+
 function connectWebSocket() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${protocol}//${window.location.host}`;
@@ -678,20 +713,22 @@ function connectWebSocket() {
 
     wsConnection.onopen = () => {
       setWsStatus(true);
+      _wsReconnectDelay = 3000; // reset opóźnienia po udanym połączeniu
       showToast('Połączono z serwerem', 'success');
-      // Szybszy polling gdy WS działa
       startPolling();
     };
 
     wsConnection.onclose = () => {
       setWsStatus(false);
-      // Szybszy polling gdy WS rozłączony
+      // Polling co 20s gdy WS rozłączony
       if (pollingInterval) clearInterval(pollingInterval);
       pollingInterval = setInterval(() => {
-        if (currentView === 'calls') loadCalls();
+        if (currentView === 'calls' && !isAudioActiveInCallsFeed()) loadCalls();
         if (currentView === 'dashboard') loadNewLeads();
-      }, 10000);
-      setTimeout(connectWebSocket, 5000);
+      }, 20000);
+      // Eksponencjalne opóźnienie: 3s → 6s → 12s → max 30s
+      setTimeout(connectWebSocket, _wsReconnectDelay);
+      _wsReconnectDelay = Math.min(_wsReconnectDelay * 2, _WS_MAX_DELAY);
     };
 
     wsConnection.onerror = () => setWsStatus(false);
@@ -710,13 +747,73 @@ function setWsStatus(online) {
   const text = document.getElementById('wsStatusText');
   if (dot) dot.className = `status-dot ${online ? 'online' : 'offline'}`;
   if (text) text.textContent = online ? 'Połączono' : 'Rozłączono';
+  checkOutsideHours();
+}
+
+function checkOutsideHours() {
+  const label = document.getElementById('outsideHoursLabel');
+  if (!label || !currentUser) return;
+  const now = new Date();
+  const h = now.getHours(), m = now.getMinutes();
+  const time = h * 60 + m;
+  const day = now.getDay();
+  let outside = false;
+  if (day === 0 || day === 6) outside = true;            // weekend
+  else if (day === 3) outside = time < 650 || time >= 1200; // środa 10:50–20:00
+  else outside = time < 530 || time >= 1020;              // pon–pt 8:50–17:00
+  if (outside) {
+    label.style.display = 'inline';
+    label.textContent = `poza godz. — ${currentUser.name || currentUser.id}`;
+  } else {
+    label.style.display = 'none';
+  }
+}
+// Sprawdzaj co minutę
+setInterval(checkOutsideHours, 60000);
+
+let renderCallsTimeout = null;
+function debouncedRenderCalls() {
+  if (renderCallsTimeout) clearTimeout(renderCallsTimeout);
+  renderCallsTimeout = setTimeout(() => {
+    if (currentView === 'calls' && !isAudioActiveInCallsFeed()) renderCallsTable(allCalls);
+  }, 100);
 }
 
 function handleWebSocketMessage(data) {
   switch (data.type) {
     case 'CALLS_HISTORY':
       allCalls = data.calls || [];
-      if (currentView === 'calls') renderCallsTable(allCalls);
+      debouncedRenderCalls();
+      break;
+    case 'CALL_ENRICHED':
+      // Kontakt znaleziony w GHL — zaktualizuj dane w store i popup
+      {
+        const idx = allCalls.findIndex(c => c.callId === data.callId);
+        if (idx >= 0) {
+          allCalls[idx].contactName = data.contactName;
+          allCalls[idx].contactId = data.contactId;
+        }
+        // Zaktualizuj popup jeśli dotyczy aktywnego połączenia
+        if (activeCallId === data.callId) {
+          if (currentContact) {
+            currentContact.id = data.contactId;
+            currentContact.name = data.contactName;
+            currentContact.firstName = data.firstName;
+            currentContact.lastName = data.lastName;
+          }
+          const nameEl = document.getElementById('popupPatientName');
+          if (nameEl && data.contactName) nameEl.textContent = data.contactName;
+          // Wypełnij pola imienia i nazwiska
+          const fnEl = document.getElementById('manualFirstName');
+          const lnEl = document.getElementById('manualLastName');
+          if (fnEl && data.firstName) fnEl.value = data.firstName;
+          if (lnEl && data.lastName) lnEl.value = data.lastName;
+          // Odśwież wzbogacone dane popup
+          if (data.contactId && data.contactId !== 'unknown') {
+            fetchContactZglosza(data.contactId);
+          }
+        }
+      }
       break;
     case 'CALL_RINGING':
       handleCallRinging(data);
@@ -741,9 +838,24 @@ function handleWebSocketMessage(data) {
       showToast('Raport zapisany w GHL', 'success');
       break;
     case 'opportunity_deleted':
-      // Usuń z listy zgłoszeń
       allLeads = allLeads.filter(l => l.id !== data.id);
       renderLeadsList(allLeads);
+      break;
+    case 'APPOINTMENT_BOOKED':
+      showToast(`📅 Wizyta: ${data.contactName || 'Pacjent'} — ${data.visitType || 'wizyta'} ${data.visitDate ? new Date(data.visitDate).toLocaleDateString('pl-PL') : ''}`, 'success');
+      // Odśwież kartę pacjenta jeśli otwarta
+      if (data.contactId && window._patientCardContactId === data.contactId) loadPatientNotes();
+      break;
+    case 'PATIENT_TAG_UPDATED':
+      {
+        const lead = allLeads.find(l => l.contactId === data.contactId);
+        if (lead) {
+          const statusTagKeys = Object.keys(PATIENT_STATUS_TAGS);
+          lead.tags = [...(lead.tags || []).filter(t => !statusTagKeys.includes(t))];
+          if (data.tagKey) lead.tags.push(data.tagKey);
+          renderLeadsList(allLeads);
+        }
+      }
       break;
     case 'CHAT_MESSAGE':
       appendChatMessage(data.from, data.text, data.ts, false);
@@ -775,17 +887,20 @@ function handleCallRinging(data) {
   if (existing >= 0) allCalls[existing] = { ...allCalls[existing], ...data };
   else allCalls.unshift(data);
 
-  if (currentView === 'calls') renderCallsTable(allCalls);
+  debouncedRenderCalls();
 
   // Otwórz popup tylko dla właściwego agenta (po userId)
   // Admin widzi wszystkie połączenia, ale popup tylko dla swojego ext
   const myUserId = currentUser?.id;
   const myRole = currentUser?.role;
-  // Sprawdź czy to połączenie należy do tego użytkownika
-  // data.userId jest ustawiane przez serwer na podstawie activeExtMap
-  const isMyCall = !data.userId || // stare połączenia bez userId → pokaż wszystkim recepcji
-    data.userId === myUserId ||     // moje połączenie
-    myRole === 'admin';             // admin widzi wszystko
+  // Popup otwiera się dla:
+  // 1. Recepcja — zawsze (są jedynymi osobami odbierającymi telefony)
+  // 2. Admin — zawsze
+  // 3. Opiekun — tylko swoje połączenia
+  const isMyCall =
+    myRole === 'reception' ||
+    myRole === 'admin' ||
+    data.userId === myUserId; // fallback dla opiekunów
 
   if (isMyCall) {
     if (data.direction === 'inbound') {
@@ -811,19 +926,19 @@ function handleCallRinging(data) {
 }
 
 function handleCallAnswered(data) {
-  // Aktualizuj store
   const idx = allCalls.findIndex(c => c.callId === data.callId);
   if (idx >= 0) allCalls[idx] = { ...allCalls[idx], status: 'active', tag: 'connected' };
-  if (currentView === 'calls') renderCallsTable(allCalls);
-  // Zaktualizuj tag w popupie
+  debouncedRenderCalls();
   const tagEl = document.getElementById('popupCallTag');
   if (tagEl) { tagEl.textContent = 'POŁĄCZONO'; tagEl.className = 'call-tag tag-connected'; tagEl.style.display = 'inline-block'; }
-  // Ukryj przycisk Odbierz
   const answerBtn = document.getElementById('popupAnswerBtn');
   if (answerBtn) answerBtn.style.display = 'none';
   // Odblokuj formularz raportu
   const overlay = document.getElementById('reportBlockOverlay');
   if (overlay) overlay.classList.add('hidden');
+  // Pokaż szybki wybór nowy/powracający (krok 1 przed raportem)
+  const quickStep = document.getElementById('quickPatientTypeStep');
+  if (quickStep) quickStep.style.display = 'block';
   // Uruchom timer od momentu odebrania
   if (activeCallId === data.callId) startCallTimer();
 }
@@ -831,12 +946,33 @@ function handleCallAnswered(data) {
 function handleCallEnded(data) {
   const idx = allCalls.findIndex(c => c.callId === data.callId);
   if (idx >= 0) allCalls[idx] = { ...allCalls[idx], status: 'ended', tag: data.tag, duration: data.duration };
-  if (currentView === 'calls') renderCallsTable(allCalls);
+  debouncedRenderCalls();
 
   if (data.tag === 'connected') startRecordingPoller(data.callId);
 
   if (activeCallId === data.callId) {
     stopCallTimer(); // ← zawsze zatrzymaj timer
+
+    // Zaktualizuj status w popup — jasno pokaż że połączenie zakończone
+    const pulseDot = document.getElementById('popupPulseDot');
+    const statusText = document.getElementById('popupStatusText');
+    const statusIndicator = document.getElementById('popupCallStatus');
+    if (pulseDot) pulseDot.style.display = 'none'; // Zatrzymaj migającą kropkę
+
+    const statusLabels = { connected: '✅ Rozmowa zakończona', missed: '❌ Nieodebrane', ineffective: '⚫ Nieskuteczne' };
+    const statusColors = { connected: '#10b981', missed: '#ef4444', ineffective: '#94a3b8' };
+    if (statusText) {
+      statusText.textContent = statusLabels[data.tag] || 'Połączenie zakończone';
+      statusText.style.color = statusColors[data.tag] || '#64748b';
+      statusText.style.fontWeight = '700';
+    }
+
+    // Schowaj przycisk rozłącz i odbierz
+    const hangupBtn = document.getElementById('popupHangupBtn');
+    const answerBtn = document.getElementById('popupAnswerBtn');
+    if (hangupBtn) { hangupBtn.classList.add('hidden'); hangupBtn.style.display = 'none'; }
+    if (answerBtn) answerBtn.style.display = 'none';
+
     if (data.tag === 'missed' || data.tag === 'ineffective') {
       closeCallPopup();
     }
@@ -848,6 +984,26 @@ function handleCallEnded(data) {
       tagEl.className = `call-tag ${classes[data.tag] || ''}`;
       tagEl.style.display = 'inline-block';
     }
+
+    // Powiadomienie o brakującym raporcie — po 20s od zakończenia rozmowy
+    if (data.tag === 'connected') {
+      const endedCallId = data.callId;
+      const endedCall = allCalls.find(c => c.callId === endedCallId);
+      const endedContactName = endedCall?.contactName || 'pacjent';
+      const endedPhone = endedCall?.from || endedCall?.to || '';
+      setTimeout(() => {
+        if (activeCallId === endedCallId && !selectedStatus) {
+          showToast(`⚠️ Raport z rozmowy z ${endedContactName} nie został uzupełniony!`, 'error');
+          addPendingReport(endedCallId, endedContactName, endedPhone);
+        }
+      }, 20000);
+      // Drugie przypomnienie po 60s
+      setTimeout(() => {
+        if (activeCallId === endedCallId && !selectedStatus) {
+          showToast(`🔴 PILNE: Uzupełnij raport z rozmowy z ${endedContactName}!`, 'error');
+        }
+      }, 60000);
+    }
   }
   updateMissedKPI();
 }
@@ -856,8 +1012,8 @@ function handleRecordingReady(data) {
   // Zaktualizuj store
   const idx = allCalls.findIndex(c => c.callId === data.callId);
   if (idx >= 0) allCalls[idx].recordingUrl = data.recordingUrl;
-  // Odśwież widok połączeń (D3)
-  if (currentView === 'calls') renderCallsTable(allCalls);
+  // Odśwież widok połączeń (tylko jeśli audio nie jest aktywne)
+  if (currentView === 'calls' && !isAudioActiveInCallsFeed()) renderCallsTable(allCalls);
   showToast('🎙️ Nagranie połączenia gotowe', 'success');
 }
 
@@ -982,12 +1138,25 @@ function renderLeadsList(leads) {
   if (!listEl) return;
 
   const activeFilter = document.querySelector('.source-filter-btn.active')?.dataset?.source || 'all';
-  const filtered = activeFilter === 'all' ? leads : leads.filter(l =>
+  let filtered = activeFilter === 'all' ? leads : leads.filter(l =>
     (l.tags || []).some(t => t.toLowerCase().includes(activeFilter.toLowerCase())) ||
     (l.source || '').toLowerCase().includes(activeFilter.toLowerCase())
   );
 
-  if (filtered.length === 0) {
+  // Oddziel kontakty z numerem od tych bez
+  const withPhone    = filtered.filter(l => l.phone && l.phone.trim().length > 3);
+  const withoutPhone = filtered.filter(l => !l.phone || l.phone.trim().length <= 3);
+
+  // Sortuj alfabetycznie po nazwisku (domyślny porządek)
+  const sortFn = (a, b) => (a.name || '').localeCompare(b.name || '', 'pl');
+
+  // Sprawdź aktualny tryb sortowania
+  const sortMode = document.getElementById('leadsSort')?.value || 'alpha';
+  const sorted = sortMode === 'alpha'
+    ? [...withPhone].sort(sortFn)
+    : [...withPhone].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  if (sorted.length === 0 && withoutPhone.length === 0) {
     listEl.innerHTML = '<div class="empty-state">Brak zgłoszeń dla wybranego filtra</div>';
     return;
   }
@@ -995,12 +1164,24 @@ function renderLeadsList(leads) {
   const allSources = [...new Set(leads.flatMap(l => [...(l.tags || []), l.source].filter(Boolean)))];
   renderSourceFilters(allSources);
 
-  
   listEl.innerHTML = '';
-  filtered.forEach(lead => {
-    const card = createLeadCard(lead);
-    listEl.appendChild(card);
-  });
+  sorted.forEach(lead => listEl.appendChild(createLeadCard(lead)));
+
+  // Sekcja "bez numerów" — zwinięta domyślnie
+  if (withoutPhone.length > 0) {
+    const nophoneSection = document.createElement('div');
+    nophoneSection.style.cssText = 'margin-top:16px;border-top:1px dashed #e2e8f0;padding-top:12px;';
+    nophoneSection.innerHTML = `
+      <button onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.textContent=this.nextElementSibling.style.display==='none'?'▶ Bez numeru (${withoutPhone.length})':'▼ Bez numeru (${withoutPhone.length})';"
+        style="font-size:12px;color:#94a3b8;background:none;border:none;cursor:pointer;padding:4px 0;width:100%;text-align:left;">
+        ▶ Bez numeru (${withoutPhone.length})
+      </button>
+      <div style="display:none;"></div>
+    `;
+    const inner = nophoneSection.querySelector('div');
+    withoutPhone.sort(sortFn).forEach(lead => inner.appendChild(createLeadCard(lead)));
+    listEl.appendChild(nophoneSection);
+  }
 }
 
 function renderSourceFilters(sources) {
@@ -1046,22 +1227,31 @@ function getLeadAgeLabel(createdAt) {
   const ageMin = Math.floor(ageMs / 60000);
   const ageH = Math.floor(ageMin / 60);
   const ageM = ageMin % 60;
-  const exactTime = ageMin < 60 ? `${ageMin} min` : `${ageH}h ${ageM}m`;
-  let cls, icon, label;
+  const ageDays = Math.floor(ageH / 24);
+  const ageHRem = ageH % 24;
+
+  // Czytelna etykieta czasu
+  let timeLabel;
+  if (ageMin < 60) {
+    timeLabel = `${ageMin} min`;
+  } else if (ageDays === 0) {
+    timeLabel = `${ageH}h ${ageM}m`;
+  } else {
+    timeLabel = `${ageDays}d ${ageHRem}h`;
+  }
+
+  let cls, icon;
   if (ageMin < 15) {
     cls = 'age-ok';
-    icon = '\uD83D\uDFE2'; // 🟢 zielone koło
-    label = 'Świeże';
+    icon = '🟢';
   } else if (ageMin < 120) {
     cls = 'age-warn';
-    icon = '\uD83D\uDFE1'; // 🟡 żółte koło
-    label = 'Oczekuje';
+    icon = '🟡';
   } else {
     cls = 'age-critical';
-    icon = '\uD83D\uDD34'; // 🔴 czerwone koło
-    label = 'Pilne';
+    icon = '🔴';
   }
-  return `<span class="lead-age ${cls}" title="Czas oczekiwania: ${exactTime}">${icon} ${label}</span>`;
+  return `<span class="lead-age ${cls}">${icon} <strong>${timeLabel}</strong></span>`;
 }
 
 function createLeadCard(lead) {
@@ -1106,12 +1296,15 @@ function createLeadCard(lead) {
     ? `<button class="lc-btn-delete" onclick="deleteLead('${lead.id}', this)">&#10005; Usuń</button>`
     : '';
 
+  const statusTagBadge = getPatientStatusBadge(lead.tags || []);
+
   div.innerHTML = `
     <div class="lc-header">
       <div class="lc-avatar" style="background:${bgColor}; color:${textColor};">${initials}</div>
       <div class="lc-name-row">
         <span class="lc-name">${escHtml(lead.name || 'Nieznany')}</span>
         ${sourceTagsHtml}
+        ${statusTagBadge}
       </div>
       <div class="lc-age">${ageHtml}</div>
     </div>
@@ -1196,15 +1389,19 @@ function renderCallsTable(calls) {
         return from === ext || to === ext || from.endsWith(ext) || to.endsWith(ext) || c.userId === activeStation;
       });
     }
-    if (activeAgent !== 'all') {
+    if (activeAgent === '_unassigned') {
+      finalFiltered = finalFiltered.filter(c => !c.userId);
+    } else if (activeAgent !== 'all') {
       finalFiltered = finalFiltered.filter(c => c.userId === activeAgent);
     }
   } else {
     finalFiltered = filtered;
   }
 
-  // Admin filter bar
-  const adminFilterBar = isAdmin ? `
+  // Filter bar (admin: stanowisko i osoba; recepcja: tylko osoba)
+  let filterBarHtml = '';
+  if (isAdmin) {
+    filterBarHtml = `
     <div style="display:flex;gap:10px;align-items:center;padding:10px 0;flex-wrap:wrap;">
       <label style="font-size:12px;font-weight:600;color:#64748b;">Stanowisko:</label>
       <select id="filter-station" onchange="renderCallsTable(allCalls)" style="font-size:12px;padding:4px 8px;border:1px solid #e2e8f0;border-radius:6px;">
@@ -1223,10 +1420,12 @@ function renderCallsTable(calls) {
         <option value="zastepstwo">Zastępstwo</option>
         <option value="agata_o">Agata Opiekun</option>
         <option value="aneta_o">Aneta Opiekun</option>
+        <option value="_unassigned">⚠️ Nieprzypisane</option>
       </select>
-    </div>` : '';
+    </div>`;
+  }
 
-  container.innerHTML = adminFilterBar + `
+  container.innerHTML = filterBarHtml + `
     <table class="calls-table">
       <thead>
         <tr>
@@ -1238,8 +1437,7 @@ function renderCallsTable(calls) {
           <th>Data</th>
           <th>Godzina</th>
           <th>Czas trwania</th>
-          ${isAdmin ? '<th>Agent</th>' : ''}
-          <th>Rozmowa</th>
+          <th>Konsultant</th>
           <th>Nagranie</th>
           <th>Akcje</th>
         </tr>
@@ -1272,12 +1470,21 @@ function renderCallRow(c, isAdmin = false) {
 
   // Nagranie (D1) — używa proxy do pobierania świeżego linka z Zadarma
   const proxyUrl = `/api/call/${encodeURIComponent(c.callId)}/recording/proxy`;
-  const recHtml = c.recordingUrl
-    ? `<audio controls src="${proxyUrl}" class="call-recording-player"></audio>
-       <a href="${proxyUrl}" target="_blank" class="btn-download-rec" title="Pobierz">↓</a>`
-    : c.tag === 'connected'
-      ? `<span data-rec-callid="${escHtml(c.callId)}" class="btn-rec-pending" title="Nagranie pojawi się po zakończeniu przetwarzania">⏳ Oczekuje...</span>`
-      : `<button class="btn-fetch-rec" onclick="fetchRecording('${c.callId}', this)" title="Sprawdź nagranie">▶ Sprawdź</button>`;
+  let recHtml;
+  if (c.recordingUrl) {
+    recHtml = `<audio controls preload="none" src="${proxyUrl}" class="call-recording-player"></audio>
+       <a href="${proxyUrl}" target="_blank" class="btn-download-rec" title="Pobierz">↓</a>`;
+  } else if (c.tag === 'missed') {
+    recHtml = `<span style="font-size:11px;color:#ef4444;font-weight:600;">✗ Nieodebrane</span>`;
+  } else if (c.tag === 'ineffective') {
+    recHtml = `<span style="font-size:11px;color:#ef4444;font-weight:600;">✗ Nieodebrane</span>`;
+  } else if (c.tag === 'connected' && c.status === 'ended') {
+    recHtml = `<span data-rec-callid="${escHtml(c.callId)}" class="btn-rec-pending" title="Nagranie pojawi się po zakończeniu przetwarzania">⏳ Oczekuje...</span>`;
+  } else if (c.status === 'active' || c.status === 'ringing') {
+    recHtml = `<span style="font-size:11px;color:#3b82f6;">🔵 W trakcie...</span>`;
+  } else {
+    recHtml = `<button class="btn-fetch-rec" onclick="fetchRecording('${c.callId}', this)" title="Sprawdź nagranie">▶ Sprawdź</button>`;
+  }
 
   // Kto obsługiwał
   // Agent name mapping
@@ -1287,17 +1494,19 @@ function renderCallRow(c, isAdmin = false) {
     bartosz: 'Bartosz', sandra: 'Sandra', aneta_a: 'Aneta (A)', patrycja: 'Patrycja', sonia: 'Sonia'
   };
   const agentName = c.userId ? (agentNames[c.userId] || c.userId) : null;
-  const agentHtml = agentName
-    ? `<div style="font-size:11px;color:#64748b;">👤 ${escHtml(agentName)}</div>` : '';
-  // Agent role tag for admin column
   const agentRoles = { agata_o: 'opiekun', aneta_o: 'opiekun' };
   const agentRole = c.userId ? (agentRoles[c.userId] || 'reception') : null;
+
+  // Odznaka konsultanta — widoczna dla WSZYSTKICH ról
   const agentTagHtml = agentName
     ? `<div style="display:flex;flex-direction:column;gap:2px;">
         <span style="font-size:12px;font-weight:600;color:#1e293b;">👤 ${escHtml(agentName)}</span>
         <span style="font-size:10px;padding:1px 6px;border-radius:4px;background:${agentRole === 'opiekun' ? '#dbeafe' : '#dcfce7'};color:${agentRole === 'opiekun' ? '#1d4ed8' : '#166534'};font-weight:600;">${agentRole === 'opiekun' ? 'Opiekun' : 'Recepcja'}</span>
        </div>`
-    : '<span style="color:#94a3b8;font-size:11px;">—</span>';
+    : `<div style="display:flex;flex-direction:column;gap:2px;">
+        <span style="font-size:11px;color:#94a3b8;font-style:italic;">Nieprzypisane</span>
+        ${c.outsideWorkingHours ? '<span style="font-size:10px;padding:1px 6px;border-radius:4px;background:#fef3c7;color:#d97706;font-weight:600;">🌙 Poza godz.</span>' : ''}
+       </div>`;
 
   // Etap lejka
   const stageHtml = getStageTagHtml(c.stageId, c.stageName);
@@ -1320,7 +1529,7 @@ function renderCallRow(c, isAdmin = false) {
     : '<span style="color:#94a3b8;font-size:11px;">—</span>';
 
   // Status raportu — czerwony dla WSZYSTKICH zakończonych bez raportu
-  const hasReport = !!(c.contactType || c.callEffect);
+  const hasReport = !!(c.reportSavedAt || c.contactType || c.callEffect);
   const isEnded = c.status === 'ended' || c.tag === 'connected' || c.tag === 'missed' || c.tag === 'ineffective';
   const reportStatusHtml = hasReport
     ? `<span class="report-tag report-done">✓ Uzupełniony</span>`
@@ -1347,7 +1556,7 @@ function renderCallRow(c, isAdmin = false) {
       <td><div style="font-size:13px;font-weight:600;color:#1e293b;">${date}</div></td>
       <td><div style="font-size:13px;font-weight:600;color:#1e293b;">${time}</div></td>
       <td><div style="font-size:13px;font-weight:600;color:#1e293b;">${dur}</div></td>
-      ${isAdmin ? `<td onclick="event.stopPropagation()">${agentTagHtml}</td>` : ''}
+      <td onclick="event.stopPropagation()">${agentTagHtml}</td>
       <td onclick="event.stopPropagation()">${recHtml}</td>
       <td onclick="event.stopPropagation()">
         <div style="display:flex;flex-direction:column;gap:4px;">
@@ -1410,14 +1619,18 @@ async function fetchRecording(callId, btn) {
       // Zaktualizuj tylko komórkę — bez przeładowania całej tabeli
       const cell = btn.closest('td');
       if (cell) {
-        cell.innerHTML = `<audio controls src="${proxyUrl}" class="call-recording-player"></audio>
+        cell.innerHTML = `<audio controls preload="none" src="${proxyUrl}" class="call-recording-player"></audio>
           <a href="${proxyUrl}" target="_blank" class="btn-download-rec" title="Pobierz">↓</a>`;
       }
       showToast('🎙️ Nagranie gotowe', 'success');
     } else {
-      btn.textContent = '▶ Sprawdź';
-      btn.disabled = false;
-      showToast('Nagranie jeszcze niedostępne', 'info');
+      btn.textContent = '⏳ Pobieranie...';
+      btn.disabled = true;
+      showToast('Nagranie jest pobierane w tle. Pojawi się automatycznie.', 'info');
+      // Rozpocznij poller dla tego połączenia
+      startRecordingPoller(callId);
+      // Przywróć przycisk po 60s
+      setTimeout(() => { if (btn && btn.disabled) { btn.textContent = '▶ Sprawdź'; btn.disabled = false; } }, 60000);
     }
   } catch(e) {
     btn.textContent = '▶ Sprawdź';
@@ -1486,8 +1699,11 @@ async function openCallReport(callId) {
           noteFields.forEach(fid => { const el = document.getElementById(fid); if (el) el.value = report.notes; });
         }
         if (report.contactName) {
-          const manualNameInput = document.getElementById('manualPatientName');
-          if (manualNameInput) manualNameInput.value = report.contactName;
+          const parts = report.contactName.split(' ');
+          const fnEl = document.getElementById('manualFirstName');
+          const lnEl = document.getElementById('manualLastName');
+          if (fnEl) fnEl.value = parts[0] || '';
+          if (lnEl) lnEl.value = parts.slice(1).join(' ') || '';
         }
         if (report.recordingUrl) updatePopupRecording(report.recordingUrl, callId);
       }
@@ -1506,7 +1722,7 @@ function updatePopupRecording(url, callId) {
     recContainer.innerHTML = `
       <div style="margin-top:8px;padding:10px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0;">
         <div style="font-size:12px;font-weight:600;color:#166534;margin-bottom:6px;">🎙️ Nagranie rozmowy</div>
-        <audio controls src="${proxyUrl}" style="width:100%;height:36px;"></audio>
+        <audio controls preload="none" src="${proxyUrl}" style="width:100%;height:36px;"></audio>
         <a href="${proxyUrl}" target="_blank" style="font-size:11px;color:#3b82f6;margin-top:4px;display:inline-block;">⬇ Pobierz</a>
       </div>`;
     recContainer.style.display = '';
@@ -1568,8 +1784,39 @@ function openCallPopup(contact) {
   document.getElementById('popupPatientName').textContent = contact.name || 'Nieznany';
   document.getElementById('popupPatientPhone').textContent = contact.phone || '';
   document.getElementById('popupAvatar').textContent = (contact.name || 'P').charAt(0).toUpperCase();
-  document.getElementById('popupStatusText').textContent =
-    contact.direction === 'outbound' ? 'Połączenie wychodzące' : 'Połączenie przychodzące';
+
+  // Reset statusu — sprawdź aktualny stan z allCalls store (nie tylko z przekazanego obiektu)
+  const statusText = document.getElementById('popupStatusText');
+  const pulseDot = document.getElementById('popupPulseDot');
+
+  // Pobierz aktualny stan z store (może być nowszy niż przekazany obiekt)
+  const liveCall = contact.callId ? allCalls.find(c => c.callId === contact.callId) : null;
+  const effectiveTag = liveCall?.tag || contact.tag;
+  const effectiveStatus = liveCall?.status || contact.status;
+
+  const isAlreadyEnded = effectiveStatus === 'ended'
+    || effectiveTag === 'connected'
+    || effectiveTag === 'missed'
+    || effectiveTag === 'ineffective'
+    || contact.status === 'ended';
+
+  if (isAlreadyEnded) {
+    if (pulseDot) pulseDot.style.display = 'none';
+    if (statusText) {
+      const statusLabels = { connected: '✅ Rozmowa zakończona', missed: '❌ Nieodebrane', ineffective: '⚫ Nieskuteczne' };
+      const statusColors = { connected: '#10b981', missed: '#ef4444', ineffective: '#94a3b8' };
+      statusText.textContent = statusLabels[effectiveTag] || '✅ Połączenie zakończone';
+      statusText.style.color = statusColors[effectiveTag] || '#64748b';
+      statusText.style.fontWeight = '700';
+    }
+  } else {
+    if (pulseDot) pulseDot.style.display = '';
+    if (statusText) {
+      statusText.textContent = contact.direction === 'outbound' ? 'Połączenie wychodzące' : 'Połączenie przychodzące';
+      statusText.style.color = '';
+      statusText.style.fontWeight = '';
+    }
+  }
 
   // Tag (C3)
   const tagEl = document.getElementById('popupCallTag');
@@ -1578,10 +1825,14 @@ function openCallPopup(contact) {
   // Przyciski Odbierz/Rozłącz (C6)
   const answerBtn = document.getElementById('popupAnswerBtn');
   const hangupBtn = document.getElementById('popupHangupBtn');
-  // Przycisk Odbierz - tylko dla połączeń przychodzących
-  if (answerBtn) answerBtn.style.display = contact.direction === 'inbound' ? 'inline-flex' : 'none';
-  // Przycisk Rozłącz i timer - widoczne tylko gdy połączenie trwa (startCallTimer je pokaże)
-  // Dla wychodzących startCallTimer() jest wywoływane niżej, więc hangup pojawi się automatycznie
+  if (isAlreadyEnded) {
+    // Połączenie zakończone — schowaj oba przyciski sterujące
+    if (answerBtn) answerBtn.style.display = 'none';
+    if (hangupBtn) { hangupBtn.classList.add('hidden'); hangupBtn.style.display = 'none'; }
+  } else {
+    // Przycisk Odbierz - tylko dla połączeń przychodzących
+    if (answerBtn) answerBtn.style.display = contact.direction === 'inbound' ? 'inline-flex' : 'none';
+  }
 
   // Pole z_czym_si_zgasza
   if (contact.zglosza) {
@@ -1606,10 +1857,32 @@ function openCallPopup(contact) {
     fetchPopupEnrichment(contact.id);
   }
 
-  // Ustawienie nazwy pacjenta w polu manualnym (jeśli mamy ją z obiektu połączenia)
-  const manualNameInput = document.getElementById('manualPatientName');
-  if (manualNameInput) {
-    manualNameInput.value = contact.name || '';
+  // Ustawienie imienia i nazwiska w osobnych polach
+  const fnInput = document.getElementById('manualFirstName');
+  const lnInput = document.getElementById('manualLastName');
+  const nameGroup = document.getElementById('manualNameGroup');
+  
+  const hasFirstName = !!(contact.firstName);
+  const hasLastName = !!(contact.lastName);
+  const hasFullName = contact.name && contact.name !== 'Nieznany' && contact.name.includes(' ');
+
+  if (fnInput) fnInput.value = contact.firstName || '';
+  if (lnInput) lnInput.value = contact.lastName || '';
+  
+  // Jeśli nie mamy osobnych pól ale mamy pełne imię — spróbuj rozdzielić
+  if (fnInput && !fnInput.value && hasFullName) {
+    const parts = contact.name.split(' ');
+    fnInput.value = parts[0] || '';
+    if (lnInput) lnInput.value = parts.slice(1).join(' ') || '';
+  }
+
+  // Ukryj pola jeśli imię i nazwisko są już uzupełnione
+  if (nameGroup) {
+    if ((hasFirstName && hasLastName) || hasFullName) {
+      nameGroup.style.display = 'none';
+    } else {
+      nameGroup.style.display = 'block';
+    }
   }
 
   // Blokada W0: jeśli kontakt ma zaplanowane W0, pokaż ostrzeżenie i zablokuj kafelek
@@ -1651,13 +1924,17 @@ function openCallPopup(contact) {
 
   // Pokaż nakładkę blokującą raport podczas dzwonienia
   const overlay = document.getElementById('reportBlockOverlay');
+  const quickStep = document.getElementById('quickPatientTypeStep');
   if (overlay) {
-    if (contact.direction === 'outbound') {
-      // Wychodzące — raport od razu dostępny
+    if (contact.direction === 'outbound' || isAlreadyEnded) {
+      // Wychodzące / już zakończone — raport od razu dostępny
       overlay.classList.add('hidden');
+      // Pokaż quick patient type krok 1 (tylko gdy połączenie aktywne/wychodzące, nie dla zamkniętych)
+      if (!isAlreadyEnded && quickStep) quickStep.style.display = 'block';
     } else {
       // Przychodzące — czekamy na odebranie
       overlay.classList.remove('hidden');
+      if (quickStep) quickStep.style.display = 'none';
     }
   }
 
@@ -1703,12 +1980,38 @@ async function fetchPopupEnrichment(contactId) {
     if (!enrichSection) return;
     enrichSection.classList.remove('hidden');
     enrichSection.style.display = 'flex';
-    // Etap GHL
+    // Etap GHL — banner nad statusami
     if (data.stageName) {
       const stageRow = document.getElementById('popupStageRow');
       const stageName = document.getElementById('popupStageName');
       if (stageRow) stageRow.classList.remove('hidden');
       if (stageName) stageName.textContent = data.stageName;
+
+      // Stage banner + przycisk "Odebrał połączenie"
+      const banner = document.getElementById('popupStageBanner');
+      const bannerName = document.getElementById('popupStageBannerName');
+      const answeredBtn = document.getElementById('btnContactAnswered');
+      if (banner) banner.style.display = 'block';
+      if (bannerName) bannerName.textContent = data.stageName;
+
+      // Pokaż przycisk "Odebrał" tylko dla etapów prób kontaktu
+      const contactAttemptStages = ['Nowe zgłoszenie', '1 próba kontaktu', '2 próba kontaktu',
+        'Follow-up dzień 2', 'Follow-up dzień 4'];
+      const isAttemptStage = contactAttemptStages.some(s =>
+        data.stageName?.toLowerCase().includes(s.toLowerCase().replace('ą','a').replace('ę','e'))
+        || data.stageName === s
+      );
+      if (answeredBtn) answeredBtn.style.display = isAttemptStage ? 'block' : 'none';
+
+      // Zapisz stageId i opportunityId na currentContact
+      if (currentContact) {
+        currentContact.stageName = data.stageName;
+        currentContact.stageId = data.stageId;
+        currentContact.opportunityId = data.opportunityId;
+      }
+
+      // Pokaż kontekstowe pola raportu dla etapu
+      applyStageToReport(data.stageName);
     }
     // W0
     if (data.w0_scheduled && data.w0_date) {
@@ -1744,6 +2047,31 @@ async function fetchPopupEnrichment(contactId) {
       const zBox = document.getElementById('popupZCzymSieZglasza');
       if (zBox) zBox.classList.remove('hidden');
     }
+    // Aktualizuj imię i nazwisko z GHL (firstName + lastName oddzielnie)
+    if (data.firstName || data.lastName) {
+      const fullName = `${data.firstName || ''} ${data.lastName || ''}`.trim();
+      if (fullName) {
+        // Zaktualizuj nagłówek popupu
+        const nameEl = document.getElementById('popupPatientName');
+        if (nameEl && (nameEl.textContent === 'Nieznany' || nameEl.textContent === currentContact?.phone)) {
+          nameEl.textContent = fullName;
+        }
+        // Zaktualizuj avatar
+        const avatarEl = document.getElementById('popupAvatar');
+        if (avatarEl) avatarEl.textContent = (data.firstName || fullName).charAt(0).toUpperCase();
+        // Zaktualizuj pole manualne
+        const fnInput = document.getElementById('manualFirstName');
+        const lnInput = document.getElementById('manualLastName');
+        if (fnInput && !fnInput.value) fnInput.value = data.firstName || '';
+        if (lnInput && !lnInput.value) lnInput.value = data.lastName || '';
+        // Zapisz w currentContact
+        if (currentContact) {
+          currentContact.name = fullName;
+          currentContact.firstName = data.firstName || '';
+          currentContact.lastName = data.lastName || '';
+        }
+      }
+    }
     // Aktualizuj currentContact z danymi z popup
     if (currentContact && data.opportunityId) {
       currentContact.opportunityId = data.opportunityId;
@@ -1766,22 +2094,39 @@ function answerCall() {
 
 async function hangupCall() {
   const tagEl = document.getElementById('popupCallTag');
-  if (tagEl) { tagEl.textContent = 'ROZŁĄCZONO'; tagEl.className = 'call-tag tag-missed'; tagEl.style.display = 'inline-block'; }
+  if (tagEl) { tagEl.textContent = 'ROZŁĄCZANIE...'; tagEl.className = 'call-tag tag-missed'; tagEl.style.display = 'inline-block'; }
   stopCallTimer();
 
-  // Wyślij żądanie rozłączenia do serwera → Zadarma API
+  // Wyślij żądanie rozłączenia do serwera → Zadarma API (rozłącza też w aplikacji Zadarma na telefonie)
   if (activeCallId) {
     try {
-      await fetch('/api/call/hangup', {
+      const resp = await fetch('/api/call/hangup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ callId: activeCallId })
       });
-    } catch(e) { console.error('[Hangup] Error:', e); }
+      const result = await resp.json();
+      if (result.success) {
+        showToast('📵 Rozłączono — połączenie zakończone również w Zadarma', 'info');
+        if (tagEl) tagEl.textContent = 'ROZŁĄCZONO';
+      } else {
+        showToast('⚠️ Rozłączono lokalnie (Zadarma mogła nie odpowiedzieć)', 'info');
+        if (tagEl) tagEl.textContent = 'ROZŁĄCZONO';
+      }
+    } catch(e) {
+      console.error('[Hangup] Error:', e);
+      showToast('⚠️ Błąd rozłączenia — sprawdź połączenie', 'error');
+      if (tagEl) tagEl.textContent = 'ROZŁĄCZONO';
+    }
+  } else {
+    showToast('📵 Rozłączono', 'info');
+    if (tagEl) tagEl.textContent = 'ROZŁĄCZONO';
   }
-
-  showToast('📵 Rozłączono', 'info');
-  // Nie zamykaj popup od razu — pozwól uzupełnić raport
+  // Automatyczny zapis i zamknięcie raportu po rozłączeniu (jeśli status jest wybrany)
+  if (selectedStatus) {
+    console.log('[Hangup] Auto-saving report...');
+    saveReport();
+  }
 }
 
 function calculateDelayInDays(targetDateStr) {
@@ -1794,28 +2139,41 @@ function calculateDelayInDays(targetDateStr) {
 }
 
 function closeCallPopup(force = false) {
-  // Sprawdź czy połączenie jest aktywne (dzwoni lub trwa)
   const callInStore = activeCallId ? allCalls.find(c => c.callId === activeCallId) : null;
   const isCallActive = callInStore && (callInStore.status === 'ringing' || callInStore.status === 'active');
 
-  // Jeśli połączenie aktywne i nie wymuszamy zamknięcia → minimalizuj zamiast zamykać
+  // Połączenie aktywne → minimalizuj zamiast zamykać
   if (!force && isCallActive) {
     minimizeCallPopup();
     return;
   }
 
-  // Ostrzeżenie jeśli raport nieuzupełniony (punkt 6) — tylko dla zakończonych połączeń
+  // Połączenie zakończone (connected) bez statusu → zablokuj i pokaż inline info
   if (!force && activeCallId && !selectedStatus) {
     if (callInStore?.tag === 'connected') {
-      if (!confirm('⚠️ Raport nieuzupełniony — czy na pewno chcesz wyjść?\n\nMożesz wrócić do raportu z widoku Połączenia.')) {
-        return;
+      // Pokaż komunikat inline zamiast przeszkadzającego confirm()
+      const msgEl = document.getElementById('popupCloseBlockMsg');
+      if (msgEl) {
+        msgEl.style.display = 'block';
+        msgEl.textContent = '⚠️ Uzupełnij status połączenia aby zamknąć okno';
+        // Wstrząśnij blok wyboru statusu żeby zwrócić uwagę
+        const tilesEl = document.querySelector('.status-tiles-grid, .status-tiles');
+        if (tilesEl) {
+          tilesEl.style.animation = 'shake 0.4s';
+          setTimeout(() => { tilesEl.style.animation = ''; }, 500);
+        }
+        // Auto-ukryj po 4s
+        setTimeout(() => { if (msgEl) msgEl.style.display = 'none'; }, 4000);
       }
-      addPendingReport(activeCallId, callInStore?.contactName || callInStore?.from);
+      return;
     }
   }
+
   document.getElementById('callPopup').classList.add('hidden');
   const popup = document.getElementById('callPopup');
   if (popup) popup.classList.remove('minimized');
+  const msgEl = document.getElementById('popupCloseBlockMsg');
+  if (msgEl) msgEl.style.display = 'none';
   stopCallTimer();
   currentContact = null;
   selectedStatus = null;
@@ -1841,9 +2199,9 @@ function restoreCallPopup() {
 // Lista niedokończonych raportów (punkt 6 — przypomnienia)
 let pendingReports = [];
 
-function addPendingReport(callId, contactName) {
+function addPendingReport(callId, contactName, phone) {
   if (pendingReports.find(r => r.callId === callId)) return;
-  pendingReports.push({ callId, contactName, addedAt: Date.now() });
+  pendingReports.push({ callId, contactName, phone: phone || '', addedAt: Date.now() });
   updatePendingReportsBadge();
 }
 
@@ -1857,11 +2215,16 @@ function updatePendingReportsBadge() {
   if (!indicator) return;
   if (pendingReports.length > 0) {
     indicator.style.display = 'flex';
-    indicator.innerHTML = pendingReports.map(r => `
-      <div class="pending-report-item" onclick="openCallReport('${r.callId}')">
-        ⚠️ Raport do uzupełnienia: <strong>${escHtml(r.contactName || 'Nieznany')}</strong>
-      </div>
-    `).join('');
+    indicator.innerHTML = pendingReports.map(r => {
+      const label = r.contactName && r.contactName !== r.phone
+        ? `<strong>${escHtml(r.contactName)}</strong> <span style="font-size:11px;opacity:.8;">${escHtml(r.phone || '')}</span>`
+        : `<strong>${escHtml(r.phone || r.contactName || 'Nieznany')}</strong>`;
+      return `<div class="pending-report-item" onclick="openCallReport('${r.callId}')" title="Kliknij aby uzupełnić raport" style="cursor:pointer;display:flex;align-items:center;gap:6px;padding:5px 12px;background:#fef3c7;border-radius:6px;border:1px solid #f59e0b;">
+        <span style="font-size:14px;">⚠️</span>
+        <span style="font-size:12px;color:#92400e;">Raport do uzupełnienia: ${label}</span>
+        <span style="font-size:11px;padding:1px 8px;border-radius:4px;background:#f59e0b;color:#fff;font-weight:600;margin-left:4px;">Uzupełnij →</span>
+      </div>`;
+    }).join('');
   } else {
     indicator.style.display = 'none';
     indicator.innerHTML = '';
@@ -1903,13 +2266,25 @@ function resetReportForm() {
   selectedStatus = null;
   selectedOutcome = null;
   // Wyczyść wszystkie pola formularza raportu
-  ['programLeczenia', 'dataW0', 'contactDateTime', 'powodRezygnacji',
-   'powodZmiany', 'nowyTermin', 'powodOdwolania', 'wizytaContactDateTime',
-   'stalyNotatka', 'stalyDataWizyty', 'stalyContactDateTime', 'spamNotatka',
-   'manualPatientName'].forEach(id => {
+	  ['programLeczenia', 'dataW0', 'contactDateTime', 'powodRezygnacji',
+	   'powodZmiany', 'nowyTermin', 'powodOdwolania', 'wizytaContactDateTime',
+	   'stalyNotatka', 'stalyDataWizyty', 'stalyContactDateTime', 'spamNotatka',
+	   'manualFirstName', 'manualLastName', 'notatkaZPierwszejRozmowy', 'zrodloLeada', 'zrodloKontaktu',
+	   'notatkaNowy', 'notatkaStaly', 'notatkaWizyta', 'niekwalifikowanyNotatka', 'powodNiekwalifikacji'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { if (el.tagName === 'SELECT') el.selectedIndex = 0; else el.value = ''; }
   });
+  // Zamknij panel formularza jeśli otwarty
+  closeReportFormPanel();
+  // Reset typ połączenia — domyślnie "Pierwsze"
+  setCallType('first');
+  // Schowaj krok 1 (quick patient type)
+  const quickStep = document.getElementById('quickPatientTypeStep');
+  if (quickStep) quickStep.style.display = 'none';
+  const newBtn = document.getElementById('qbt-new');
+  const existBtn = document.getElementById('qbt-existing');
+  if (newBtn) { newBtn.style.borderWidth='2px'; newBtn.style.boxShadow='none'; newBtn.style.opacity='1'; }
+  if (existBtn) { existBtn.style.borderWidth='2px'; existBtn.style.boxShadow='none'; existBtn.style.opacity='1'; }
   // Ukryj sekcję nagrania i blokadę W0
   const recSection = document.getElementById('popupRecordingSection');
   if (recSection) recSection.style.display = 'none';
@@ -1926,14 +2301,12 @@ function selectStatus(status) {
     const notice = document.getElementById('w0BlockNotice');
     if (notice) {
       notice.classList.remove('hidden');
-      // Wstrząśnij kafelkiem
       const tile = document.getElementById('tile-NOWY_PACJENT');
       if (tile) { tile.style.animation = 'shake 0.3s'; setTimeout(() => tile.style.animation = '', 400); }
     }
-    return; // Blokuj wybor
+    return;
   }
 
-  // Ukryj blokadę jeśli wybrano inny status
   const notice = document.getElementById('w0BlockNotice');
   if (notice) notice.classList.add('hidden');
 
@@ -1947,7 +2320,50 @@ function selectStatus(status) {
   selectedOutcome = null;
   document.querySelectorAll('.outcome-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.outcome-fields').forEach(f => f.classList.add('hidden'));
+
+  // ETAP 2: Pokaż okno formularza (schowane za statusami)
+  openReportFormPanel();
 }
+
+// Otwórz etap 2 — panel z formularzem raportu (slide-in z prawej)
+function openReportFormPanel() {
+  const panel = document.getElementById('reportFormPanel');
+  const panelBody = document.getElementById('reportPanelBody');
+  const reportSection = document.getElementById('popupReportContent');
+  const statusBadge = document.getElementById('reportPanelStatusBadge');
+  const contactNameEl = document.getElementById('reportPanelContactName');
+
+  if (!panel || !panelBody) return;
+
+  // Zaktualizuj nagłówek panelu
+  if (contactNameEl) contactNameEl.textContent = currentContact?.name || document.getElementById('popupPatientName')?.textContent || '—';
+  if (statusBadge) {
+    const labels = { NOWY_PACJENT: 'Nowy pacjent', STALY_PACJENT: 'Stały pacjent', WIZYTA_BIEZACA: 'Wizyta bieżąca', SPAM: 'Spam/Niekwalif.' };
+    statusBadge.textContent = labels[selectedStatus] || selectedStatus || '';
+  }
+
+  // Przenieś zawartość raportu do panelu (live reference, nie kopia)
+  if (reportSection) panelBody.appendChild(reportSection);
+
+  panel.style.display = 'flex';
+  panel.style.animation = 'none';
+  // Animacja
+  const inner = panel.querySelector('[style*="width:480px"]');
+  if (inner) { inner.style.transform = 'translateX(100%)'; requestAnimationFrame(() => { inner.style.transition = 'transform 0.25s ease'; inner.style.transform = 'translateX(0)'; }); }
+}
+
+function closeReportFormPanel() {
+  const panel = document.getElementById('reportFormPanel');
+  const panelBody = document.getElementById('reportPanelBody');
+  const reportSection = document.getElementById('popupReportContent');
+  const popupReport = document.querySelector('.popup-report');
+
+  if (panel) panel.style.display = 'none';
+
+  // Zwróć zawartość raportu do popup (żeby działały inne operacje)
+  if (reportSection && popupReport) popupReport.appendChild(reportSection);
+}
+window.closeReportFormPanel = closeReportFormPanel;
 
 function selectOutcome(outcome) {
   selectedOutcome = outcome;
@@ -1993,50 +2409,116 @@ function formatDateTimeLocal(date) {
 }
 
 // ==================== SAVE REPORT ====================
-async function saveReport() {
+async function saveReport(forceClose = true) {
   if (!selectedStatus) { showToast('Wybierz status pacjenta', 'error'); return; }
+
+  // Blokada przycisku, żeby nie klikać kilka razy
+  const saveBtns = document.querySelectorAll('button[onclick^="saveReport"]');
+  saveBtns.forEach(b => { b.disabled = true; b.dataset.oldText = b.innerHTML; b.innerHTML = '<span class="spinner-sm"></span> Zapisywanie...'; });
 
   const contactId = currentContact?.id;
   const reportData = buildReportData();
 
   try {
-    if (selectedStatus === 'NOWY_PACJENT')    await handleNewPatientReport(contactId, reportData);
-    else if (selectedStatus === 'WIZYTA_BIEZACA') await handleVisitReport(contactId, reportData);
-    else if (selectedStatus === 'STALY_PACJENT')  await handleRegularPatientReport(contactId, reportData);
+    // 1. Uruchom operacje GHL/CRM równolegle zamiast sekwencyjnie
+    const crmPromises = [];
+    if (selectedStatus === 'NOWY_PACJENT')    crmPromises.push(handleNewPatientReport(contactId, reportData));
+    else if (selectedStatus === 'WIZYTA_BIEZACA') crmPromises.push(handleVisitReport(contactId, reportData));
+    else if (selectedStatus === 'STALY_PACJENT')  crmPromises.push(handleRegularPatientReport(contactId, reportData));
     else if (selectedStatus === 'SPAM')           showToast('Kontakt oznaczony jako SPAM', 'info');
 
-    // Zapisz raport do Supabase przez /api/calls/:callId/report
+    // 2. Przygotuj payload raportu głównego
     if (activeCallId) {
       const notes = reportData.notatka || reportData.powodRezygnacji || reportData.powodOdwolania || reportData.powodZmiany || '';
       const callEffect = reportData.outcome || selectedOutcome || '';
-      
-      // Reception OS: Follow-up logic
       const followUpDate = document.getElementById('wizytaContactDateTime')?.value;
       const followUpDelay = followUpDate ? calculateDelayInDays(followUpDate) : null;
+      const callType = document.getElementById('callTypeValue')?.value || 'first';
+      const currentCallNoteText = (reportData.notatka || reportData.powodRezygnacji || reportData.powodOdwolania || reportData.powodZmiany || '').trim();
 
-      try {
-        const payload = {
-          contactType: selectedStatus,
-          callEffect,
-          notes,
-          program: reportData.program || '',
-          outcome: selectedOutcome || '',
-          userId: currentUser?.id || '',
-          contactId: contactId || '',
-          contactName: reportData.manualName || currentContact?.name || '',
-          cancellationReason: reportData.powodOdwolania || '',
-          w0Date: reportData.w0DateTime || null,
-          isFollowUp: !!followUpDelay,
-          followUpDelay: followUpDelay
-        };
+      const stageFields = {
+        zrodloLeada: document.getElementById('sf-zrodlo-leada')?.value || reportData.zrodloLeada || '',
+        formaKontaktu: document.getElementById('sf-forma-kontaktu')?.value || '',
+        obiekcja: document.getElementById('sf-obiekcja')?.value || '',
+        zrodloWiedzy: document.getElementById('sf-zrodlo-wiedzy')?.value || '',
+        potrzebaPacjenta: document.getElementById('sf-potrzeba')?.value?.trim() || '',
+        kolejnaWizyta: document.getElementById('sf-kolejna-wizyta')?.value || '',
+        decyzjaW0: document.getElementById('sf-decyzja-w0')?.value || '',
+      };
 
-        await fetch(`/api/calls/${activeCallId}/report`, {
-          method: 'PATCH',
+      const payload = {
+        contactType: selectedStatus,
+        callEffect,
+        notes,
+        program: reportData.program || '',
+        outcome: selectedOutcome || '',
+        userId: currentUser?.id || '',
+        contactId: contactId || '',
+        contactName: reportData.manualName || currentContact?.name || '',
+        firstName: reportData.firstName || currentContact?.firstName || '',
+        lastName: reportData.lastName || currentContact?.lastName || '',
+        cancellationReason: reportData.powodOdwolania || '',
+        w0Date: reportData.w0DateTime || null,
+        isFollowUp: !!followUpDelay,
+        followUpDelay: followUpDelay,
+        isFirstCall: callType === 'first',
+        callTypeLabel: callType === 'first' ? 'PIERWSZE_POLACZENIE' : 'KOLEJNE_POLACZENIE',
+        notatkaZPierwszejRozmowy: reportData.notatkaZPierwszejRozmowy || '',
+        zrodloLeada: stageFields.zrodloLeada,
+        zrodloKontaktu: reportData.zrodloKontaktu || stageFields.formaKontaktu,
+        obiekcja: stageFields.obiekcja,
+        zrodloWiedzy: stageFields.zrodloWiedzy,
+        potrzebaPacjenta: stageFields.potrzebaPacjenta,
+        kolejnaWizyta: stageFields.kolejnaWizyta,
+        decyzjaW0: stageFields.decyzjaW0,
+      };
+
+      // Dodaj główny zapis do listy obietnic
+      crmPromises.push(fetch(`/api/calls/${activeCallId}/report`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then(r => { if (!r.ok) throw new Error('Błąd serwera przy zapisie raportu'); return r; }));
+
+      // Zapisz notatkę do GHL równolegle
+      if (currentCallNoteText && contactId && contactId !== 'unknown') {
+        crmPromises.push(fetch(`/api/contact/${contactId}/notes`, {
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        console.log('[Reception OS] Extended report saved:', payload);
-      } catch(e) { console.warn('[Report] Save error:', e.message); }
+          body: JSON.stringify({ body: currentCallNoteText, userId: currentUser?.id })
+        }).catch(ne => console.warn('[Report] Note save error:', ne.message)));
+      }
+    }
+
+    // 3. Czekaj na wszystkie operacje z timeoutem i obsługą błędów per-request
+    const results = await Promise.allSettled(crmPromises);
+    const failed = results.filter(r => r.status === 'rejected');
+    if (failed.length > 0) {
+      console.warn('[SaveReport] Some operations failed:', failed);
+    }
+
+    // Aktualizuj lokalny stan połączenia w allCalls dla natychmiastowego odświeżenia UI
+    if (activeCallId) {
+      const callIdx = allCalls.findIndex(c => c.callId === activeCallId);
+      if (callIdx >= 0) {
+        const notes = reportData.notatka || reportData.powodRezygnacji || reportData.powodOdwolania || reportData.powodZmiany || '';
+        const callEffect = reportData.outcome || selectedOutcome || '';
+        
+        allCalls[callIdx].contactType = selectedStatus;
+        allCalls[callIdx].callEffect = callEffect;
+        allCalls[callIdx].notes = notes;
+        allCalls[callIdx].reportSavedAt = new Date().toISOString();
+        
+        // Zaktualizuj też globalny stan jeśli to aktywne połączenie
+        if (currentCallInStore && currentCallInStore.callId === activeCallId) {
+          currentCallInStore.contactType = selectedStatus;
+          currentCallInStore.callEffect = callEffect;
+          currentCallInStore.notes = notes;
+          currentCallInStore.reportSavedAt = allCalls[callIdx].reportSavedAt;
+        }
+
+        renderCallsTable(allCalls); // Natychmiastowe przerysowanie
+      }
     }
 
     if (currentContact) {
@@ -2046,35 +2528,58 @@ async function saveReport() {
         time: new Date().toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }),
         reportStatus: selectedStatus
       });
-      document.getElementById('badge-progress').textContent = inProgressCalls.length;
+      const bProgress = document.getElementById('badge-progress');
+      if (bProgress) bProgress.textContent = inProgressCalls.length;
     }
 
     showToast('✅ Raport zapisany pomyślnie', 'success');
     if (activeCallId) removePendingReport(activeCallId);
-    closeCallPopup(true); // force close (raport zapisany)
     
-    // Odśwież listy po zapisaniu raportu (żeby statusy się zaktualizowały)
-    loadCalls();
-    loadContacts();
+    closeReportFormPanel();
+    if (forceClose) {
+      closeCallPopup(true); 
+    }
+    
+    // Odśwież listy asynchronicznie — nie blokuj UI, ale z większym opóźnieniem by Supabase zdążyło zapisać
+    setTimeout(() => {
+      loadCalls();
+      loadContacts();
+    }, 800);
+
   } catch (err) {
+    console.error('[SaveReport] Error:', err);
     showToast(`Błąd zapisu: ${err.message}`, 'error');
+  } finally {
+    // Odblokuj przyciski
+    saveBtns.forEach(b => { b.disabled = false; if (b.dataset.oldText) b.innerHTML = b.oldText || b.dataset.oldText; });
   }
 }
 
 function buildReportData() {
+  const fn = document.getElementById('manualFirstName')?.value?.trim() || '';
+  const ln = document.getElementById('manualLastName')?.value?.trim() || '';
   const data = { 
     status: selectedStatus, 
     outcome: selectedOutcome,
-    manualName: document.getElementById('manualPatientName')?.value || ''
+    firstName: fn,
+    lastName: ln,
+    manualName: `${fn} ${ln}`.trim()
   };
   if (selectedStatus === 'NOWY_PACJENT') {
     data.program = document.getElementById('programLeczenia')?.value;
+    data.notatkaZPierwszejRozmowy = document.getElementById('notatkaZPierwszejRozmowy')?.value || '';
+    data.zrodloLeada = document.getElementById('zrodloLeada')?.value || '';
+    data.zrodloKontaktu = document.getElementById('zrodloKontaktu')?.value || '';
     if (selectedOutcome === 'umowil_sie') {
       data.dataW0 = document.getElementById('dataW0')?.value;
       data.w0DateTime = data.dataW0;
     }
     if (selectedOutcome === 'prosi_kontakt') data.contactDateTime = document.getElementById('contactDateTime')?.value;
     if (selectedOutcome === 'rezygnacja')    data.powodRezygnacji = document.getElementById('powodRezygnacji')?.value;
+    if (selectedOutcome === 'niekwalifikowany') {
+      data.powodNiekwalifikacji = document.getElementById('powodNiekwalifikacji')?.value;
+      data.niekwalifikowanyNotatka = document.getElementById('niekwalifikowanyNotatka')?.value;
+    }
   } else if (selectedStatus === 'WIZYTA_BIEZACA') {
     if (selectedOutcome === 'zmiana_terminu') {
       data.powodZmiany = document.getElementById('powodZmiany')?.value;
@@ -2097,6 +2602,23 @@ function buildReportData() {
 }
 
 async function handleNewPatientReport(contactId, data) {
+  // Zapisz nowe pola do kontaktu GHL (notatka z pierwszej rozmowy, źródła)
+  if (contactId && contactId !== 'unknown') {
+    const customFieldsToUpdate = [];
+    if (data.notatkaZPierwszejRozmowy) customFieldsToUpdate.push({ id: 'notatka_z_pierwszej_rozmowy', value: data.notatkaZPierwszejRozmowy });
+    if (data.zrodloLeada) customFieldsToUpdate.push({ id: 'rdo_leada', value: data.zrodloLeada });
+    if (data.zrodloKontaktu) customFieldsToUpdate.push({ id: 'rdo_kontaktu', value: data.zrodloKontaktu });
+    if (data.program) customFieldsToUpdate.push({ id: 'potencjalny_program', value: data.program });
+    if (customFieldsToUpdate.length > 0) {
+      try {
+        await fetch(`/api/contact/${contactId}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customFields: customFieldsToUpdate })
+        });
+      } catch(e) { console.warn('[Report] GHL custom fields error:', e.message); }
+    }
+  }
+
   if (data.outcome === 'umowil_sie' && data.dataW0) {
     if (currentOpportunity?.id) {
       await fetch(`/api/opportunity/${currentOpportunity.id}`, {
@@ -2115,17 +2637,31 @@ async function handleNewPatientReport(contactId, data) {
     if (currentOpportunity?.id) {
       await moveOpportunityToStage(currentOpportunity.id, GHL_STAGE_IDS.AFTER_CALL);
     }
+    // Utwórz zadanie dla zalogowanego użytkownika w Supabase (nie tylko w GHL)
+    const taskDueDate = new Date(data.contactDateTime).toISOString();
+    await fetch('/api/tasks', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-user-id': currentUser?.id || '' },
+      body: JSON.stringify({
+        title: `Oddzwoń: ${currentContact?.name || 'pacjent'}`,
+        description: `Prosi o kontakt${data.notatkaZPierwszejRozmowy ? `. Notatka: ${data.notatkaZPierwszejRozmowy}` : ''}`,
+        contactId: contactId !== 'unknown' ? contactId : null,
+        contactName: currentContact?.name || '',
+        dueDate: taskDueDate,
+        assignedTo: currentUser?.id || null  // przypisz do zalogowanego użytkownika
+      })
+    });
+    // Synchronizuj też z GHL tasks
     if (contactId && contactId !== 'unknown') {
       const ghlAssignedTo = currentUser?.ghlUserId || null;
-      await fetch(`/api/contact/${contactId}/task`, {
+      fetch(`/api/contact/${contactId}/task`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: `Oddzwoń do ${currentContact?.name || 'pacjenta'}`,
           body: `Pacjent prosi o kontakt. Program: ${data.program || 'nieustalony'}`,
-          dueDate: new Date(data.contactDateTime).toISOString(),
+          dueDate: taskDueDate,
           assignedTo: ghlAssignedTo
         })
-      });
+      }).catch(() => {});
     }
     showToast('📋 Zadanie oddzwonienia utworzone', 'success');
     loadTodayTasks();
@@ -2135,10 +2671,25 @@ async function handleNewPatientReport(contactId, data) {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ customFields: [{ id: 'powd_rezygnacji__niekwalifikacji', value: data.powodRezygnacji }]})
       });
-      // → Przenieś do stage: Odmówił
       await moveOpportunityToStage(currentOpportunity.id, GHL_STAGE_IDS.REFUSED);
     }
     showToast('❌ Rezygnacja zapisana', 'info');
+  } else if (data.outcome === 'niekwalifikowany') {
+    // Przenieś do "Brak kontaktu" + zapisz powód
+    const powod = document.getElementById('powodNiekwalifikacji')?.value || '';
+    const notatka = document.getElementById('niekwalifikowanyNotatka')?.value?.trim() || '';
+    if (currentOpportunity?.id) {
+      await moveOpportunityToStage(currentOpportunity.id, GHL_STAGE_IDS.NO_CONTACT);
+    }
+    // Zapisz powód jako notatkę w GHL
+    if (contactId && contactId !== 'unknown' && (powod || notatka)) {
+      const noteBody = `Niekwalifikowany. Powód: ${powod || 'nieznany'}${notatka ? `. ${notatka}` : ''}`;
+      await fetch(`/api/contact/${contactId}/notes`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: noteBody, userId: currentUser?.id })
+      }).catch(() => {});
+    }
+    showToast('⛔ Niekwalifikowany — etap ustawiony na Brak kontaktu', 'info');
   }
 }
 
@@ -2217,47 +2768,145 @@ async function loadTodayTasks() {
 let allMyTasksCache = [];
 
 async function loadTasks() {
-  const myTasksEl = document.getElementById('tasksMyList');
-  const allTasksEl = document.getElementById('tasksAllList');
-  const poolTasksEl = document.getElementById('tasksPoolList');
-
-  // Ustaw dziś w nagłówku
-  const todayLabel = document.getElementById('tasksTodayDateLabel');
-  if (todayLabel) {
-    todayLabel.textContent = new Date().toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' });
-  }
-
   try {
     const userId = currentUser?.id;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
     const [myResp, allResp, poolResp] = await Promise.all([
       fetch(`/api/tasks?userId=${userId}&filter=mine`),
       fetch(`/api/tasks?filter=all`),
       fetch(`/api/tasks?filter=unassigned`)
     ]);
 
-    const myTasks = (await myResp.json()).tasks || [];
-    const allTasks = (await allResp.json()).tasks || [];
-    const poolTasks = (await poolResp.json()).tasks || [];
+    const myTasks  = (await myResp.json()).tasks  || [];
+    const allTasks = (await allResp.json()).tasks  || [];
+    let poolTasks  = (await poolResp.json()).tasks || [];
 
     allMyTasksCache = myTasks;
 
-    // Filtruj zadania na dziś do listy dziennej
-    const today = new Date().toDateString();
-    const todayTasks = myTasks.filter(t => t.dueDate && new Date(t.dueDate).toDateString() === today);
-    const futureTasks = myTasks.filter(t => t.dueDate && new Date(t.dueDate).toDateString() !== today);
+    // Panel 1: Moje zadania na DZIŚ
+    const todayTasks = myTasks.filter(t => {
+      if (!t.dueDate) return false;
+      const d = new Date(t.dueDate); d.setHours(0,0,0,0);
+      return d.getTime() === today.getTime() && t.status !== 'done' && t.status !== 'deleted';
+    });
+    const myTasksEl = document.getElementById('tasksMyList');
+    if (myTasksEl) renderTasksList(myTasksEl, todayTasks, true, false);
+    const badgeMy = document.getElementById('badge-tasks-my');
+    if (badgeMy) badgeMy.textContent = todayTasks.length;
 
-    if (myTasksEl) renderTodayTasks(myTasksEl, todayTasks.length > 0 ? todayTasks : myTasks.slice(0, 5));
-    if (allTasksEl) renderTasksList(allTasksEl, allTasks, false);
-    if (poolTasksEl) renderTasksList(poolTasksEl, poolTasks, false, true);
+    // Panel 2: Moje najbliższe zadania (zgrupowane po datach, bez dzisiaj)
+    const upcomingTasks = myTasks
+      .filter(t => {
+        if (!t.dueDate || t.status === 'done' || t.status === 'deleted') return false;
+        const d = new Date(t.dueDate); d.setHours(0,0,0,0);
+        return d.getTime() > today.getTime();
+      })
+      .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+    const upcomingEl = document.getElementById('tasksUpcomingList');
+    if (upcomingEl) renderUpcomingGrouped(upcomingEl, upcomingTasks);
+    const badgeUp = document.getElementById('badge-tasks-upcoming');
+    if (badgeUp) badgeUp.textContent = upcomingTasks.length;
 
-    if (document.getElementById('badge-tasks-my')) document.getElementById('badge-tasks-my').textContent = myTasks.length;
-    if (document.getElementById('badge-tasks-all')) document.getElementById('badge-tasks-all').textContent = allTasks.length;
-    if (document.getElementById('badge-tasks-pool')) document.getElementById('badge-tasks-pool').textContent = poolTasks.length;
+    // ── LOGIKA NIEOBECNOŚCI: sprawdź czy ktoś nie zalogował się dziś ──────
+    // Pobierz aktywność użytkowników
+    const activityResp = await fetch('/api/users/activity').catch(() => null);
+    if (activityResp?.ok) {
+      const { users: activityUsers } = await activityResp.json();
+      const EIGHT_HOURS_MS = 8 * 60 * 60 * 1000;
+      const absentUserIds = (activityUsers || [])
+        .filter(u => u.role === 'reception' && u.lastLoginAt &&
+          (Date.now() - new Date(u.lastLoginAt).getTime()) > EIGHT_HOURS_MS)
+        .map(u => u.id);
 
-    // Renderuj kalendarz miesięczny
-    renderCalendar(myTasks);
+      if (absentUserIds.length > 0) {
+        // Zadania przypisane do nieobecnych → dołącz do puli
+        const tasksFromAbsent = allTasks.filter(t =>
+          absentUserIds.includes(t.assignedTo) &&
+          t.status !== 'done' && t.status !== 'deleted' &&
+          t.dueDate && new Date(t.dueDate) <= new Date(Date.now() + 24*60*60*1000)
+        );
+        if (tasksFromAbsent.length > 0) {
+          poolTasks = [...tasksFromAbsent, ...poolTasks.filter(t => !tasksFromAbsent.find(x => x.id === t.id))];
+          const alert = document.getElementById('poolUnloggedAlert');
+          if (alert) {
+            alert.style.display = 'inline';
+            alert.textContent = `⚠️ ${tasksFromAbsent.length} zad. od nieobecnych`;
+            alert.title = `Nieobecni: ${absentUserIds.map(id => activityUsers.find(u=>u.id===id)?.name || id).join(', ')}`;
+          }
+        }
+      }
+    }
+
+    // Panel 3: Pula zadań
+    const poolTasksEl = document.getElementById('tasksPoolList');
+    if (poolTasksEl) renderTasksList(poolTasksEl, poolTasks.filter(t => t.status !== 'done'), false, true);
+    const badgePool = document.getElementById('badge-tasks-pool');
+    if (badgePool) badgePool.textContent = poolTasks.filter(t => t.status !== 'done').length;
+
+    // Panel 4: Wszystkie zadania
+    window._allTasksCache = allTasks;
+    renderAllTasksPanel();
+    const badgeAll = document.getElementById('badge-tasks-all');
+    if (badgeAll) badgeAll.textContent = allTasks.length;
 
   } catch(e) { console.error('Load tasks error:', e); }
+}
+
+function renderAllTasksPanel() {
+  const el = document.getElementById('tasksAllList');
+  if (!el) return;
+  const filter = document.getElementById('tasksAllFilter')?.value || 'all';
+  let tasks = window._allTasksCache || [];
+  if (filter === 'pending')  tasks = tasks.filter(t => t.status === 'pending' || t.status === 'open_pool');
+  if (filter === 'overdue')  tasks = tasks.filter(t => t.status === 'overdue' || (t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'done'));
+  if (filter === 'done')     tasks = tasks.filter(t => t.status === 'done');
+  renderTasksList(el, tasks, false, false);
+}
+window.renderAllTasksPanel = renderAllTasksPanel;
+
+// Przejmij zadanie z puli (przypisz do zalogowanego użytkownika)
+async function takeTask(taskId) {
+  if (!currentUser?.id) { showToast('Zaloguj się aby przejąć zadanie', 'error'); return; }
+  try {
+    const resp = await fetch(`/api/tasks/${taskId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assignedTo: currentUser.id })
+    });
+    if (resp.ok) {
+      showToast('✅ Zadanie przejęte', 'success');
+      loadTasks();
+    }
+  } catch(e) { showToast('Błąd przejmowania zadania', 'error'); }
+}
+window.takeTask = takeTask;
+
+function renderUpcomingGrouped(el, tasks) {
+  if (!tasks.length) { el.innerHTML = '<div style="padding:14px;text-align:center;color:#94a3b8;font-size:13px;">Brak nadchodzących zadań</div>'; return; }
+  // Grupuj po dacie
+  const groups = {};
+  tasks.forEach(t => {
+    const d = new Date(t.dueDate);
+    const key = d.toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' });
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(t);
+  });
+  let html = '';
+  Object.entries(groups).forEach(([dateLabel, dayTasks]) => {
+    html += `<div style="padding:4px 12px 2px;font-size:10px;font-weight:700;text-transform:uppercase;color:#94a3b8;letter-spacing:.05em;">${dateLabel}</div>`;
+    dayTasks.forEach(t => {
+      const isOverdue = new Date(t.dueDate) < new Date() && t.status !== 'done';
+      html += `<div style="padding:7px 12px;border-bottom:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;gap:8px;${isOverdue?'background:#fef2f2;':''}">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;font-weight:500;color:${isOverdue?'#991b1b':'#1e293b'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(t.title)}</div>
+          ${t.contactName ? `<div style="font-size:11px;color:#64748b;">${escHtml(t.contactName)}</div>` : ''}
+        </div>
+        <button onclick="takeTask('${t.id}')" style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid #3b82f6;background:#eff6ff;color:#1d4ed8;cursor:pointer;white-space:nowrap;">Przejmij</button>
+      </div>`;
+    });
+  });
+  el.innerHTML = html;
 }
 
 // ==================== KALENDARZ MIESIĘCZNY ====================
@@ -3091,6 +3740,8 @@ function updateStatCards(data) {
   const missed = s.missed || 0;
   const answeredPct = s.answeredPercent || 0;
   const callbackRate = s.callbackRate || 0;
+  const callbackDone = s.callbackDone || 0;
+  const outbound = s.outbound || 0;
   const unique = data.totalContacts || 0;
   const connected = (data.callsByStatus || {}).connected || 0;
   const ineffective = (data.callsByStatus || {}).ineffective || 0;
@@ -3103,12 +3754,12 @@ function updateStatCards(data) {
 
   // Nowe KPI cards (stats-kpi-card)
   setEl('stat-total', total);
-  setEl('stat-total-sub', `Dziś: ${answeredPct}% odebranych`);
+  setEl('stat-total-sub', `W tym ${outbound} wychodzących`);
   setEl('stat-unique', unique);
   setEl('stat-answered', answeredPct + '%');
-  setEl('stat-answered-sub', `${answered} połączeń`);
+  setEl('stat-answered-sub', `${answered} odebranych z ${total}`);
   setEl('stat-callback', callbackRate + '%');
-  setEl('stat-callback-sub', `${answered} z ${total}`);
+  setEl('stat-callback-sub', `Oddzwoniono na ${callbackDone || 0} z ${missed}`);
 
   // Reception OS KPI
   const newPatients = s.newPatients || 0;
@@ -3263,9 +3914,14 @@ function renderDonutChart(data) {
 function renderHourlyChart(callsByHour) {
   const canvas = document.getElementById('callsByHourChart');
   if (!canvas) return;
+
+  // Ustaw rozmiar pixelowy na faktyczny rozmiar CSS (bez tego canvas nie skaluje się)
+  canvas.width  = canvas.offsetWidth  || 640;
+  canvas.height = canvas.offsetHeight || 160;
+
   const ctx = canvas.getContext('2d');
   const { width, height } = canvas;
-  const pad = { top: 20, right: 20, bottom: 40, left: 40 };
+  const pad = { top: 28, right: 16, bottom: 32, left: 36 };
   const chartW = width - pad.left - pad.right;
   const chartH = height - pad.top - pad.bottom;
 
@@ -3275,29 +3931,48 @@ function renderHourlyChart(callsByHour) {
 
   ctx.clearRect(0, 0, width, height);
 
-  // Rysuj słupki
-  data.forEach((val, i) => {
-    const barH = (val / maxVal) * chartH;
-    const x = pad.left + i * barW;
-    const y = pad.top + chartH - barH;
-    const isWorkHour = i >= 8 && i <= 18;
-    ctx.fillStyle = isWorkHour ? '#3b82f6' : '#94a3b8';
-    ctx.fillRect(x + 2, y, barW - 4, barH);
-
-    // Etykiety godzin co 2
-    if (i % 2 === 0) {
-      ctx.fillStyle = '#64748b';
-      ctx.font = '10px Inter';
-      ctx.textAlign = 'center';
-      ctx.fillText(`${i}:00`, x + barW / 2, height - 8);
-    }
+  // Linie pomocnicze (gridlines)
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.lineWidth = 0.5;
+  [0.25, 0.5, 0.75, 1].forEach(ratio => {
+    const y = pad.top + chartH - ratio * chartH;
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + chartW, y); ctx.stroke();
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '9px Inter, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(Math.round(maxVal * ratio), pad.left - 4, y + 3);
   });
 
-  // Legenda
-  ctx.fillStyle = '#1e293b';
-  ctx.font = '11px Inter';
-  ctx.textAlign = 'left';
-  ctx.fillText('Godziny pracy (8-18)', pad.left, 14);
+  // Słupki
+  data.forEach((val, i) => {
+    const barH = Math.max((val / maxVal) * chartH, val > 0 ? 3 : 0);
+    const x = pad.left + i * barW;
+    const y = pad.top + chartH - barH;
+
+    // Kolor: godziny pracy = niebieski, reszta = szary
+    const isWorkHour = i >= 8 && i <= 18;
+    ctx.fillStyle = isWorkHour ? '#3b82f6' : '#cbd5e1';
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(x + 2, y, barW - 4, barH, 2)
+                  : ctx.rect(x + 2, y, barW - 4, barH);
+    ctx.fill();
+
+    // Wartość nad słupkiem (tylko jeśli > 0)
+    if (val > 0) {
+      ctx.fillStyle = '#475569';
+      ctx.font = '9px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(val, x + barW / 2, y - 4);
+    }
+
+    // Etykieta godziny (co 2)
+    if (i % 2 === 0) {
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '9px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`${i}:00`, x + barW / 2, height - 6);
+    }
+  });
 }
 
 function renderLeadSourcesChart(leadSources) {
@@ -3471,8 +4146,8 @@ function initDialer() {
         </div>
       </div>
     </div>
-    <button id="dialerToggleBtn" onclick="toggleDialer()" title="Klawiatura">
-      <span id="dialerToggleIcon">📞</span>
+    <button id="dialerToggleBtn" onclick="toggleDialer()" title="Wykonaj połączenie">
+      <span id="dialerToggleIcon">📞 Wykonaj połączenie</span>
     </button>
   `;
 }
@@ -3490,12 +4165,12 @@ function toggleDialer() {
     setTimeout(() => document.getElementById('dialerInput')?.focus(), 50);
   } else if (!panel.classList.contains('minimized')) {
     panel.classList.add('minimized');
-    if (icon) icon.textContent = '📞';
+    if (icon) icon.textContent = '📞 Wykonaj połączenie';
   } else {
     panel.classList.add('hidden');
     panel.classList.remove('minimized');
     dialerOpen = false;
-    if (icon) icon.textContent = '📞';
+    if (icon) icon.textContent = '📞 Wykonaj połączenie';
   }
 }
 
@@ -3535,7 +4210,7 @@ const recordingPollers = new Map(); // callId → intervalId
 function startRecordingPoller(callId) {
   if (recordingPollers.has(callId)) return;
   let attempts = 0;
-  const maxAttempts = 40; // 40 × 30s = 20 minut
+  const maxAttempts = 15; // 15 × 60s = 15 minut
   const id = setInterval(async () => {
     attempts++;
     const call = allCalls.find(c => c.callId === callId);
@@ -3552,18 +4227,17 @@ function startRecordingPoller(callId) {
         if (idx >= 0) allCalls[idx].recordingUrl = data.url;
         clearInterval(id);
         recordingPollers.delete(callId);
-        if (currentView === 'calls') renderCallsTable(allCalls);
         // Odśwież przycisk nagrania inline (bez przeładowania całej tabeli)
         const btn = document.querySelector(`[data-rec-callid="${CSS.escape(callId)}"]`);
         if (btn) {
           const proxyUrl = `/api/call/${encodeURIComponent(callId)}/recording/proxy`;
-          btn.outerHTML = `<audio controls src="${proxyUrl}" class="call-recording-player"></audio>
+          btn.outerHTML = `<audio controls preload="none" src="${proxyUrl}" class="call-recording-player"></audio>
             <a href="${proxyUrl}" target="_blank" class="btn-download-rec" title="Pobierz">↓</a>`;
         }
         showToast('🎙️ Nagranie gotowe', 'success');
       }
     } catch(e) { /* cicho — spróbujemy ponownie */ }
-  }, 30000);
+  }, 60000); // co 60s (było 30s)
   recordingPollers.set(callId, id);
 }
 
@@ -3712,161 +4386,370 @@ function showToast(message, type = 'info') {
 async function openPatientCard(contactId, contactName) {
   const modal = document.getElementById('patientCardModal');
   if (!modal) return;
-  
   modal.classList.remove('hidden');
   modal.style.display = 'flex';
-  
-  // Ustaw tytuł
   document.getElementById('patientCardTitle').textContent = `Karta Pacjenta: ${contactName || 'Ładowanie...'}`;
-  
-  // Wyczyść timeline
-  document.getElementById('patientCardTimeline').innerHTML = '<div style="padding: 12px; background: #f8fafc; border-radius: 8px; color: #64748b; text-align: center;">Ładowanie...</div>';
-  
+
+  // Zapisz contactId globalnie (potrzebne dla notatek)
+  window._patientCardContactId = contactId;
+  // Reset zakładki notatek
+  const notesList = document.getElementById('patientNotesList');
+  if (notesList) notesList.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:16px;">Kliknij zakładkę Notatki aby załadować</div>';
+  const notesBadge = document.getElementById('notesBadge');
+  if (notesBadge) notesBadge.style.display = 'none';
+
+  // Pokaż loader na wszystkich zakładkach
+  ['patientCardTimeline','patientCardCallHistory','patientCardTaskHistory'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '<div style="padding:16px;text-align:center;color:#94a3b8;">⏳ Ładowanie...</div>';
+  });
+
+  // Zawsze otwieraj na zakładce Dane
+  switchPatientCardTab('info');
+
   try {
     const response = await fetch(`/api/contact/${contactId}/card`);
-    if (!response.ok) throw new Error('Błąd pobierania karty pacjenta');
-    const data = await response.json();
-    
-    // Wypełnij dane kontaktu
-    const contact = data.contact || {};
-    document.getElementById('patientCardName').textContent = `${contact.firstName || ''} ${contact.lastName || ''}`.trim() || '—';
-    document.getElementById('patientCardPhone').textContent = contact.phone || '—';
-    document.getElementById('patientCardEmail').textContent = contact.email || '—';
-    document.getElementById('patientCardSource').textContent = contact.source || '—';
-    
-    // Zakładki karty pacjenta
-    window.switchPatientCardTab = function(tab) {
-      document.getElementById('patientCardTimelineSection').classList.toggle('hidden', tab !== 'timeline');
-      document.getElementById('patientCardCallsSection').classList.toggle('hidden', tab !== 'calls');
-      document.getElementById('tabPatientTimeline').classList.toggle('active', tab === 'timeline');
-      document.getElementById('tabPatientCalls').classList.toggle('active', tab === 'calls');
-    };
-    
-    // Wypełnij zmapowane custom fields
-    const mainProblemEl = document.getElementById('patientCardMainProblem');
-    if (mainProblemEl) {
-      if (contact.mainProblem) {
-        mainProblemEl.textContent = contact.mainProblem;
-        mainProblemEl.closest('.patient-card-field')?.classList.remove('hidden');
-      } else {
-        mainProblemEl.closest('.patient-card-field')?.classList.add('hidden');
-      }
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || `HTTP ${response.status}`);
     }
-    
-    // W0
-    const w0SectionEl = document.getElementById('patientCardW0Section');
-    if (w0SectionEl) {
-      if (contact.w0_scheduled || contact.w0_date) {
-        w0SectionEl.classList.remove('hidden');
-        const w0DateEl = document.getElementById('patientCardW0Date');
-        if (w0DateEl && contact.w0_date) {
-          w0DateEl.textContent = new Date(contact.w0_date).toLocaleDateString('pl-PL', { day: '2-digit', month: 'long', year: 'numeric' });
-        }
-        const w0DoctorEl = document.getElementById('patientCardW0Doctor');
-        if (w0DoctorEl) w0DoctorEl.textContent = contact.w0_doctor || '—';
-        const w0NotesEl = document.getElementById('patientCardW0Notes');
-        if (w0NotesEl) w0NotesEl.textContent = contact.w0_notes || '';
-      } else {
-        w0SectionEl.classList.add('hidden');
-      }
-    }
-    
-    // Zgoda marketingowa
-    const marketingEl = document.getElementById('patientCardMarketing');
-    if (marketingEl) {
-      marketingEl.textContent = contact.marketingConsent ? '✅ Tak' : '❌ Nie';
-      marketingEl.style.color = contact.marketingConsent ? '#10b981' : '#ef4444';
-    }
-    
-    // Wypełnij ujednolicony Timeline (zakładka 1)
-    const unifiedTimeline = data.unifiedTimeline || [];
-    const legacyTimeline = data.timeline || [];
-    const callHistory = data.callHistory || [];
-    const timelineEl = document.getElementById('patientCardTimeline');
-    
-    const allEvents = unifiedTimeline.length > 0 ? unifiedTimeline : legacyTimeline.map(a => ({
-      id: a.id, type: a.type, source: 'ghl', description: a.description || a.type,
-      createdAt: a.createdAt, userId: a.userId, userName: a.userName
-    }));
-    
-    const EVENT_COLORS = {
-      visit_cancelled: '#ef4444', follow_up_created: '#f59e0b', first_call: '#3b82f6',
-      w0_scheduled: '#10b981', ghl_note: '#8b5cf6', task_assigned: '#f97316', other: '#94a3b8'
-    };
-    const EVENT_LABELS = {
-      visit_cancelled: 'Odwołanie wizyty', follow_up_created: 'Follow-up', first_call: 'Pierwszy kontakt',
-      w0_scheduled: 'W0 umówione', ghl_note: 'Notatka GHL', task_assigned: 'Zadanie', other: 'Zdarzenie'
-    };
-    
-    if (allEvents.length === 0) {
-      timelineEl.innerHTML = '<div style="padding: 12px; background: #f8fafc; border-radius: 8px; color: #64748b; text-align: center;">Brak zdarzeń w historii</div>';
-    } else {
-      timelineEl.innerHTML = allEvents.sort((a,b) => new Date(b.createdAt || b.created_at) - new Date(a.createdAt || a.created_at)).map(event => {
-        const eventType = event.type || event.event_type || 'other';
-        const color = EVENT_COLORS[eventType] || EVENT_COLORS.other;
-        const label = EVENT_LABELS[eventType] || eventType;
-        const source = event.source || 'app';
-        const sourceBadge = source === 'ghl'
-          ? '<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:#dbeafe;color:#1e40af;font-weight:700;">GHL</span>'
-          : '<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:#f0fdf4;color:#166534;font-weight:700;">APP</span>';
-        const desc = (event.description || '—').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-        const uname = event.userName ? event.userName.replace(/</g,'&lt;') : '';
-        return '<div style="padding:12px;border-left:3px solid ' + color + ';background:#f8fafc;border-radius:6px;margin-bottom:8px;">'
-          + '<div style="display:flex;justify-content:space-between;align-items:center;">'
-          + '<div style="display:flex;align-items:center;gap:6px;">'
-          + '<span style="font-size:10px;padding:2px 8px;border-radius:12px;background:' + color + '20;color:' + color + ';font-weight:700;">' + label + '</span>'
-          + sourceBadge
-          + '</div>'
-          + '<div style="font-size:11px;color:#94a3b8;">' + new Date(event.createdAt || event.created_at).toLocaleString('pl-PL') + '</div>'
-          + '</div>'
-          + '<div style="font-size:13px;color:#1e293b;margin-top:6px;">' + desc + '</div>'
-          + (uname ? '<div style="font-size:11px;color:#94a3b8;margin-top:4px;">Przez: ' + uname + '</div>' : '')
-          + '</div>';
-      }).join('');
-    }
-    
-    // Wypełnij historię połączeń z aplikacji (zakładka 2)
-    const callHistoryEl = document.getElementById('patientCardCallHistory');
-    if (callHistoryEl) {
-      if (callHistory.length === 0) {
-        callHistoryEl.innerHTML = '<div style="padding: 12px; background: #f8fafc; border-radius: 8px; color: #64748b; text-align: center;">Brak połączeń w historii</div>';
-      } else {
-        const statusColors = { nowy_pacjent: '#3b82f6', staly_pacjent: '#10b981', biezaca_wizyta: '#f59e0b', pomylka: '#94a3b8' };
-        const statusLabels = { nowy_pacjent: 'Nowy pacjent', staly_pacjent: 'Stały pacjent', biezaca_wizyta: 'Bieżąca wizyta', pomylka: 'Pomyłka' };
-        callHistoryEl.innerHTML = callHistory.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(c => {
-          const statusColor = statusColors[c.contactType] || '#94a3b8';
-          const statusLabel = statusLabels[c.contactType] || c.contactType || '—';
-          const tagColor = c.tag === 'connected' ? '#10b981' : c.tag === 'missed' ? '#ef4444' : '#94a3b8';
-          const tagLabel = c.tag === 'connected' ? 'Połączono' : c.tag === 'missed' ? 'Nieodebrane' : c.tag || '—';
-          return `
-          <div style="padding: 12px; border-left: 3px solid ${statusColor}; background: #f8fafc; border-radius: 6px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
-              <div style="font-size: 12px; color: #64748b;">${new Date(c.createdAt || c.timestamp).toLocaleString('pl-PL')}</div>
-              <div style="display:flex; gap: 4px;">
-                <span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: ${tagColor}20; color: ${tagColor}; font-weight: 700;">${tagLabel}</span>
-                ${c.contactType ? `<span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: ${statusColor}20; color: ${statusColor}; font-weight: 700;">${statusLabel}</span>` : ''}
-              </div>
-            </div>
-            ${c.callEffect ? `<div style="font-size: 13px; color: #1e293b; font-weight: 600;">Wynik: ${c.callEffect}</div>` : ''}
-            ${c.program ? `<div style="font-size: 12px; color: #7c3aed; margin-top: 2px;">Program: ${c.program}</div>` : ''}
-            ${c.notes ? `<div style="font-size: 12px; color: #64748b; margin-top: 4px; font-style: italic;">„${c.notes}”</div>` : ''}
-            <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">${c.direction === 'outbound' ? '↗️ Wychodzące' : '↘️ Przychodzące'} • ${c.duration ? `${c.duration}s` : 'brak czasu'}</div>
-          </div>`;
-        }).join('');
-      }
-    }
+    const cardData = await response.json();
+
+    // Zapisz dane do późniejszego lazy renderingu
+    window._patientCardData = cardData;
+    window._patientCardRendered = { info: false, timeline: false, calls: false, tasks: false };
+
+    // Renderuj TYLKO zakładkę Dane (widoczna od razu)
+    renderPatientCardInfo(cardData);
+
   } catch (err) {
     console.error('[Patient Card] Error:', err);
-    document.getElementById('patientCardTimeline').innerHTML = `<div style="padding: 12px; background: #fef2f2; border-radius: 8px; color: #ef4444; text-align: center;">Błąd: ${err.message}</div>`;
+    const errHtml = `<div style="padding:16px;background:#fef2f2;border-radius:8px;color:#ef4444;"><strong>Błąd:</strong><br>${escHtml(err.message)}</div>`;
+    ['patientCardTimeline','patientCardCallHistory','patientCardTaskHistory'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = errHtml;
+    });
+    // Ustaw puste dane żeby zakładki nie wisiały na "Ładowanie..."
+    window._patientCardData = { contact: {}, pipeline: null, unifiedTimeline: [], timeline: [], callHistory: [], taskHistory: [] };
+    window._patientCardRendered = { info: true, timeline: true, calls: true, tasks: true };
   }
 }
 
+function renderPatientCardInfo(data) {
+  const contact = data.contact || {};
+  const pipeline = data.pipeline || null;
+  const setField = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val || '—'; };
+
+  setField('patientCardFirstName', contact.firstName || '');
+  setField('patientCardLastName', contact.lastName || '');
+  setField('patientCardName', `${contact.firstName || ''} ${contact.lastName || ''}`.trim());
+  setField('patientCardPhone', contact.phone);
+  setField('patientCardEmail', contact.email);
+  setField('patientCardSource', contact.leadSource || contact.source);
+  setField('patientCardGender', contact.gender);
+  setField('patientCardDOB', contact.dateOfBirth ? new Date(contact.dateOfBirth).toLocaleDateString('pl-PL') : null);
+  setField('patientCardCity', contact.city);
+  setField('patientCardMainProblem', contact.mainProblem);
+  setField('patientCardLeadSource', contact.leadSource || contact.source);
+  setField('patientCardSourceContact', contact.sourceContact);
+  setField('patientCardPotentialProgram', contact.potentialProgram);
+  setField('patientCardPreferredChannel', contact.preferredChannel);
+  setField('patientCardFirstCallNote', contact.firstCallNote);
+  if (pipeline) {
+    setField('patientCardPipeline', pipeline.name || 'Navigator');
+    setField('patientCardPipelineStage', pipeline.stageName || pipeline.stageId || '—');
+    setField('patientCardAssignedTo', pipeline.assignedTo);
+  }
+  const mktEl = document.getElementById('patientCardMarketing');
+  if (mktEl) {
+    const v = contact.marketingConsentRaw || contact.marketingConsent;
+    const yes = v === true || ['yes','tak','1','true'].includes(String(v||'').toLowerCase());
+    mktEl.textContent = yes ? '✅ Tak' : (v ? String(v) : '—');
+    mktEl.style.color = yes ? '#10b981' : '#1e293b';
+  }
+  const w0El = document.getElementById('patientCardW0Section');
+  if (w0El) {
+    if (contact.w0_scheduled || contact.w0_date) {
+      w0El.classList.remove('hidden');
+      setField('patientCardW0Date', contact.w0_date ? new Date(contact.w0_date).toLocaleDateString('pl-PL', {day:'2-digit',month:'long',year:'numeric'}) : null);
+      setField('patientCardW0Doctor', contact.w0_doctor);
+      setField('patientCardW0Notes', contact.w0_notes);
+    } else { w0El.classList.add('hidden'); }
+  }
+  window._patientCardRendered.info = true;
+}
+
+function renderPatientCardTimeline() {
+  if (window._patientCardRendered?.timeline) return;
+  const data = window._patientCardData;
+  if (!data) return;
+  const timelineEl = document.getElementById('patientCardTimeline');
+  if (!timelineEl) return;
+  const allEvents = (data.unifiedTimeline||[]).length > 0 ? data.unifiedTimeline : (data.timeline||[]).map(a=>({
+    type:a.type, source:'ghl', description:a.description||a.type, createdAt:a.createdAt, userName:a.userName
+  }));
+  const EC = {visit_cancelled:'#ef4444',follow_up_created:'#f59e0b',first_call:'#3b82f6',w0_scheduled:'#10b981',ghl_note:'#8b5cf6',task_assigned:'#f97316',other:'#94a3b8'};
+  const EL = {visit_cancelled:'Odwołanie wizyty',follow_up_created:'Follow-up',first_call:'Pierwszy kontakt',w0_scheduled:'W0 umówione',ghl_note:'Notatka GHL',task_assigned:'Zadanie',other:'Zdarzenie'};
+  if (allEvents.length === 0) {
+    timelineEl.innerHTML = '<div style="padding:16px;text-align:center;color:#94a3b8;">Brak aktywności GHL</div>';
+  } else {
+    timelineEl.innerHTML = allEvents.sort((a,b)=>new Date(b.createdAt||b.created_at)-new Date(a.createdAt||a.created_at)).slice(0, 30).map(ev=>{
+      const c=EC[ev.type]||EC.other, l=EL[ev.type]||ev.type;
+      const badge=ev.source==='ghl'?'<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:#dbeafe;color:#1e40af;font-weight:700;">GHL</span>':'<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:#f0fdf4;color:#166534;font-weight:700;">APP</span>';
+      return `<div style="padding:12px;border-left:3px solid ${c};background:#f8fafc;border-radius:6px;margin-bottom:8px;"><div style="display:flex;justify-content:space-between;align-items:center;"><div style="display:flex;gap:6px;align-items:center;"><span style="font-size:10px;padding:2px 8px;border-radius:12px;background:${c}20;color:${c};font-weight:700;">${l}</span>${badge}</div><div style="font-size:11px;color:#94a3b8;">${new Date(ev.createdAt||ev.created_at).toLocaleString('pl-PL')}</div></div><div style="font-size:13px;color:#1e293b;margin-top:6px;">${escHtml(ev.description||'—')}</div>${ev.userName?`<div style="font-size:11px;color:#94a3b8;margin-top:4px;">Przez: ${escHtml(ev.userName)}</div>`:''}</div>`;
+    }).join('');
+  }
+  window._patientCardRendered.timeline = true;
+}
+
+function renderPatientCardCalls() {
+  if (window._patientCardRendered?.calls) return;
+  const data = window._patientCardData;
+  if (!data) return;
+  const callHistEl = document.getElementById('patientCardCallHistory');
+  if (!callHistEl) return;
+  const ch = data.callHistory || [];
+  if (ch.length === 0) { callHistEl.innerHTML = '<div style="padding:16px;text-align:center;color:#94a3b8;">Brak połączeń w historii</div>'; }
+  else {
+    const SC = {NOWY_PACJENT:'#3b82f6',STALY_PACJENT:'#10b981',WIZYTA_BIEZACA:'#f59e0b',SPAM:'#94a3b8'};
+    const SL = {NOWY_PACJENT:'Nowy pacjent',STALY_PACJENT:'Stały pacjent',WIZYTA_BIEZACA:'Bieżąca wizyta',SPAM:'Pomyłka'};
+    callHistEl.innerHTML = ch.sort((a,b)=>new Date(b.createdAt||b.timestamp)-new Date(a.createdAt||a.timestamp)).slice(0, 20).map(c=>{
+      const sc=SC[c.contactType]||'#94a3b8', sl=SL[c.contactType]||c.contactType||'';
+      const tc=c.tag==='connected'?'#10b981':c.tag==='missed'?'#ef4444':'#94a3b8';
+      const tl=c.tag==='connected'?'Połączono':c.tag==='missed'?'Nieodebrane':(c.tag||'—');
+      const proxyUrl=c.id?`/api/call/${encodeURIComponent(c.id)}/recording/proxy`:null;
+      const recHtml=c.recordingUrl&&proxyUrl?`<div style="margin-top:8px;"><audio controls preload="none" src="${proxyUrl}" style="width:100%;height:32px;"></audio></div>`:'';
+      return `<div style="padding:12px;border-left:3px solid ${sc};background:#f8fafc;border-radius:6px;margin-bottom:8px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><div style="font-size:12px;color:#64748b;">${new Date(c.createdAt||c.timestamp).toLocaleString('pl-PL')}</div><div style="display:flex;gap:4px;"><span style="font-size:10px;padding:2px 6px;border-radius:4px;background:${tc}20;color:${tc};font-weight:700;">${tl}</span>${sl?`<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:${sc}20;color:${sc};font-weight:700;">${sl}</span>`:''}</div></div>${c.callEffect?`<div style="font-size:13px;color:#1e293b;font-weight:600;">Wynik: ${escHtml(c.callEffect)}</div>`:''}${c.program?`<div style="font-size:12px;color:#7c3aed;margin-top:2px;">Program: ${escHtml(c.program)}</div>`:''}${c.notes?`<div style="font-size:12px;color:#64748b;margin-top:4px;font-style:italic;">„${escHtml(c.notes)}"</div>`:''}${c.userId?`<div style="font-size:11px;color:#94a3b8;margin-top:2px;">Konsultant: ${escHtml(c.userId)}</div>`:''}<div style="font-size:11px;color:#94a3b8;margin-top:4px;">${c.direction==='outbound'?'↗️ Wychodzące':'↘️ Przychodzące'} • ${c.duration?`${c.duration}s`:'brak czasu'}</div>${recHtml}</div>`;
+    }).join('');
+  }
+  window._patientCardRendered.calls = true;
+}
+
+function renderPatientCardTasks() {
+  if (window._patientCardRendered?.tasks) return;
+  const data = window._patientCardData;
+  if (!data) return;
+  const taskEl = document.getElementById('patientCardTaskHistory');
+  if (!taskEl) return;
+  const tasks = data.taskHistory || [];
+  if (tasks.length === 0) { taskEl.innerHTML = '<div style="padding:16px;text-align:center;color:#94a3b8;">Brak zadań dla tego pacjenta</div>'; }
+  else {
+    const active = tasks.filter(t=>t.status!=='completed'&&t.status!=='done');
+    const done = tasks.filter(t=>t.status==='completed'||t.status==='done');
+    const rt = t => { const past=t.dueDate&&new Date(t.dueDate)<new Date()&&t.status!=='completed'; return `<div style="padding:10px 12px;border:1px solid ${past?'#fca5a5':'#e2e8f0'};border-radius:8px;background:${past?'#fff1f2':'#f8fafc'};margin-bottom:6px;"><div style="font-weight:600;color:#1e293b;font-size:13px;">${t.status==='completed'?'✅':past?'⚠️':'📋'} ${escHtml(t.title||'Zadanie')}</div>${t.body?`<div style="font-size:12px;color:#64748b;margin-top:3px;">${escHtml(t.body)}</div>`:''}<div style="font-size:11px;color:#94a3b8;margin-top:4px;">${t.dueDate?`Termin: ${new Date(t.dueDate).toLocaleDateString('pl-PL')}`:''}${t.assignedTo?` • Przypisano: ${escHtml(t.assignedTo)}`:''}</div></div>`; };
+    taskEl.innerHTML = (active.length>0?`<div style="font-size:11px;font-weight:700;color:#1e293b;margin-bottom:6px;text-transform:uppercase;">Aktywne (${active.length})</div>${active.map(rt).join('')}`:'')+(done.length>0?`<div style="font-size:11px;font-weight:700;color:#94a3b8;margin:12px 0 6px;text-transform:uppercase;">Zakończone (${done.length})</div>${done.map(rt).join('')}`:'');
+  }
+  window._patientCardRendered.tasks = true;
+}
+
+// Zakładki switcher — LAZY: renderuj zawartość dopiero po kliknięciu
+function switchPatientCardTab(tab) {
+  ['info','notes','timeline','calls','tasks'].forEach(t => {
+    const sec = document.getElementById(`patientCardSection_${t}`);
+    const btn = document.getElementById(`tabPatient_${t}`);
+    if (sec) sec.classList.toggle('hidden', t !== tab);
+    if (btn) btn.classList.toggle('active', t === tab);
+  });
+  // Lazy render — renderuj zawartość zakładki dopiero gdy kliknięta
+  if (tab === 'notes') requestAnimationFrame(loadPatientNotes);
+  if (tab === 'timeline') requestAnimationFrame(renderPatientCardTimeline);
+  if (tab === 'calls') requestAnimationFrame(renderPatientCardCalls);
+  if (tab === 'tasks') requestAnimationFrame(renderPatientCardTasks);
+}
+window.switchPatientCardTab = switchPatientCardTab;
+
+// ==================== NOTATKI GHL (dwustronna synchronizacja) ====================
+
+async function loadPatientNotes() {
+  const contactId = window._patientCardContactId;
+  if (!contactId) return;
+  const listEl = document.getElementById('patientNotesList');
+  if (!listEl) return;
+  listEl.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:16px;">Ładowanie notatek z GHL...</div>';
+  try {
+    const resp = await fetch(`/api/contact/${contactId}/notes`);
+    const data = await resp.json();
+    const notes = data.notes || [];
+    // Aktualizuj badge
+    const badge = document.getElementById('notesBadge');
+    if (badge) { badge.textContent = notes.length; badge.style.display = notes.length > 0 ? 'inline' : 'none'; }
+    if (notes.length === 0) {
+      listEl.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px;">Brak notatek dla tego kontaktu</div>';
+      return;
+    }
+    listEl.innerHTML = notes.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded)).map(n => {
+      const dateStr = n.dateAdded ? new Date(n.dateAdded).toLocaleString('pl-PL') : '—';
+      return `<div style="padding:12px;background:#fafafa;border:1px solid #e2e8f0;border-radius:8px;position:relative;">
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
+          <span>📝 ${escHtml(dateStr)}</span>
+          <button onclick="deletePatientNote('${contactId}','${n.id}')" title="Usuń notatkę" style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:13px;padding:2px 6px;border-radius:4px;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#94a3b8'">✕</button>
+        </div>
+        <div style="font-size:14px;color:#1e293b;white-space:pre-wrap;">${escHtml(n.body || n.text || '')}</div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    listEl.innerHTML = `<div style="color:#ef4444;padding:12px;">Błąd ładowania notatek: ${escHtml(e.message)}</div>`;
+  }
+}
+
+async function savePatientNote() {
+  const contactId = window._patientCardContactId;
+  const textEl = document.getElementById('newNoteText');
+  if (!contactId || !textEl || !textEl.value.trim()) {
+    showToast('Wpisz treść notatki', 'error'); return;
+  }
+  try {
+    const resp = await fetch(`/api/contact/${contactId}/notes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: textEl.value.trim(), userId: currentUser?.id })
+    });
+    if (!resp.ok) throw new Error('Błąd zapisu');
+    textEl.value = '';
+    showToast('✅ Notatka zapisana w GHL', 'success');
+    loadPatientNotes(); // Odśwież listę
+  } catch (e) {
+    showToast('Błąd zapisu notatki: ' + e.message, 'error');
+  }
+}
+window.savePatientNote = savePatientNote;
+
+async function deletePatientNote(contactId, noteId) {
+  if (!confirm('Usunąć tę notatkę z GHL?')) return;
+  try {
+    await fetch(`/api/contact/${contactId}/notes/${noteId}`, { method: 'DELETE' });
+    showToast('Notatka usunięta', 'success');
+    loadPatientNotes();
+  } catch (e) {
+    showToast('Błąd usuwania notatki', 'error');
+  }
+}
+window.deletePatientNote = deletePatientNote;
+
+// ==================== PIERWSZE / KOLEJNE POŁĄCZENIE ====================
+// Ustaw typ połączenia w raporcie
+function setCallType(type) {
+  const firstBtn = document.getElementById('btn-first-call');
+  const nextBtn = document.getElementById('btn-next-call');
+  const hiddenInput = document.getElementById('callTypeValue');
+  if (!firstBtn || !nextBtn || !hiddenInput) return;
+  
+  // Reset stylów
+  [firstBtn, nextBtn].forEach(btn => {
+    btn.style.borderColor = '#e2e8f0'; 
+    btn.style.background = '#f8fafc'; 
+    btn.style.color = '#64748b'; 
+    btn.style.fontWeight = '400';
+  });
+
+  if (type === 'first') {
+    firstBtn.style.borderColor = '#f59e0b'; firstBtn.style.background = '#fef3c7'; firstBtn.style.color = '#92400e'; firstBtn.style.fontWeight = '700';
+    hiddenInput.value = 'first';
+  } else if (type === 'next') {
+    nextBtn.style.borderColor = '#3b82f6'; nextBtn.style.background = '#eff6ff'; nextBtn.style.color = '#1d4ed8'; nextBtn.style.fontWeight = '700';
+    hiddenInput.value = 'next';
+  } else {
+    hiddenInput.value = '';
+  }
+}
+window.setCallType = setCallType;
+
+// ==================== KROK 1: SZYBKI WYBÓR NOWY/POWRACAJĄCY ====================
+function setQuickPatientType(type) {
+  const quickStep = document.getElementById('quickPatientTypeStep');
+  const newBtn = document.getElementById('qbt-new');
+  const existingBtn = document.getElementById('qbt-existing');
+
+  // Zaznacz wybrany przycisk
+  if (newBtn && existingBtn) {
+    if (type === 'new') {
+      newBtn.style.borderWidth = '3px';
+      newBtn.style.boxShadow = '0 0 0 3px #22c55e44';
+      existingBtn.style.borderWidth = '2px';
+      existingBtn.style.boxShadow = 'none';
+      existingBtn.style.opacity = '0.5';
+    } else {
+      existingBtn.style.borderWidth = '3px';
+      existingBtn.style.boxShadow = '0 0 0 3px #3b82f644';
+      newBtn.style.borderWidth = '2px';
+      newBtn.style.boxShadow = 'none';
+      newBtn.style.opacity = '0.5';
+    }
+  }
+
+  // Automatycznie preselectuj odpowiedni status tile
+  setTimeout(() => {
+    if (type === 'new') {
+      selectStatus('NOWY_PACJENT');
+    } else {
+      selectStatus('STALY_PACJENT');
+    }
+    // Schowaj krok 1 — pokaż formularz
+    if (quickStep) quickStep.style.display = 'none';
+  }, 350); // krótkie opóźnienie żeby widać było zaznaczenie
+}
+window.setQuickPatientType = setQuickPatientType;
+
+// ==================== "ODEBRAŁ POŁĄCZENIE" — przeniesienie do "Po rozmowie" ====================
+async function handleContactAnswered() {
+  const btn = document.getElementById('btnContactAnswered');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Przenoszenie...'; }
+
+  const oppId = currentContact?.opportunityId || currentOpportunity?.id;
+  // Stage ID dla "Po rozmowie" — z globalnej mapy stage'ów
+  const STAGE_AFTER_CALL = '19126f1b-5529-48fc-be95-d6b64e264e59';
+
+  try {
+    if (oppId) {
+      await fetch(`/api/opportunity/${oppId}/move-stage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stageId: STAGE_AFTER_CALL })
+      });
+    }
+    // Zaktualizuj banner
+    const bannerName = document.getElementById('popupStageBannerName');
+    if (bannerName) bannerName.textContent = 'Po rozmowie — rozważa W0';
+    if (btn) btn.style.display = 'none';
+
+    // Pokaż pola raportu dla etapu "Po rozmowie"
+    showStageFields('po_rozmowie');
+    showToast('✅ Pacjent przeniesiony do etapu "Po rozmowie"', 'success');
+  } catch(e) {
+    showToast('Błąd przenoszenia etapu: ' + e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '✅ Odebrał — przenieś do "Po rozmowie"'; }
+  }
+}
+window.handleContactAnswered = handleContactAnswered;
+
+// Pokaż/ukryj dodatkowe pola raportu zależnie od etapu lejka
+function showStageFields(stage) {
+  // Ukryj wszystkie sekcje stage-specific
+  document.querySelectorAll('.stage-fields').forEach(el => el.style.display = 'none');
+  // Pokaż odpowiednią
+  const el = document.getElementById(`stage-fields-${stage}`);
+  if (el) el.style.display = 'block';
+}
+
+// Przy otwieraniu popup — wykryj etap i pokaż odpowiednie pola
+function applyStageToReport(stageName) {
+  if (!stageName) return;
+  const name = stageName.toLowerCase();
+  if (name.includes('nowe') || name.includes('proba') || name.includes('follow-up')) {
+    showStageFields('nowe_zgloszenie');
+  } else if (name.includes('po rozmowie') || name.includes('rozwa')) {
+    showStageFields('po_rozmowie');
+  } else if (name.includes('umówiony') || name.includes('w0')) {
+    showStageFields('umowiony_w0');
+  } else {
+    showStageFields(''); // ukryj wszystkie
+  }
+}
+window.applyStageToReport = applyStageToReport;
+
 function closePatientCard() {
   const modal = document.getElementById('patientCardModal');
-  if (modal) {
-    modal.classList.add('hidden');
-    modal.style.display = 'none';
-  }
+  if (modal) { modal.classList.add('hidden'); modal.style.display = 'none'; }
 }
 
 
@@ -4087,7 +4970,7 @@ function startHeartbeat() {
   if (!currentUser) return;
   setInterval(async () => {
     try {
-      await fetch('/api/user/heartbeat', {
+      await fetch(`/api/users/${currentUser.id}/heartbeat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: currentUser.id, userName: currentUser.name })

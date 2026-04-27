@@ -199,7 +199,7 @@ body {
 .main-content {
   margin-left: var(--sidebar-width);
   flex: 1;
-  padding: 32px 40px;
+  padding: 20px 28px;
   min-height: 100vh;
 }
 
@@ -663,45 +663,77 @@ body {
 
 .sonia-chat-widget {
   bottom: 24px;
-  left: 260px;
+  left: calc(var(--sidebar-width) + 20px);
 }
 
 .dialer-widget > button, .sonia-chat-widget > button {
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
+  position: relative;
+  height: 44px;
+  padding: 0 18px;
+  border-radius: 22px;
   background: var(--navy);
   border: none;
   cursor: pointer;
-  font-size: 22px;
+  font-size: 13px;
+  font-weight: 600;
   color: #fff;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 7px;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
   transition: var(--transition);
 }
 
 .dialer-widget > button:hover, .sonia-chat-widget > button:hover {
-  transform: scale(1.08);
+  transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.32);
+  background: #1e293b;
 }
 
 .dialer-panel, .sonia-chat-panel {
   position: absolute;
-  bottom: 62px;
+  bottom: 58px;
   background: #fff;
-  border-radius: 20px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12);
+  border-radius: 16px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.15);
   border: 1px solid #e2e8f0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  width: 320px;
-  max-height: 440px;
+  width: 340px;
+  max-height: 500px;
   transition: var(--transition);
-  animation: slideUp 0.2s ease;
+  animation: slideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
+
+.dialer-panel .widget-header, .sonia-chat-panel .widget-header {
+  background: var(--navy);
+  color: #fff;
+  border-bottom: none;
+  padding: 16px 20px;
+}
+
+.dialer-panel .widget-title, .sonia-chat-panel .widget-title {
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.dialer-panel .widget-btn, .sonia-chat-panel .widget-btn {
+  color: rgba(255,255,255,0.7);
+  font-size: 16px;
+}
+
+.dialer-panel .widget-btn:hover, .sonia-chat-panel .widget-btn:hover {
+  color: #fff;
+}
+
+/* .sonia-msg-text styles defined below in the chat section */
+
+/* sonia-chat-input-row styles defined below in the chat section */
 
 .dialer-panel {
   right: 0;
@@ -797,15 +829,25 @@ body {
 }
 
 .dialer-key {
-  height: 44px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  height: 56px;
+  border: 1px solid #f1f5f9;
+  border-radius: 12px;
   background: #f8fafc;
-  font-size: 17px;
-  font-weight: 500;
+  font-size: 20px;
+  font-weight: 600;
   color: var(--navy);
   cursor: pointer;
-  transition: var(--transition);
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dialer-key:hover {
+  background: #fff;
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.1);
 }
 
 .dialer-key:hover {
@@ -841,15 +883,32 @@ body {
 
 .dialer-call-btn {
   flex: 1;
-  height: 44px;
-  border-radius: 8px;
+  height: 56px;
+  border-radius: 12px;
   background: var(--accent-green);
   border: none;
   color: #fff;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
   cursor: pointer;
-  transition: var(--transition);
+  transition: all 0.2s;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+}
+
+.dialer-call-btn:hover {
+  background: #059669;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.3);
+}
+
+.dialer-del {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  font-size: 20px;
+  color: #64748b;
 }
 
 .dialer-call-btn:hover {
@@ -1072,7 +1131,7 @@ body {
   }
   
   .sonia-chat-widget {
-    left: 100px;
+    left: 100px; /* sidebar 80px + 20px margin */
   }
   
   .kpi-grid {
@@ -1094,6 +1153,10 @@ body {
     margin-left: 60px;
     padding: 16px;
   }
+
+  .sonia-chat-widget {
+    left: 80px; /* sidebar 60px + 20px margin */
+  }
   
   .kpi-grid {
     grid-template-columns: 1fr;
@@ -1110,22 +1173,40 @@ body {
 
 .stats-kpi-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 16px;
   margin-bottom: 32px;
 }
 
 .stats-kpi-card {
-  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  background: #fff;
   border-radius: 12px;
   padding: 20px;
-  border: 1px solid rgba(148, 163, 184, 0.1);
+  border: 1px solid #e2e8f0;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 12px;
   transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
+
+.stats-kpi-card .stats-kpi-value {
+  color: #1e293b;
+}
+
+.stats-kpi-card .stats-kpi-label {
+  color: #64748b;
+}
+
+.stats-kpi-card .stats-kpi-sub {
+  color: #94a3b8;
+}
+
+.stats-kpi-card:nth-child(1) { border-top: 4px solid #3b82f6; }
+.stats-kpi-card:nth-child(2) { border-top: 4px solid #10b981; }
+.stats-kpi-card:nth-child(3) { border-top: 4px solid #f59e0b; }
+.stats-kpi-card:nth-child(4) { border-top: 4px solid #ef4444; }
 
 .stats-kpi-card:hover {
   transform: translateY(-2px);
@@ -1569,7 +1650,13 @@ body {
 /* Recording player */
 .call-recording-player {
   height: 28px;
-  max-width: 180px;
+  width: 140px;
+}
+
+#popupRecordingPlayer audio {
+  height: 30px;
+  width: 100%;
+  max-width: 300px;
   border-radius: 20px;
   accent-color: #3b82f6;
 }
@@ -2398,37 +2485,89 @@ body {
 }
 
 .status-tile {
-  padding: 12px;
-  border: 2px solid #e2e8f0;
+  padding: 20px 12px;
+  border: none;
   border-radius: 12px;
   background: #fff;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  transition: all 0.15s;
-  font-family: 'Montserrat', sans-serif;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s;
+  font-family: 'Inter', sans-serif;
+  color: #fff;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  position: relative;
+  overflow: hidden;
 }
 
 .status-tile:hover {
-  border-color: #94a3b8;
-  background: #f8fafc;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+  filter: brightness(1.05);
 }
 
 .status-tile.active {
-  border-color: #0a192f;
-  background: #0a192f;
+  outline: 4px solid #fff;
+  outline-offset: -4px;
+  box-shadow: 0 0 0 5px rgba(0,0,0,0.35), 0 4px 12px rgba(0,0,0,0.2);
+  transform: scale(0.96);
+  filter: brightness(1.1);
+  position: relative;
+}
+.status-tile.active::after {
+  content: '✓';
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 16px;
+  font-weight: 900;
   color: #fff;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.4);
 }
 
-.status-tile-icon { font-size: 20px; }
+/* Kolory dla poszczególnych kafelków */
+#tile-NOWY_PACJENT {
+  background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);
+}
+#tile-STALY_PACJENT {
+  background: linear-gradient(135deg, #2196F3 0%, #1565C0 100%);
+}
+#tile-WIZYTA_BIEZACA {
+  background: linear-gradient(135deg, #FFC107 0%, #FFA000 100%);
+}
+#tile-SPAM {
+  background: linear-gradient(135deg, #F44336 0%, #C62828 100%);
+}
+
+.status-tile-icon { 
+  font-size: 28px; 
+  background: rgba(255,255,255,0.2);
+  width: 50px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  margin-bottom: 4px;
+}
 
 .status-tile-label {
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 800;
   letter-spacing: 0.5px;
   text-transform: uppercase;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.status-tile-sublabel {
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.9;
+  text-align: center;
 }
 
 /* Przyciski wyniku rozmowy (Outcome) */
@@ -4188,4 +4327,132 @@ button {
 }
 .pool-task {
   border-left: 4px solid #3b82f6;
+}
+
+/* ==================== LEAD WAIT TIME — wyraźny czas oczekiwania ==================== */
+.lead-age {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.lead-age strong { font-size: 13px; }
+.lead-age.age-ok       { background: #dcfce7; color: #15803d; }
+.lead-age.age-warn     { background: #fef9c3; color: #854d0e; }
+.lead-age.age-critical { background: #fee2e2; color: #991b1b; animation: pulse-critical 2s infinite; }
+
+/* ==================== CALL TYPE BUTTONS (pierwsze/kolejne połączenie) ==================== */
+.call-type-btn {
+  transition: all 0.15s ease;
+  border-radius: 6px !important;
+  font-weight: 600 !important;
+  cursor: pointer;
+}
+.call-type-btn:hover { opacity: 0.85; }
+
+/* ==================== PATIENT CARD NOTES TAB ==================== */
+#patientCardSection_notes .form-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1.5px solid #d1d5db;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+}
+#patientCardSection_notes .form-textarea:focus {
+  outline: none;
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 2px rgba(124,58,237,.15);
+}
+
+/* ==================== CALL POPUP — zakończone połączenie ==================== */
+/* Pulse dot ukryty gdy połączenie zakończone — przez display:none w JS */
+
+/* ── Stage-aware report fields ─────────────────────────── */
+.stage-fields { transition: all .2s; }
+.form-select {
+  border: 1.5px solid #d1d5db;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  background: #fff;
+  color: #1e293b;
+  font-family: inherit;
+}
+.form-select:focus { outline: none; border-color: #3b82f6; }
+.form-input {
+  border: 1.5px solid #d1d5db;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #1e293b;
+  font-family: inherit;
+}
+.form-input:focus { outline: none; border-color: #3b82f6; }
+
+/* ── Shake animation dla blokady zamknięcia ─────────────── */
+@keyframes shake {
+  0%,100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+/* ── Stats view kompakt ─────────────────────────────────── */
+#view-stats .stats-kpi-grid { margin-top: 12px; }
+#view-stats .stats-chart-full { margin-top: 12px; }
+
+/* ── Tasks 4-panel layout ────────────────────────────── */
+@media (max-width: 900px) {
+  #tasksGridLayout { grid-template-columns: 1fr !important; }
+}
+.tasks-list .task-item {
+  padding: 8px 12px;
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+  display: flex; align-items: flex-start; gap: 8px;
+}
+.tasks-list .task-item:last-child { border-bottom: none; }
+
+/* ── Report panel slide-in ───────────────────────────── */
+#reportFormPanel > div {
+  transition: transform .25s ease;
+}
+
+/* Optymalizacja wydajności i wizualna */
+.spinner-sm {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-radius: 50%;
+  border-top-color: #fff;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 8px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Poprawa czytelności ikon emoji */
+.menu-icon, .dash-panel-icon, .status-tile-icon {
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Android Emoji", sans-serif;
+}
+
+/* Nadpisy dla lepszej spójności (zamiast inline style) */
+.dash-panel {
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+}
+
+.dash-panel-header {
+  border-bottom: 1px solid #f1f5f9;
+  background: #f8fafc;
 }

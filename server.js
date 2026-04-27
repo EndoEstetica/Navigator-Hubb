@@ -3,10 +3,61 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const http = require('http');
+const https = require('https');
 const WebSocket = require('ws');
 const path = require('path');
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
+
+// Kompresja gzip/deflate dla wszystkich odpowiedzi JSON (oszczędność ~70% transferu)
+let compression;
+try { compression = require('compression'); } catch(e) { compression = null; }
+
+// ─── SIMPLE TTL CACHE ────────────────────────────────────────────────────────
+// Lekki in-memory cache z automatycznym wygasaniem.
+// Używany dla: opportunities, stats, contacts — eliminuje powtórne ciężkie requesty GHL.
+class SimpleCache {
+  constructor() { this._store = new Map(); }
+  get(key) {
+    const e = this._store.get(key);
+    if (!e) return null;
+    if (Date.now() > e.expiresAt) { this._store.delete(key); return null; }
+    return e.value;
+  }
+  set(key, value, ttlMs) {
+    this._store.set(key, { value, expiresAt: Date.now() + ttlMs });
+  }
+  del(key) { this._store.delete(key); }
+  // Czyść wygasłe wpisy (wywołuj co kilka minut)
+  purge() {
+    const now = Date.now();
+    for (const [k, v] of this._store) { if (now > v.expiresAt) this._store.delete(k); }
+  }
+}
+const cache = new SimpleCache();
+setInterval(() => cache.purge(), 5 * 60 * 1000); // sprzątanie co 5 min
+
+// ─── GHL RATE-LIMITED BATCH ENRICHMENT ──────────────────────────────────────
+// Zamiast 100 równoległych requestów do GHL — chunki po N z odstępem między nimi.
+// Zapobiega HTTP 429 Too Many Requests i przeciążeniu połączenia.
+async function batchEnrich(items, asyncFn, chunkSize = 10, delayMs = 0) {
+  const results = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const chunk = items.slice(i, i + chunkSize);
+    const chunkResults = await Promise.all(chunk.map(asyncFn));
+    results.push(...chunkResults);
+    if (delayMs > 0 && i + chunkSize < items.length) {
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  return results;
+}
+
+// Fix memory leak: zwiększ limit listenerów i użyj keepAlive
+// maxSockets: 50 — zapobiega MaxListenersExceededWarning przy wielu równoległych żądaniach do GHL/Zadarma/Supabase
+require('events').defaultMaxListeners = 50;
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 50, maxFreeSockets: 10, timeout: 30000 });
+axios.defaults.httpsAgent = httpsAgent;
 
 // ─── Supabase ────────────────────────────────────────────────────────────────
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -29,8 +80,11 @@ app.use(cors({
   origin: process.env.ALLOWED_ORIGIN || 'http://localhost:3000',
   methods: ['GET', 'POST', 'PATCH', 'DELETE']
 }));
+// Gzip kompresja — redukuje rozmiar odpowiedzi JSON o ~70%
+// Szczególnie ważne dla /api/opportunities/new i /api/calls/history (duże payloady)
+if (compression) app.use(compression({ threshold: 1024 })); // kompresuj > 1KB
 app.use(express.json());
-app.use(express.urlencoded({ extended: true })); // ← Zadarma wysyła webhooki jako form-urlencoded
+app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Konfiguracja ─────────────────────────────────────────────────────────────
@@ -82,6 +136,83 @@ const STAGE_ATTEMPT_1     = '002dbc5a-c6a4-4931-a9a3-af4877b2c525';
 const STAGE_ATTEMPT_2     = 'de0a619e-ee22-41c3-9a90-eccfcb1a8fb8';
 const STAGE_AFTER_CALL    = '19126f1b-5529-48fc-be95-d6b64e264e59';
 const STAGE_BOOKED_W0     = '73f6704f-1d6a-49dc-8591-4b129ba1b692';
+
+// ─── SYSTEM TAGÓW STATUSU PACJENTA ───────────────────────────────────────────
+// Tagi widoczne w callPopup, karcie pacjenta i wszędzie.
+const PATIENT_STATUS_TAGS = {
+  CZEKA_NA_KONTAKT:      { key: 'czeka_na_kontakt',      label: 'Czeka na kontakt',       color: '#f97316', bg: '#fff7ed' },
+  NIE_ODBIERA_W_PROCESIE:{ key: 'nie_odbiera_w_procesie', label: 'Nie odbiera — w procesie',color: '#3b82f6', bg: '#eff6ff' },
+  NIE_ODBIERA_PRZEGRANA: { key: 'nie_odbiera_przegrana',  label: 'Nie odbiera — przegrana', color: '#64748b', bg: '#f1f5f9' },
+  PROSI_O_KONTAKT:       { key: 'prosi_o_kontakt',        label: 'Prosi o ponowny kontakt', color: '#7c3aed', bg: '#f5f3ff' },
+  UMOWIONY_NA_W0:        { key: 'umowiony_na_w0',         label: 'Umówiony na W0',          color: '#10b981', bg: '#f0fdf4' },
+  NIEKWALIFIKOWANY:      { key: 'niekwalifikowany',       label: 'Niekwalifikowany',         color: '#ef4444', bg: '#fef2f2' },
+  REZYGNACJA:            { key: 'rezygnacja',             label: 'Rezygnacja',               color: '#ef4444', bg: '#fef2f2' },
+};
+// Eksportuj definicje dla frontendu przez dedykowany endpoint
+app.get('/api/patient-status-tags', (req, res) => res.json({ tags: PATIENT_STATUS_TAGS }));
+
+// Ustaw tag statusu pacjenta (kasuje poprzednie tagi statusowe, ustawia nowy)
+async function setPatientStatusTag(contactId, tagKey) {
+  if (!contactId || !GHL_TOKEN) return;
+  try {
+    const allTagKeys = Object.values(PATIENT_STATUS_TAGS).map(t => t.key);
+    // Usuń stare tagi statusowe
+    await axios.delete(
+      `https://services.leadconnectorhq.com/contacts/${contactId}/tags`,
+      { headers: ghlHeaders, data: { tags: allTagKeys }, timeout: 6000 }
+    ).catch(() => {});
+    // Ustaw nowy
+    if (tagKey) {
+      await axios.put(
+        `https://services.leadconnectorhq.com/contacts/${contactId}/tags`,
+        { tags: [tagKey] },
+        { headers: ghlHeaders, timeout: 6000 }
+      );
+    }
+    // Broadcast — frontend odświeży tag na karcie leada
+    broadcast({ type: 'PATIENT_TAG_UPDATED', contactId, tagKey });
+    console.log(`[PatientTag] ${contactId} → ${tagKey || 'none'}`);
+  } catch(e) { console.warn('[PatientTag] Error:', e.message); }
+}
+
+// ─── NUMERY TELEFONÓW AGENTÓW (wychodzące z tel. komórkowego) ────────────────
+// Zdefiniuj numery komórkowe pracowników żeby Zadarma NOTIFY_START był
+// wykryty jako wychodzące (nie przychodzące). Dodaj w .env:
+// AGENT_MOBILE_PHONES=48573569795,48602345678,48500111222
+const AGENT_MOBILE_PHONES = new Set(
+  (process.env.AGENT_MOBILE_PHONES || '48573569795').split(',')
+    .map(p => p.trim().replace(/[^0-9]/g, ''))
+    .filter(Boolean)
+);
+
+// ─── GODZINY PRACY ───────────────────────────────────────────────────────────
+// pon-pt 8:50-17:00, środa 10:50-20:00
+function isOutsideWorkingHours(timestamp) {
+  const d = new Date(timestamp);
+  const day = d.getDay(); // 0=niedz, 1=pon...6=sob
+  const h = d.getHours();
+  const m = d.getMinutes();
+  const time = h * 60 + m; // minuty od północy
+
+  if (day === 0 || day === 6) return true; // weekend
+  if (day === 3) return time < 650 || time >= 1200; // środa 10:50-20:00
+  return time < 530 || time >= 1020; // pon-pt (bez śr) 8:50-17:00
+}
+
+// Wzbogać obiekt połączenia o agentName i outsideWorkingHours
+function enrichCall(c) {
+  // Agent name
+  if (c.userId && USERS[c.userId]) {
+    c.agentName = USERS[c.userId].name;
+  } else if (!c.userId) {
+    c.agentName = null; // nieprzypisane
+  }
+  // Godziny pracy
+  if (c.timestamp) {
+    c.outsideWorkingHours = isOutsideWorkingHours(c.timestamp);
+  }
+  return c;
+}
 
 // ─── In-memory store połączeń (I4: /api/calls) ───────────────────────────────
 // Przechowuje połączenia z ostatnich 7 dni (max 500 rekordów)
@@ -241,7 +372,9 @@ const recordingRetryQueue = new Map(); // callId → { attempts, pbxCallId, cont
 // Jedna osoba na jedno stanowisko jednocześnie
 const activeExtMap = new Map(); // '103' → 'kasia', '101' → 'agata_o', '102' → 'aneta_o'
 // Strategia retry: 5s, 30s, 1m, 2m, 5m, 10m, 20m, 30m, 60m
-const RETRY_DELAYS = [5000, 30000, 60000, 120000, 300000, 600000, 1200000, 1800000, 3600000];
+const RETRY_DELAYS = [30000, 60000, 120000, 300000, 600000, 1200000, 1800000]; // 30s, 1m, 2m, 5m, 10m, 20m, 30m
+let activeZadarmaRequests = 0;
+const MAX_CONCURRENT_ZADARMA = 2; // max 2 jednoczesnych requestów do Zadarma
 
 // ─── Zadarma — podpis API (zweryfikowany algorytm z dokumentacji Zadarma) ──────
 // Źródło: support Zadarma + dokument "Moment Przełomowy"
@@ -278,52 +411,49 @@ function verifyZadarmaWebhookSign(params, signature) {
 async function fetchRecordingFromZadarma(pbxCallId) {
   if (!ZADARMA_KEY || !ZADARMA_SECRET) return null;
   
-  // Zadarma API: GET /v1/pbx/record/request/
-  // Parametr: pbx_call_id (permanent ID zewnętrznego połączenia)
-  // Odpowiedź: { status: "success", link: "...", links: [...], lifetime_till: "..." }
+  // Limit jednoczesnych requestów do Zadarma (zapobiega memory leak)
+  if (activeZadarmaRequests >= MAX_CONCURRENT_ZADARMA) {
+    console.log(`[Recording] Skipping ${pbxCallId} — too many concurrent requests (${activeZadarmaRequests})`);
+    return null;
+  }
+  
+  activeZadarmaRequests++;
   const endpoint = '/v1/pbx/record/request/';
   
-  // Próbuj z pbx_call_id (główny parametr)
-  const paramSets = [
-    { pbx_call_id: pbxCallId },
-    { call_id: pbxCallId }
-  ];
-  
-  for (const params of paramSets) {
-    try {
-      const sign = zadarmaSign(endpoint, params);
-      const sorted = {}; Object.keys(params).sort().forEach(k => sorted[k] = params[k]);
-      const qs = new URLSearchParams(sorted).toString();
+  try {
+    // Używamy TYLKO pbx_call_id — to jedyny prawidłowy parametr w API Zadarma
+    const params = { pbx_call_id: pbxCallId };
+    const sign = zadarmaSign(endpoint, params);
+    const sorted = {}; Object.keys(params).sort().forEach(k => sorted[k] = params[k]);
+    const qs = new URLSearchParams(sorted).toString();
+    
+    const response = await axios.get(
+      `https://api.zadarma.com${endpoint}?${qs}`,
+      { headers: { 'Authorization': zadarmaAuthHeader(sign) }, timeout: 10000 }
+    );
+    
+    const data = response.data;
+    const url = (Array.isArray(data?.links) && data.links.length > 0)
+      ? data.links[0]
+      : (data?.link || null);
       
-      console.log(`[Recording] Attempting ${endpoint} with params: ${qs}`);
-      
-      const response = await axios.get(
-        `https://api.zadarma.com${endpoint}?${qs}`,
-        { headers: { 'Authorization': zadarmaAuthHeader(sign) }, timeout: 15000 }
-      );
-      
-      const data = response.data;
-      // Zadarma zwraca: link (string) lub links (array) 
-      const url = (Array.isArray(data?.links) && data.links.length > 0)
-        ? data.links[0]
-        : (data?.link || null);
-        
-      if (url) {
-        console.log(`[Recording] SUCCESS for ${pbxCallId}: ${url}`);
-        return url;
-      }
-      
-      if (data?.status === 'success' && !url) {
-        console.log(`[Recording] API returned success but no link for ${pbxCallId}:`, JSON.stringify(data));
-      }
-    } catch (e) {
-      const status = e.response?.status;
-      const errorMsg = e.response?.data?.message || e.response?.data?.error || e.message;
-      console.log(`[Recording] ${endpoint} (${JSON.stringify(params)}) → HTTP ${status}: ${errorMsg}`);
-      // Nie przerywaj — spróbuj z drugim zestawem parametrów
+    if (url) {
+      console.log(`[Recording] SUCCESS for ${pbxCallId}`);
+      return url;
     }
+    return null;
+  } catch (e) {
+    const status = e.response?.status;
+    if (status === 404) {
+      // 404 = nagranie jeszcze nie gotowe lub nie istnieje — normalna sytuacja
+      // Nie logujemy każdego 404, żeby nie zaśmiecać logów
+    } else {
+      console.log(`[Recording] Error for ${pbxCallId}: HTTP ${status} — ${e.response?.data?.message || e.message}`);
+    }
+    return null;
+  } finally {
+    activeZadarmaRequests--;
   }
-  return null;
 }
 
 /**
@@ -335,14 +465,12 @@ function scheduleRecordingFetch(callId, pbxCallId, contactName) {
   
   // Idempotentność: Jeśli już w kolejce, nie dodawaj ponownie
   if (recordingRetryQueue.has(callId)) {
-    console.log(`[Recording] Skip schedule: ${callId} already in retry queue.`);
-    return;
+    return; // cicho — nie loguj każdego skipa
   }
   
-  // Sprawdź czy już mamy nagranie (idempotentność bazy danych)
+  // Sprawdź czy już mamy nagranie w RAM
   const existing = callsStore.find(c => c.callId === callId);
   if (existing?.recordingUrl) {
-    console.log(`[Recording] Skip schedule: ${callId} already has recording URL.`);
     return;
   }
 
@@ -352,27 +480,41 @@ function scheduleRecordingFetch(callId, pbxCallId, contactName) {
     const entry = recordingRetryQueue.get(callId);
     if (!entry) return;
     
+    // Sprawdź ponownie czy nagranie nie pojawiło się w międzyczasie (inny mechanizm mógł je zapisać)
+    const current = callsStore.find(c => c.callId === callId);
+    if (current?.recordingUrl) {
+      recordingRetryQueue.delete(callId);
+      return;
+    }
+    
     const { attempts, pbxCallId: pid } = entry;
     const url = await fetchRecordingFromZadarma(pid);
     
     if (url) {
+      // Zapisz do RAM
       storeCall({ callId, recordingUrl: url });
       broadcast({ type: 'CALL_RECORDING_READY', callId, recordingUrl: url });
       recordingRetryQueue.delete(callId);
+      
+      // Zapisz do Supabase SYNCHRONICZNIE (żeby fallback poller nie re-dodał)
+      if (supabase) {
+        try {
+          await supabase.from('calls').update({ recording_url: url }).eq('call_id', callId);
+        } catch(e) { console.warn(`[Recording] Supabase save error for ${callId}:`, e.message); }
+      }
+      console.log(`[Recording] ✅ Saved for ${callId}`);
     } else {
       const nextAttempt = attempts + 1;
       if (nextAttempt < RETRY_DELAYS.length) {
         recordingRetryQueue.set(callId, { ...entry, attempts: nextAttempt });
         setTimeout(tryFetch, RETRY_DELAYS[nextAttempt]);
-        console.log(`[Recording] RETRY ${nextAttempt}/${RETRY_DELAYS.length} for ${callId} in ${RETRY_DELAYS[nextAttempt]/1000}s`);
       } else {
         recordingRetryQueue.delete(callId);
-        console.log(`[Recording] ERROR: Max retries reached for ${callId}. Recording might not be available on Zadarma.`);
+        console.log(`[Recording] ❌ Max retries for ${callId} — recording unavailable on Zadarma`);
       }
     }
   }
 
-  // Pierwsza próba po 5s
   setTimeout(tryFetch, RETRY_DELAYS[0]);
 }
 
@@ -384,55 +526,69 @@ function scheduleRecordingFetch(callId, pbxCallId, contactName) {
  * Zabezpiecza przed sytuacją, gdy webhook NOTIFY_END nie dotarł.
  */
 async function startRecordingFallbackPoller() {
-  console.log('[Poller] Starting Recording Fallback Poller (every 2m)');
+  console.log('[Poller] Starting Recording Fallback Poller (every 5m)');
   
   async function runPoll() {
     const now = Date.now();
     
-    // 1. Sprawdz callsStore (in-memory)
+    // 1. Sprawdz callsStore (in-memory) — max 6h wstecz, max 5 kandydatów
     const inMemoryCandidates = callsStore.filter(c => 
       c.status === 'ended' && 
       c.duration > 0 && 
       c.pbxCallId && 
       !c.recordingUrl && 
       !recordingRetryQueue.has(c.callId) &&
-      (now - new Date(c.timestamp).getTime()) < 24 * 60 * 60 * 1000
-    ).slice(0, 10);
+      (now - new Date(c.timestamp).getTime()) < 6 * 60 * 60 * 1000
+    ).slice(0, 5);
 
-    // 2. Sprawdź Supabase (połączenia które mogły nie być w RAM po restarcie)
+    // 2. Sprawdź Supabase
     let supabaseCandidates = [];
     if (supabase) {
       try {
-        const since = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+        const since = new Date(now - 6 * 60 * 60 * 1000).toISOString();
         const { data } = await supabase.from('calls')
           .select('call_id, pbx_call_id, patient_name, recording_url, duration_seconds, status')
           .eq('status', 'ended')
           .gt('duration_seconds', 0)
           .is('recording_url', null)
           .gte('created_at', since)
-          .limit(10);
+          .limit(5);
         if (data && data.length > 0) {
           supabaseCandidates = data
             .filter(r => r.pbx_call_id && !recordingRetryQueue.has(r.call_id))
             .map(r => ({ callId: r.call_id, pbxCallId: r.pbx_call_id, contactName: r.patient_name }));
         }
-      } catch(e) { /* ignoruj błędy Supabase w pollerze */ }
+      } catch(e) { /* ignoruj */ }
     }
 
-    // Połącz i deduplikuj
     const allCandidates = [...inMemoryCandidates];
     const inMemoryIds = new Set(inMemoryCandidates.map(c => c.callId));
     supabaseCandidates.forEach(c => { if (!inMemoryIds.has(c.callId)) allCandidates.push(c); });
+    const limited = allCandidates.slice(0, 5);
 
-    if (allCandidates.length > 0) {
-      console.log(`[Poller] Found ${allCandidates.length} calls missing recordings (${inMemoryCandidates.length} RAM, ${supabaseCandidates.length} Supabase). Scheduling fetch...`);
-      allCandidates.forEach(c => {
+    if (limited.length > 0) {
+      console.log(`[Poller] Found ${limited.length} calls missing recordings. Checking...`);
+      for (const c of limited) {
+        // Dodatkowe sprawdzenie: może nagranie jest w Supabase ale nie w RAM
+        if (supabase) {
+          try {
+            const { data } = await supabase.from('calls')
+              .select('recording_url')
+              .eq('call_id', c.callId)
+              .single();
+            if (data?.recording_url) {
+              // Jest w Supabase — zaktualizuj RAM i nie dodawaj do kolejki
+              storeCall({ callId: c.callId, recordingUrl: data.recording_url });
+              continue;
+            }
+          } catch(e) { /* kontynuuj do schedule */ }
+        }
         scheduleRecordingFetch(c.callId, c.pbxCallId, c.contactName);
-      });
+      }
     }
   }
   
-  setInterval(runPoll, 120000); // co 2 minuty
+  setInterval(runPoll, 300000); // co 5 minut
 }
 
 // Uruchom poller
@@ -450,6 +606,9 @@ function broadcast(data) {
 
 wss.on('connection', (ws) => {
   console.log('WebSocket client connected');
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; }); // odpowiedź na ping = połączenie żywe
+
   // Wyślij ostatnie 20 połączeń do nowego klienta
   ws.send(JSON.stringify({ type: 'CALLS_HISTORY', calls: getRecentCalls(7).slice(0, 20) }));
   ws.on('close', () => console.log('WebSocket client disconnected'));
@@ -464,63 +623,78 @@ wss.on('connection', (ws) => {
   });
 });
 
+// Heartbeat — co 30s pinguj wszystkich klientów, rozłącz tych bez odpowiedzi
+const wsHeartbeat = setInterval(() => {
+  wss.clients.forEach(ws => {
+    if (!ws.isAlive) { return ws.terminate(); } // martwe połączenie
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30 * 1000);
+
 // ─── GHL API ENDPOINTS ────────────────────────────────────────────────────────
 
-// Nowe zgłoszenia z pipeline (Stage 1)
+// Nowe zgłoszenia z pipeline — CACHED (60s TTL)
+// Wcześniej: 100 równoległych requestów GHL przy każdym odświeżeniu dashboardu.
+// Teraz: 10 chunków × 10 requestów, wynik cache'owany na 60s.
+const OPPS_CACHE_KEY = `opps_new_${GHL_LOCATION_ID}`;
+const OPPS_CACHE_TTL = 60 * 1000; // 60 sekund
+
 app.get('/api/opportunities/new', async (req, res) => {
+  // 1. Zwróć z cache jeśli świeże
+  const cached = cache.get(OPPS_CACHE_KEY);
+  if (cached) return res.json(cached);
+
   try {
     const response = await axios.get(
       `https://services.leadconnectorhq.com/opportunities/search?location_id=${GHL_LOCATION_ID}&pipeline_id=${GHL_PIPELINE_ID}&limit=100`,
-      { headers: ghlHeaders }
+      { headers: ghlHeaders, timeout: 10000 }
     );
     const data = response.data;
     const opportunities = data.opportunities || [];
     console.log(`[GHL] /opportunities/new: ${opportunities.length} szans w pipeline`);
 
-    // Wzbogać o dane kontaktu (telefon, email, z_czym_si_zgasza, tagi)
-    const enriched = await Promise.all(opportunities.map(async (opp) => {
+    // Mapowanie GHL custom fields (stałe — zdefiniowane raz, nie w każdej iteracji)
+    const GHL_FIELD_MAIN_PROBLEM = 'k1OizGtL0V6IaWjGlVBK';
+    const GHL_FIELD_MARKETING    = 'R0X7n8GG7545mnrGnREg';
+    const GHL_FIELD_W0_DATE      = 'IUjxWY10y6kuITsSjfSw';
+    const GHL_FIELD_W0_NOTES     = 'v04mALNDZzMgyH8YzK46';
+
+    // Wzbogać o dane kontaktu — chunki po 10 (było: 100 równoległych requestów)
+    const enriched = await batchEnrich(opportunities, async (opp) => {
       try {
-        if (opp.contactId) {
-          const contactResp = await axios.get(
-            `https://services.leadconnectorhq.com/contacts/${opp.contactId}`,
-            { headers: ghlHeaders }
-          );
-          const contact = contactResp.data.contact || contactResp.data;
-          const customFields = contact.customFields || contact.customField || [];
-          
-          // Mapowanie GHL custom fields po rzeczywistych ID pól
-          const GHL_FIELD_MAIN_PROBLEM     = 'k1OizGtL0V6IaWjGlVBK'; // "z czym się zgłasza"
-          const GHL_FIELD_MARKETING        = 'R0X7n8GG7545mnrGnREg'; // zgoda marketingowa
-          const GHL_FIELD_PREFERRED_CONTACT = 'preferred_contact_method'; // preferowany kanał
-          const GHL_FIELD_PATIENT_PRIORITY  = 'patient_priority';         // priorytet pacjenta
-          const GHL_FIELD_W0_DATE          = 'IUjxWY10y6kuITsSjfSw';     // data W0
-          const GHL_FIELD_W0_NOTES         = 'v04mALNDZzMgyH8YzK46';     // notatki W0
+        if (!opp.contactId) return opp;
+        const contactResp = await axios.get(
+          `https://services.leadconnectorhq.com/contacts/${opp.contactId}`,
+          { headers: ghlHeaders, timeout: 5000 }
+        );
+        const contact = contactResp.data.contact || contactResp.data;
+        const cf = contact.customFields || contact.customField || [];
+        const getField = (id) => cf.find(f => f.id === id);
+        const getFieldByKey = (key) => cf.find(f => f.key === key || f.fieldKey === key);
 
-          const getField = (id) => customFields.find(f => f.id === id);
-          
-          const mainProblem = getField(GHL_FIELD_MAIN_PROBLEM);
-          const marketingConsent = getField(GHL_FIELD_MARKETING);
-          const w0DateField = getField(GHL_FIELD_W0_DATE);
-          const w0NotesField = getField(GHL_FIELD_W0_NOTES);
-
-          opp.contact = {
-            ...opp.contact,
-            firstName: contact.firstName || opp.contact?.firstName,
-            lastName:  contact.lastName  || opp.contact?.lastName,
-            phone:     contact.phone     || opp.contact?.phone,
-            email:     contact.email     || opp.contact?.email,
-            tags:      contact.tags      || [],
-            // Poprawne mapowanie po ID pól GHL
-            z_czym_si_zgasza: mainProblem?.value || '',
-            marketing_consent: marketingConsent?.value === 'tak' || marketingConsent?.value === true,
-            w0_date: w0DateField?.value ? new Date(Number(w0DateField.value)).toISOString() : null,
-            w0_notes: w0NotesField?.value || ''
-          };
-        }
-      } catch (e) { /* ignoruj błędy wzbogacania */ }
+        opp.contact = {
+          ...opp.contact,
+          firstName: contact.firstName || opp.contact?.firstName,
+          lastName:  contact.lastName  || opp.contact?.lastName,
+          phone:     contact.phone     || opp.contact?.phone,
+          email:     contact.email     || opp.contact?.email,
+          tags:      contact.tags      || [],
+          z_czym_si_zgasza:  getField(GHL_FIELD_MAIN_PROBLEM)?.value || '',
+          marketing_consent: getField(GHL_FIELD_MARKETING)?.value === 'tak' || getField(GHL_FIELD_MARKETING)?.value === true,
+          w0_date:    getField(GHL_FIELD_W0_DATE)?.value ? new Date(Number(getField(GHL_FIELD_W0_DATE).value)).toISOString() : null,
+          w0_notes:   getField(GHL_FIELD_W0_NOTES)?.value || '',
+          contact_attempts: parseInt(getFieldByKey('contact_attempts')?.value || '0') || 0,
+          lead_score:       parseInt(getFieldByKey('lead_score')?.value || '0') || null
+        };
+      } catch (e) { /* ignoruj błędy wzbogacania pojedynczego kontaktu */ }
       return opp;
-    }));
-    res.json({ ...data, opportunities: enriched });
+    }, 10); // chunk = 10
+
+    const result = { ...data, opportunities: enriched };
+    // Zapisz do cache na 60s — invalidacja ręczna po PATCH na opportunity
+    cache.set(OPPS_CACHE_KEY, result, OPPS_CACHE_TTL);
+    res.json(result);
   } catch (err) {
     console.error('GHL opportunities error:', err.response?.data || err.message);
     res.status(500).json({ error: err.message, details: err.response?.data });
@@ -529,10 +703,14 @@ app.get('/api/opportunities/new', async (req, res) => {
 
 // Pobierz kontakty
 app.get('/api/contacts/new', async (req, res) => {
+  const cacheKey = `contacts_new_${GHL_LOCATION_ID}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return res.json(cached);
+
   try {
     const response = await axios.get(
       `https://services.leadconnectorhq.com/contacts/?locationId=${GHL_LOCATION_ID}&limit=100`,
-      { headers: ghlHeaders }
+      { headers: ghlHeaders, timeout: 10000 }
     );
     
     const contacts = response.data?.contacts || [];
@@ -601,7 +779,9 @@ app.get('/api/contacts/new', async (req, res) => {
     }
     
     // Zwróć dane z wzbogaconymi kontaktami
-    res.json({ ...response.data, contacts });
+    const result = { ...response.data, contacts };
+    cache.set(cacheKey, result, 60 * 1000); // 60s cache
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -649,6 +829,54 @@ app.patch('/api/contact/:id/custom-fields', async (req, res) => {
 });
 
 // UWAGA: /api/tasks jest zdefiniowany niżej (tasksPool) - nie duplikuj tutaj
+
+// ─── NOTATKI GHL (dwustronna synchronizacja) ──────────────────────────────────
+// GET — pobierz wszystkie notatki kontaktu z GHL
+app.get('/api/contact/:id/notes', async (req, res) => {
+  try {
+    const response = await axios.get(
+      `https://services.leadconnectorhq.com/contacts/${req.params.id}/notes`,
+      { headers: ghlHeaders, timeout: 8000 }
+    );
+    res.json(response.data);
+  } catch (err) {
+    res.status(500).json({ error: err.message, details: err.response?.data });
+  }
+});
+
+// POST — utwórz notatkę w GHL
+app.post('/api/contact/:id/notes', async (req, res) => {
+  try {
+    const { body, userId } = req.body;
+    if (!body || !body.trim()) return res.status(400).json({ error: 'Treść notatki jest wymagana' });
+    const user = userId ? USERS[userId] : null;
+    const noteData = {
+      body: body.trim(),
+      userId: user?.ghlUserId || GHL_SONIA_USER_ID
+    };
+    const response = await axios.post(
+      `https://services.leadconnectorhq.com/contacts/${req.params.id}/notes`,
+      noteData,
+      { headers: ghlHeaders, timeout: 8000 }
+    );
+    res.json(response.data);
+  } catch (err) {
+    res.status(500).json({ error: err.message, details: err.response?.data });
+  }
+});
+
+// DELETE — usuń notatkę GHL
+app.delete('/api/contact/:contactId/notes/:noteId', async (req, res) => {
+  try {
+    await axios.delete(
+      `https://services.leadconnectorhq.com/contacts/${req.params.contactId}/notes/${req.params.noteId}`,
+      { headers: ghlHeaders, timeout: 8000 }
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message, details: err.response?.data });
+  }
+});
 
 // Pobierz zadania dla kontaktu
 app.get('/api/contact/:id/tasks', async (req, res) => {
@@ -710,6 +938,7 @@ app.patch('/api/opportunity/:id', async (req, res) => {
       req.body,
       { headers: ghlHeaders }
     );
+    cache.del(OPPS_CACHE_KEY); // invalidacja cache po aktualizacji opp
     broadcast({ type: 'opportunity_updated', opportunity: response.data });
     res.json(response.data);
   } catch (err) {
@@ -730,27 +959,22 @@ app.get('/api/calls', (req, res) => {
     calls = getRecentCalls(days);
   }
   
-  // Filtrowanie per rola/użytkownik
+  // Recepcja widzi WSZYSTKIE połączenia (nie filtrujemy po ext)
+  // Opiekunowie widzą tylko swoje
   if (role !== 'admin' && userId) {
     const user = USERS[userId];
-    if (user && user.ext) {
-      // Recepcja i opiekunowie widzą tylko połączenia ze swojego numeru wewnętrznego
-      // Połączenie jest "ich" jeśli: caller_id zawiera ext, lub user_id === userId
+    if (user && user.role === 'opiekun') {
       calls = calls.filter(c => {
-        // Sprawdź user_id (zapisany przy raporcie)
         if (c.userId === userId) return true;
-        // Sprawdź numer wewnętrzny w numerach telefonów
         const from = String(c.from || '');
         const to = String(c.to || '');
-        const extNum = user.ext;
-        // Zadarma: numer wewnętrzny pojawia się jako "100", "101", "102", "103"
-        // lub jako część numeru np. "103" w polu from/to przy połączeniach wewnętrznych
-        if (from === extNum || to === extNum) return true;
-        if (from.endsWith(extNum) || to.endsWith(extNum)) return true;
-        return false;
+        return from === user.ext || to === user.ext;
       });
     }
   }
+  
+  // Wzbogać o agentName i outsideWorkingHours
+  calls = calls.map(enrichCall);
   
   res.json({ calls });
 });
@@ -770,12 +994,12 @@ app.get('/api/call/:callId/recording', async (req, res) => {
   const { callId } = req.params;
   const call = callsStore.find(c => c.callId === callId);
 
-  // Sprawdź czy już mamy URL
+  // 1. Sprawdź in-memory cache
   if (call?.recordingUrl) {
     return res.json({ url: call.recordingUrl });
   }
 
-  // Sprawdź w Supabase
+  // 2. Sprawdź w Supabase (może już jest w bazie)
   if (supabase) {
     try {
       const { data } = await supabase.from('calls')
@@ -783,38 +1007,32 @@ app.get('/api/call/:callId/recording', async (req, res) => {
         .eq('call_id', callId)
         .single();
       if (data?.recording_url) {
-        // Zaktualizuj in-memory
         storeCall({ callId, recordingUrl: data.recording_url });
         return res.json({ url: data.recording_url });
       }
     } catch(e) { /* kontynuuj */ }
   }
-  // Spróbuj pobrać z Zadarma — próbuj różne warianty ID
-  const idsToTry = [call?.pbxCallId, callId].filter(Boolean);
-  for (const pid of idsToTry) {
-    const url = await fetchRecordingFromZadarma(pid);
-    if (url) {
-      storeCall({ callId, recordingUrl: url });
-      broadcast({ type: 'CALL_RECORDING_READY', callId, recordingUrl: url });
-      return res.json({ url });
-    }
-  }
-  
-  // Jeśli nie znaleziono manualnie, a połączenie jest zakończone — dodaj do kolejki retry (jeśli jeszcze nie ma)
-  if (call?.status === 'ended' && call?.pbxCallId) {
-    console.log(`[Recording] Manual check failed for ${callId}, adding to background retry queue.`);
+
+  // 3. NIE odpytuj Zadarma bezpośrednio — tylko dodaj do kolejki retry (jeśli jeszcze nie ma)
+  //    To zapobiega floodowaniu API Zadarma z wielu źródeł jednocześnie
+  if (call?.status === 'ended' && call?.pbxCallId && !recordingRetryQueue.has(callId)) {
+    console.log(`[Recording] No cached recording for ${callId}, scheduling background fetch.`);
     scheduleRecordingFetch(callId, call.pbxCallId, call.contactName);
   }
 
-  res.json({ url: null });
+  res.json({ url: null, pending: recordingRetryQueue.has(callId) });
 });
 
-// Proxy nagrania — zawsze pobiera świeży link z Zadarma (linki tymczasowe wygasają)
+// Cache na świeże linki Zadarma (link ważny ~1h, cache'ujemy na 30 min)
+const recordingUrlCache = new Map(); // pbxCallId → { url, cachedAt }
+const RECORDING_CACHE_TTL = 30 * 60 * 1000; // 30 minut
+
+// Proxy nagrania — cache'uje świeże linki z Zadarma (linki tymczasowe wygasają po ~1h)
 app.get('/api/call/:callId/recording/proxy', async (req, res) => {
   const { callId } = req.params;
   const call = callsStore.find(c => c.callId === callId);
   
-  // Znajdź pbxCallId (potrzebny do Zadarma API)
+  // Znajdź pbxCallId
   let pbxCallId = call?.pbxCallId;
   if (!pbxCallId && supabase) {
     try {
@@ -827,21 +1045,37 @@ app.get('/api/call/:callId/recording/proxy', async (req, res) => {
   }
   
   if (!pbxCallId) {
-    return res.status(404).json({ error: 'Brak pbx_call_id — nie można pobrać nagrania' });
+    return res.status(404).json({ error: 'Brak pbx_call_id' });
   }
   
-  // Pobierz ŚWIEŻY link z Zadarma (stary mógł wygasnąć)
+  // Sprawdź cache — jeśli mamy świeży link, użyj go bez odpytywania Zadarma
+  const cached = recordingUrlCache.get(pbxCallId);
+  if (cached && (Date.now() - cached.cachedAt) < RECORDING_CACHE_TTL) {
+    return res.redirect(cached.url);
+  }
+  
+  // Pobierz świeży link z Zadarma
   const freshUrl = await fetchRecordingFromZadarma(pbxCallId);
   if (!freshUrl) {
-    return res.status(404).json({ error: 'Nagranie niedostępne w Zadarma — mogło zostać usunięte lub nie było nagrane' });
+    return res.status(404).json({ error: 'Nagranie niedostępne w Zadarma' });
   }
   
-  // Zaktualizuj zapisany URL
+  // Zapisz do cache
+  recordingUrlCache.set(pbxCallId, { url: freshUrl, cachedAt: Date.now() });
+  
+  // Zaktualizuj w RAM i Supabase
   storeCall({ callId, recordingUrl: freshUrl });
   
-  // Przekieruj do świeżego linka (przeglądarka pobierze plik)
   res.redirect(freshUrl);
 });
+
+// Czyść stary cache co 15 min
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of recordingUrlCache) {
+    if (now - val.cachedAt > RECORDING_CACHE_TTL) recordingUrlCache.delete(key);
+  }
+}, 15 * 60 * 1000);
 
 // ─── Automatyczne przeniesienie stage przy nieodebranym połączeniu ─────────────
 async function autoMoveStageForMissedCall(phone) {
@@ -884,9 +1118,123 @@ async function autoMoveStageForMissedCall(phone) {
   }
 }
 
-// ─── ZADARMA WEBHOOK ──────────────────────────────────────────────────────────
+// ─── WEBHOOK SYSTEMU MEDYCZNEGO — wizyta zarezerwowana ────────────────────────
+// System medyczny wysyła POST gdy pacjent umawia wizytę (telefonicznie lub w gabinecie).
+// URL: https://navigator-hubb.onrender.com/api/webhook/appointments
+// Wymagany nagłówek: X-Appointment-Secret (ustaw w .env jako APPOINTMENT_WEBHOOK_SECRET)
+//
+// Przykładowy payload:
+// { "patientPhone": "+48601234567", "patientName": "Anna Kowalska",
+//   "visitDate": "2026-05-10T10:00:00", "doctor": "dr Kowalski",
+//   "visitType": "konsultacja", "source": "recepcja" }
+app.post('/api/webhook/appointments', async (req, res) => {
+  // Opcjonalna weryfikacja sekretu
+  const secret = process.env.APPOINTMENT_WEBHOOK_SECRET;
+  if (secret && req.headers['x-appointment-secret'] !== secret) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
 
-// GET — weryfikacja URL przez Zadarma (odsyła zd_echo)
+  try {
+    const { patientPhone, patientName, visitDate, doctor, visitType, source, patientId } = req.body;
+    if (!visitDate) return res.status(400).json({ error: 'visitDate jest wymagane' });
+
+    const nowTs = new Date().toISOString();
+    let contactId = null;
+    let resolvedName = patientName || 'Pacjent';
+
+    // Szukaj kontaktu w GHL po numerze telefonu
+    if (patientPhone && GHL_TOKEN) {
+      const contact = await lookupGHLContact(patientPhone).catch(() => null);
+      if (contact) {
+        contactId = contact.id;
+        resolvedName = `${contact.firstName || ''} ${contact.lastName || ''}`.trim() || patientName || 'Pacjent';
+        // Ustaw tag "umówiony na W0" w GHL
+        setPatientStatusTag(contactId, PATIENT_STATUS_TAGS.UMOWIONY_NA_W0.key).catch(() => {});
+      }
+    }
+
+    // Zapisz wizytę w Supabase
+    if (supabase) {
+      await supabase.from('appointments').insert({
+        contact_id: contactId,
+        contact_name: resolvedName,
+        phone: patientPhone || null,
+        visit_date: new Date(visitDate).toISOString(),
+        doctor: doctor || null,
+        visit_type: visitType || 'wizyta',
+        source: source || 'system_medyczny',
+        external_patient_id: patientId || null,
+        created_at: nowTs
+      }).catch(e => console.warn('[Appointment] Supabase error:', e.message));
+
+      // Dodaj do timeline pacjenta (events)
+      if (contactId) {
+        await supabase.from('events').insert({
+          event_type: 'appointment_booked',
+          contact_id: contactId,
+          contact_name: resolvedName,
+          source: 'system_medyczny',
+          description: `Wizyta: ${visitType || 'konsultacja'}${doctor ? ` — ${doctor}` : ''} — ${new Date(visitDate).toLocaleString('pl-PL')}`,
+          metadata: { visitDate, doctor, visitType, source, patientPhone }
+        }).catch(() => {});
+      }
+    }
+
+    // Broadcast — pokaż w Navigator Hub jako nowe zdarzenie
+    broadcast({
+      type: 'APPOINTMENT_BOOKED',
+      contactId,
+      contactName: resolvedName,
+      visitDate,
+      doctor,
+      visitType,
+      source: source || 'system_medyczny'
+    });
+
+    console.log(`[Appointment] ${resolvedName} (${patientPhone}) — ${visitType} ${visitDate}`);
+    res.json({ ok: true, contactId, resolvedName });
+  } catch(e) {
+    console.error('[Appointment] Error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET — lista wizyt z systemu medycznego
+app.get('/api/appointments', async (req, res) => {
+  if (!supabase) return res.json({ appointments: [] });
+  try {
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await supabase.from('appointments')
+      .select('*')
+      .gte('visit_date', since)
+      .order('visit_date', { ascending: true })
+      .limit(200);
+    if (error) throw error;
+    res.json({ appointments: data || [] });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── WEBHOOK GHL — nowe zgłoszenie (OpportunityCreate) ───────────────────────
+app.post('/webhook/ghl/opportunity', async (req, res) => {
+  try {
+    const body = req.body;
+    const opp = body.opportunity || body.data || body;
+    const contactId = opp.contactId || opp.contact_id || body.contactId;
+    if (!contactId) return res.json({ ok: true, skipped: 'no_contactId' });
+
+    // Ustaw tag "Czeka na kontakt" dla nowego leada
+    setPatientStatusTag(contactId, PATIENT_STATUS_TAGS.CZEKA_NA_KONTAKT.key).catch(() => {});
+    console.log(`[GHL Webhook] Nowy lead: ${contactId} — tag: czeka_na_kontakt`);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[GHL Webhook] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Zadarma GET — weryfikacja URL ────────────────────────────────────────────
 app.get('/webhook/zadarma', (req, res) => {
   const zdEcho = req.query.zd_echo;
   if (zdEcho) {
@@ -895,6 +1243,46 @@ app.get('/webhook/zadarma', (req, res) => {
   }
   res.json({ status: 'webhook endpoint active' });
 });
+
+// ─── GHL Contact Lookup & Creation ───────────────────────────────────────────
+async function lookupGHLContact(phone) {
+  if (!GHL_TOKEN || !phone) return null;
+  try {
+    const resp = await axios.get(
+      `https://services.leadconnectorhq.com/contacts/search/duplicate?locationId=${GHL_LOCATION_ID}&number=${encodeURIComponent(phone)}`,
+      { headers: ghlHeaders, timeout: 8000 }
+    );
+    return resp.data?.contact || null;
+  } catch(e) {
+    return null;
+  }
+}
+
+async function createGHLContact({ firstName, lastName, phone, email, source }) {
+  if (!GHL_TOKEN || !phone) return null;
+  try {
+    const resp = await axios.post(
+      'https://services.leadconnectorhq.com/contacts/',
+      {
+        locationId: GHL_LOCATION_ID,
+        firstName: firstName || '',
+        lastName: lastName || '',
+        phone,
+        email: email || '',
+        source: source || 'Navigator Hub',
+        tags: ['navigator-hub']
+      },
+      { headers: ghlHeaders, timeout: 10000 }
+    );
+    const c = resp.data?.contact;
+    if (c) console.log(`[GHL] ✅ Created contact: ${c.id} (${firstName} ${lastName}, ${phone})`);
+    return c || null;
+  } catch(e) {
+    if (e.response?.status === 409) return lookupGHLContact(phone);
+    console.error(`[GHL] Create contact error:`, e.response?.data?.message || e.message);
+    return null;
+  }
+}
 
 app.post('/webhook/zadarma', async (req, res) => {
   res.sendStatus(200); // odpowiedz natychmiast, resztę rób async
@@ -907,43 +1295,98 @@ app.post('/webhook/zadarma', async (req, res) => {
 
   console.log(`[Zadarma] ${event} | callId=${callId} | from=${caller} | to=${called}`);
 
+  // Numer wewnętrzny docelowy (Zadarma wysyła jako 'internal')
+  const targetExt = data.internal || data.destination || null;
+
   if (event === 'NOTIFY_START' || event === 'INCOMING') {
-    // Nowe połączenie przychodzące
+    const nowTs = new Date().toISOString();
+
+    // Wykryj czy caller to numer/ext agenta — wtedy to faktycznie połączenie WYCHODZĄCE
+    // (Zadarma czasem wysyła NOTIFY_START zamiast NOTIFY_OUT_START dla połączeń z aplikacji)
+    const knownExts = new Set(['103', '101', '102', '100']);
+    const allUserExts = Object.values(USERS).map(u => u.ext).filter(Boolean);
+    allUserExts.forEach(e => knownExts.add(String(e)));
+    const callerDigits = String(caller).replace(/[^0-9]/g, '');
+    const callerIsAgent = knownExts.has(String(caller))
+      || String(caller).length <= 4
+      || AGENT_MOBILE_PHONES.has(callerDigits)
+      || AGENT_MOBILE_PHONES.has(callerDigits.slice(-9)); // last 9 digits
+
+    let direction = 'inbound';
+    let displayPhone = caller;   // numer do pokazania (i lookup w GHL)
+    let fromPhone = caller;
+    let toPhone = called;
+
+    if (callerIsAgent) {
+      // Połączenie inicjowane przez agenta → wychodzące, patient = called
+      direction = 'outbound';
+      displayPhone = called;
+      fromPhone = called;
+      toPhone = called;
+      console.log(`[Webhook] Detected agent-outbound via NOTIFY_START: ${caller} → ${called}`);
+    }
+
     const callObj = {
-      callId,
-      pbxCallId,
-      direction: 'inbound',
+      callId, pbxCallId,
+      direction,
       status: 'ringing',
-      from: caller,
-      to: called,
-      timestamp: new Date().toISOString(),
+      from: fromPhone,
+      to: toPhone,
+      targetExt,
+      outsideWorkingHours: isOutsideWorkingHours(nowTs),
+      timestamp: nowTs,
       recordingUrl: null,
       tag: null
     };
     // Przypisz userId z mapy aktywnych użytkowników
-    const inboundExt = called || caller;
-    const assignedUserId = activeExtMap.get(inboundExt) || activeExtMap.get(caller) || null;
-    if (assignedUserId) { callObj.userId = assignedUserId; console.log(`[ActiveExt] Inbound ${callId}: ext ${inboundExt} → ${assignedUserId}`); }
+    const inboundExt = callerIsAgent ? String(caller) : (called || caller);
+    const assignedUserId = activeExtMap.get(inboundExt) || activeExtMap.get(String(caller)) || null;
+    if (assignedUserId) { callObj.userId = assignedUserId; console.log(`[ActiveExt] ${direction} ${callId}: ext ${inboundExt} → ${assignedUserId}`); }
     storeCall(callObj);
     broadcast({ type: 'CALL_RINGING', ...callObj });
+
+    // Szukaj kontaktu w GHL po numerze PACJENTA (nie agenta)
+    if (GHL_TOKEN && displayPhone && displayPhone.length > 4) {
+      lookupGHLContact(displayPhone).then(contact => {
+        if (contact) {
+          const cName = `${contact.firstName || ''} ${contact.lastName || ''}`.trim();
+          storeCall({ callId, contactName: cName, contactId: contact.id });
+          broadcast({ type: 'CALL_ENRICHED', callId, contactName: cName, contactId: contact.id, firstName: contact.firstName, lastName: contact.lastName });
+        }
+      }).catch(() => {});
+    }
   }
 
   else if (event === 'NOTIFY_OUT_START' || event === 'OUTGOING') {
     // Połączenie wychodzące — jeśli już istnieje z click-to-call, tylko aktualizuj pbxCallId
-    // Przypisz userId z mapy aktywnych użytkowników (wychodzące)
     const outboundExt = caller || called;
-    const outUserId = activeExtMap.get(outboundExt) || null;
+    const outUserId = activeExtMap.get(outboundExt) || activeExtMap.get(String(caller)) || null;
     if (outUserId) console.log(`[ActiveExt] Outbound ${callId}: ext ${outboundExt} → ${outUserId}`);
     const existing = callsStore.find(c => c.callId === callId);
     if (existing) {
       storeCall({ callId, pbxCallId, status: 'ringing', userId: outUserId || existing.userId });
     } else {
+      // Nowe połączenie wychodzące (inicjowane z aplikacji Zadarma na telefonie)
+      // caller = numer/ext agenta, called = numer pacjenta
+      const patientPhone = called || caller; // numer do którego dzwonimy
       storeCall({
         callId, pbxCallId, direction: 'outbound', status: 'ringing', userId: outUserId,
-        from: caller || called, to: called || caller,
+        from: patientPhone, to: patientPhone, // pokazuj numer pacjenta po obu stronach
         timestamp: new Date().toISOString(), recordingUrl: null, tag: null
       });
-      broadcast({ type: 'CALL_RINGING', callId, direction: 'outbound', from: caller || called, to: called || caller });
+      broadcast({ type: 'CALL_RINGING', callId, direction: 'outbound', from: patientPhone, to: patientPhone });
+
+      // Szukaj kontaktu w GHL po numerze PACJENTA (called), nie agenta (caller)
+      if (GHL_TOKEN && patientPhone && patientPhone.length > 5) {
+        lookupGHLContact(patientPhone).then(contact => {
+          if (contact) {
+            const cName = `${contact.firstName || ''} ${contact.lastName || ''}`.trim();
+            storeCall({ callId, contactName: cName, contactId: contact.id });
+            broadcast({ type: 'CALL_ENRICHED', callId, contactName: cName, contactId: contact.id, firstName: contact.firstName, lastName: contact.lastName });
+            console.log(`[Outbound] Enriched: ${cName} (${contact.id})`);
+          }
+        }).catch(() => {});
+      }
     }
   }
 
@@ -953,23 +1396,28 @@ app.post('/webhook/zadarma', async (req, res) => {
   }
 
   else if (event === 'NOTIFY_END' || event === 'ENDED' || event === 'MISSED') {
-    const duration = parseInt(data.duration) || 0;
-    const isMissed = event === 'MISSED' || duration === 0;
+    const rawDuration = parseInt(data.duration) || 0;
     const call = callsStore.find(c => c.callId === callId);
     const direction = call?.direction || 'inbound';
+
+    // Dla połączeń wychodzących — przelicz duration z answeredAt jeśli Zadarma dało 0
+    const effectiveDuration = rawDuration > 0 ? rawDuration
+      : (call?.answeredAt && direction === 'outbound'
+          ? Math.round((Date.now() - new Date(call.answeredAt).getTime()) / 1000)
+          : 0);
+
+    const isMissed = event === 'MISSED' || effectiveDuration === 0;
 
     let tag = 'connected';
     if (isMissed && direction === 'inbound')  tag = 'missed';
     if (isMissed && direction === 'outbound') tag = 'ineffective';
 
-    storeCall({ callId, status: 'ended', duration, tag, endedAt: new Date().toISOString() });
-    broadcast({ type: 'CALL_ENDED', callId, duration, tag, direction });
+    storeCall({ callId, status: 'ended', duration: effectiveDuration, tag, endedAt: new Date().toISOString() });
+    broadcast({ type: 'CALL_ENDED', callId, duration: effectiveDuration, tag, direction });
 
     if (!isMissed && pbxCallId) {
       scheduleRecordingFetch(callId, pbxCallId, call?.from || caller);
     }
-
-    // Automatyczne przeniesienie stage dla nieodebranych wychodzących
     if (tag === 'ineffective' && (call?.from || caller)) {
       autoMoveStageForMissedCall(call?.from || caller).catch(console.error);
     }
@@ -977,14 +1425,18 @@ app.post('/webhook/zadarma', async (req, res) => {
 
   // Połączenie wychodzące Callback — NOTIFY_OUT_END (zakończone)
   else if (event === 'NOTIFY_OUT_END') {
-    const duration = parseInt(data.seconds || data.duration) || 0;
-    const outTag = duration > 0 ? 'connected' : 'ineffective';
-    storeCall({ callId, status: 'ended', duration, tag: outTag, endedAt: new Date().toISOString() });
-    broadcast({ type: 'CALL_ENDED', callId, duration, tag: outTag, direction: 'outbound' });
-    if (duration > 0 && pbxCallId) scheduleRecordingFetch(callId, pbxCallId, caller);
-    // Nieodebrane wychodzące → auto stage
+    const rawDuration = parseInt(data.seconds || data.duration) || 0;
+    const call = callsStore.find(c => c.callId === callId);
+    // Jeśli Zadarma podaje duration=0 ale mamy answeredAt → oblicz czas z answeredAt
+    // (Zadarma czasem wysyła 0 dla pierwszej nogi callback, mimo że rozmowa trwała)
+    const effectiveDuration = rawDuration > 0 ? rawDuration
+      : (call?.answeredAt ? Math.round((Date.now() - new Date(call.answeredAt).getTime()) / 1000) : 0);
+    const outTag = effectiveDuration > 0 ? 'connected' : 'ineffective';
+    console.log(`[NOTIFY_OUT_END] callId=${callId} rawDuration=${rawDuration} effectiveDuration=${effectiveDuration} tag=${outTag}`);
+    storeCall({ callId, status: 'ended', duration: effectiveDuration, tag: outTag, endedAt: new Date().toISOString() });
+    broadcast({ type: 'CALL_ENDED', callId, duration: effectiveDuration, tag: outTag, direction: 'outbound' });
+    if (effectiveDuration > 0 && pbxCallId) scheduleRecordingFetch(callId, pbxCallId, call?.from || caller);
     if (outTag === 'ineffective') {
-      const call = callsStore.find(c => c.callId === callId);
       autoMoveStageForMissedCall(call?.from || called || caller).catch(console.error);
     }
   }
@@ -1406,14 +1858,26 @@ app.delete('/api/tasks/:id', async (req, res) => {
   tasksPool.delete(taskId);
   broadcast({ type: 'TASK_DELETED', id: taskId });
   res.json({ success: true });
-});
-
-// ─── POPUP DANYCH KONTAKTU (szybkie dane dla popupu połączenia) ─────────────────
+});// ─── POPUP DANYCH KONTAKTU (szybkie dane dla popupu połączenia) ─────────────────────
 // Zwraca: etap GHL, status operacyjny, W0, ostatnią notatkę — bez pełnych activities
+// Cache in-memory dla popup (30 sekund TTL — wystarczy na czas rozmowy)
+if (!global.popupCache) global.popupCache = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of global.popupCache.entries()) {
+    if (now - v.ts > 30000) global.popupCache.delete(k);
+  }
+}, 60000); // sprzątanie co minutę
+
 app.get('/api/contact/:id/popup', async (req, res) => {
   const contactId = req.params.id;
+  // Sprawdź cache (30s TTL — popup otwierany wielokrotnie przy tym samym połączeniu)
+  const cached = global.popupCache.get(contactId);
+  if (cached && (Date.now() - cached.ts < 30000)) {
+    return res.json(cached.data);
+  }
   try {
-    // 1. Pobierz dane z GHL (kontakt + szansa sprzedaży)
+    // 1. Pobierz dane z GHL (kontakt + szansa sprzedaży) RÓWNOLEGLE
     const [contactResp, oppsResp] = await Promise.allSettled([
       axios.get(`https://services.leadconnectorhq.com/contacts/${contactId}`, { headers: ghlHeaders, timeout: 8000 }),
       axios.get(`https://services.leadconnectorhq.com/opportunities/search?location_id=${GHL_LOCATION_ID}&contact_id=${contactId}&limit=1`, { headers: ghlHeaders, timeout: 8000 })
@@ -1467,7 +1931,7 @@ app.get('/api/contact/:id/popup', async (req, res) => {
     const w0Doctor = contactRow?.w0_doctor || w0FromDB?.doctor || null;
     // 5. Ustal etap GHL
     const stageName = latestOpp ? (GHL_STAGES[latestOpp.pipelineStageId] || latestOpp.pipelineStageId || null) : null;
-    res.json({
+    const popupData = {
       id: contactId,
       firstName: contact.firstName || '',
       lastName: contact.lastName || '',
@@ -1483,7 +1947,10 @@ app.get('/api/contact/:id/popup', async (req, res) => {
       w0_doctor: w0Doctor,
       lastNote,
       lead_created_at: contact.dateAdded || null
-    });
+    };
+    // Zapisz do cache (30s TTL)
+    global.popupCache.set(contactId, { ts: Date.now(), data: popupData });
+    res.json(popupData);
   } catch (err) {
     console.error('[Popup] Error:', err.message);
     res.status(500).json({ error: err.message });
@@ -1494,191 +1961,250 @@ app.get('/api/contact/:id/popup', async (req, res) => {
 app.get('/api/contact/:id/card', async (req, res) => {
   try {
     const contactId = req.params.id;
-    const contactResp = await axios.get(
-      `https://services.leadconnectorhq.com/contacts/${contactId}`,
-      { headers: ghlHeaders, timeout: 10000 }
-    );
-    const contact = contactResp.data?.contact || {};
 
-    const activitiesResp = await axios.get(
-      `https://services.leadconnectorhq.com/contacts/${contactId}/activities?limit=50`,
-      { headers: ghlHeaders, timeout: 10000 }
-    );
-    const activities = activitiesResp.data?.activities || [];
+    // ═══ KROK 1: Wszystkie requesty GHL RÓWNOLEGLE (z prostym cache) ═══
+    let contact = {}, activities = [], opportunities = [], ghlNotes = [];
+    
+    // Prosty cache w pamięci dla karty pacjenta (60 sekund)
+    if (!global.patientCardCache) global.patientCardCache = new Map();
+    const cacheKey = `card_${contactId}`;
+    const cached = global.patientCardCache.get(cacheKey);
+    if (cached && (Date.now() - cached.ts < 60000)) {
+      console.log(`[Cache] Hit dla karty pacjenta: ${contactId}`);
+      return res.json(cached.data);
+    }
 
-    const oppsResp = await axios.get(
-      `https://services.leadconnectorhq.com/opportunities/search?location_id=${GHL_LOCATION_ID}&contact_id=${contactId}&limit=10`,
-      { headers: ghlHeaders, timeout: 10000 }
-    );
-    const opportunities = oppsResp.data?.opportunities || [];
+    // Pipeline name cache
+    if (!global.pipelineNameCache) global.pipelineNameCache = {};
+    const KNOWN_PIPELINE_ID = 'FVgB3ga52b0PUi6QjJ0x';
+    let pipelineName = global.pipelineNameCache[KNOWN_PIPELINE_ID] || null;
 
-    // Pobierz notatki z GHL (i zsynchronizuj z events)
-    let ghlNotes = [];
-    try {
-      const notesResp = await axios.get(
+    const ghlPromises = [
+      // Kontakt GHL (opcjonalny — kontakt może nie istnieć w GHL)
+      axios.get(
+        `https://services.leadconnectorhq.com/contacts/${contactId}`,
+        { headers: ghlHeaders, timeout: 5000 }
+      ).then(r => { contact = r.data?.contact || {}; })
+       .catch(e => {
+         const s = e.response?.status;
+         console.warn(`[Patient Card] GHL contact fetch: HTTP ${s} for ${contactId}`);
+         if (s === 401) console.error('[Patient Card] GHL token wygasł!');
+         // NIE rzucaj błędu — kontynuuj z pustym kontaktem, dane z Supabase się wczytają
+       }),
+      // Szanse sprzedaży (opcjonalne)
+      axios.get(
+        `https://services.leadconnectorhq.com/opportunities/search?location_id=${GHL_LOCATION_ID}&contact_id=${contactId}&limit=5`,
+        { headers: ghlHeaders, timeout: 4000 }
+      ).then(r => { opportunities = r.data?.opportunities || []; })
+       .catch(() => {}),
+      // Notatki GHL (opcjonalne)
+      axios.get(
         `https://services.leadconnectorhq.com/contacts/${contactId}/notes`,
-        { headers: ghlHeaders, timeout: 8000 }
-      );
-      ghlNotes = notesResp.data?.notes || [];
-      // Synchronizuj notatki GHL do tabeli events (upsert po ghl_note_id w metadata)
-      if (supabase && ghlNotes.length > 0) {
+        { headers: ghlHeaders, timeout: 4000 }
+      ).then(r => { ghlNotes = r.data?.notes || []; })
+       .catch(() => {}),
+      // Nazwa lejka (pipeline) — pobierz raz i cache'uj
+      ...(pipelineName ? [] : [
+        axios.get(
+          `https://services.leadconnectorhq.com/opportunities/pipelines?locationId=${GHL_LOCATION_ID}`,
+          { headers: ghlHeaders, timeout: 4000 }
+        ).then(r => {
+          // API zwraca tablicę pipelines — znajdź po ID
+          const pipelines = r.data?.pipelines || r.data?.data || (Array.isArray(r.data) ? r.data : []);
+          const found = pipelines.find(p => p.id === KNOWN_PIPELINE_ID);
+          const name = found?.name || r.data?.pipeline?.name || r.data?.name || null;
+          if (name) {
+            global.pipelineNameCache[KNOWN_PIPELINE_ID] = name;
+            pipelineName = name;
+          } else {
+            // Fallback: weź pierwszy pipeline jeśli tylko jeden
+            pipelineName = pipelines[0]?.name || 'Navigator';
+            global.pipelineNameCache[KNOWN_PIPELINE_ID] = pipelineName;
+          }
+        }).catch(() => {
+          pipelineName = global.pipelineNameCache[KNOWN_PIPELINE_ID] || 'Navigator';
+        })
+      ])
+    ];
+
+    await Promise.all(ghlPromises);
+
+    // ═══ KROK 2: Wszystkie zapytania Supabase RÓWNOLEGLE ═══
+    let callHistory = [], taskHistory = [], unifiedTimeline = [];
+    let contactRow = null, w0FromReports = { scheduled: false, date: null, doctor: null };
+
+    if (supabase) {
+      const supaPromises = [
+        // Historia połączeń
+        supabase.from('calls').select('*')
+          .eq('ghl_contact_id', contactId)
+          .order('created_at', { ascending: false }).limit(20)
+          .then(({ data }) => { if (data) callHistory = data; })
+          .catch(() => {}),
+        // Zadania
+        supabase.from('tasks').select('*')
+          .eq('contact_id', contactId)
+          .order('created_at', { ascending: false }).limit(30)
+          .then(({ data }) => { if (data) taskHistory = data; })
+          .catch(() => {}),
+        // Events timeline
+        supabase.from('events').select('*')
+          .eq('contact_id', contactId)
+          .order('created_at', { ascending: false }).limit(50)
+          .then(({ data }) => { if (data) unifiedTimeline = data; })
+          .catch(() => {}),
+        // Kontakt z Supabase (W0, status)
+        supabase.from('contacts').select('w0_scheduled, w0_date, w0_doctor, contact_status, first_call_at, first_call_note, first_call_by')
+          .eq('ghl_contact_id', contactId).single()
+          .then(({ data }) => { if (data) contactRow = data; })
+          .catch(() => {}),
+        // W0 z raportów
+        supabase.from('calls').select('scheduled_w0, w0_date, w0_doctor, created_at')
+          .eq('ghl_contact_id', contactId).eq('scheduled_w0', true)
+          .order('created_at', { ascending: false }).limit(1)
+          .then(({ data }) => { if (data?.[0]) w0FromReports = { scheduled: true, date: data[0].w0_date, doctor: data[0].w0_doctor }; })
+          .catch(() => {})
+      ];
+      await Promise.all(supaPromises);
+    }
+
+    // ═══ KROK 3: Sync notatek GHL → events (FIRE-AND-FORGET — nie blokuje odpowiedzi) ═══
+    if (supabase && ghlNotes.length > 0) {
+      (async () => {
         for (const note of ghlNotes) {
           try {
-            // Sprawdź czy notatka już istnieje w events
             const { data: existing } = await supabase.from('events')
-              .select('id')
-              .eq('contact_id', contactId)
-              .eq('source', 'ghl')
-              .filter('metadata->ghl_note_id', 'eq', note.id)
-              .limit(1);
+              .select('id').eq('contact_id', contactId).eq('source', 'ghl')
+              .filter('metadata->ghl_note_id', 'eq', note.id).limit(1);
             if (!existing || existing.length === 0) {
               await supabase.from('events').insert({
-                event_type: 'ghl_note',
-                contact_id: contactId,
+                event_type: 'ghl_note', contact_id: contactId,
                 contact_name: `${contact.firstName || ''} ${contact.lastName || ''}`.trim(),
-                source: 'ghl',
-                description: note.body || note.text || '(notatka bez treści)',
+                source: 'ghl', description: note.body || note.text || '(notatka)',
                 metadata: { ghl_note_id: note.id, userId: note.userId },
                 created_at: note.dateAdded || new Date().toISOString()
               });
             }
-          } catch(e) { /* ignoruj błędy synchronizacji pojedynczej notatki */ }
+          } catch(e) { /* ignoruj */ }
         }
-      }
-    } catch (e) {
-      console.warn('[Patient Card] GHL notes error:', e.message);
-    }
-    // Pobierz historię połączeń z Supabase
-    let callHistory = [];
-    try {
-      const { data: calls, error } = await supabase
-        .from('calls')
-        .select('*')
-        .eq('ghl_contact_id', contactId)
-        .order('created_at', { ascending: false })
-        .limit(20);
-      
-      if (!error && calls) {
-        callHistory = calls;
-      }
-    } catch (e) {
-      console.warn('[Patient Card] Supabase call history error:', e.message);
-    }
-    // Pobierz ujednolicony Timeline z tabeli events (app + ghl)
-    let unifiedTimeline = [];
-    if (supabase) {
-      try {
-        const { data: eventsData } = await supabase.from('events')
-          .select('*')
-          .eq('contact_id', contactId)
-          .order('created_at', { ascending: false })
-          .limit(50);
-        if (eventsData) unifiedTimeline = eventsData;
-      } catch(e) { console.warn('[Patient Card] Events fetch error:', e.message); }
+      })();
     }
 
-    // Mapowanie GHL custom fields po ID
+    // ═══ KROK 4: Mapowanie custom fields PACJENTA ═══
     const cf = contact.customFields || [];
     const getField = (id) => cf.find(f => f.id === id);
-    const mainProblem   = getField('k1OizGtL0V6IaWjGlVBK');
-    const marketing     = getField('R0X7n8GG7545mnrGnREg');
-    const w0DateField   = getField('IUjxWY10y6kuITsSjfSw');
-    const w0NotesField  = getField('v04mALNDZzMgyH8YzK46');
+    const getFieldByKey = (key) => cf.find(f => (f.fieldKey || '').toLowerCase().includes(key.toLowerCase()));
 
-    // Sprawdź W0 z raportów w Supabase
-    let w0FromReports = { scheduled: false, date: null, doctor: null };
-    if (supabase) {
-      try {
-        const { data: w0Calls } = await supabase
-          .from('calls')
-          .select('scheduled_w0, w0_date, w0_doctor, created_at')
-          .eq('ghl_contact_id', contactId)
-          .eq('scheduled_w0', true)
-          .order('created_at', { ascending: false })
-          .limit(1);
-        if (w0Calls && w0Calls.length > 0) {
-          w0FromReports = { scheduled: true, date: w0Calls[0].w0_date, doctor: w0Calls[0].w0_doctor };
-        }
-      } catch(e) {}
-    }
+    // Pola PACJENTA (z formularza GHL)
+    const mainProblem    = getField('k1OizGtL0V6IaWjGlVBK') || getFieldByKey('z_czym_si_zgasza');
+    const marketing      = getField('R0X7n8GG7545mnrGnREg') || getFieldByKey('zgoda_marketingowa');
+    const sourceContact  = getFieldByKey('rdo_kontaktu');
+    const prefChannel    = getFieldByKey('preferowany_kana');
+    const potProgram     = getFieldByKey('potencjalny_program');
+    const firstCallNote  = getFieldByKey('notatka_z_pierwszej_rozmowy');
+    const leadSource     = getFieldByKey('rdo_leada') || getFieldByKey('lead_source');
+    const w0DateField    = getField('IUjxWY10y6kuITsSjfSw');
+    const w0NotesField   = getField('v04mALNDZzMgyH8YzK46');
 
-    // Pobierz W0 z contacts table (globalne — priorytet nad calls)
-    let contactW0 = { scheduled: w0FromReports.scheduled, date: w0FromReports.date, doctor: w0FromReports.doctor };
-    if (supabase) {
-      try {
-        const { data: cRow } = await supabase.from('contacts')
-          .select('w0_scheduled, w0_date, w0_doctor, contact_status, first_call_at')
-          .eq('ghl_contact_id', contactId)
-          .single();
-        if (cRow) {
-          if (cRow.w0_scheduled) contactW0 = { scheduled: true, date: cRow.w0_date, doctor: cRow.w0_doctor };
-        }
-      } catch(e) { /* kontakt może nie istnieć w Supabase */ }
-    }
-    res.json({
+    // W0 — priorytet: contacts table > calls reports > GHL custom field
+    const contactW0 = contactRow?.w0_scheduled
+      ? { scheduled: true, date: contactRow.w0_date, doctor: contactRow.w0_doctor }
+      : w0FromReports.scheduled
+        ? w0FromReports
+        : { scheduled: !!w0DateField?.value, date: w0DateField?.value ? new Date(Number(w0DateField.value)).toISOString() : null, doctor: null };
+
+    // Szansa sprzedaży — dodatkowy kontekst (NIE dane pacjenta)
+    const firstOpp = opportunities[0] || null;
+
+    // ═══ ODPOWIEDŹ ═══
+    const responseData = {
+      // DANE PACJENTA — pola kontaktu GHL
       contact: {
         id: contact.id,
         firstName: contact.firstName,
         lastName: contact.lastName,
         email: contact.email,
         phone: contact.phone,
+        city: contact.city || '',
+        gender: contact.gender || '',
+        dateOfBirth: contact.dateOfBirth || '',
         source: contact.source,
         tags: contact.tags || [],
-        createdAt: contact.createdAt,
-        // Zmapowane custom fields
+        createdAt: contact.dateAdded || contact.createdAt,
+        // Custom fields PACJENTA
         mainProblem: mainProblem?.value || '',
-        marketingConsent: marketing?.value === 'tak' || marketing?.value === true,
-        w0_date: contactW0.date || (w0DateField?.value ? new Date(Number(w0DateField.value)).toISOString() : null),
+        sourceContact: sourceContact?.value || '',
+        marketingConsent: !!(marketing?.value),
+        marketingConsentRaw: marketing?.value || '',
+        preferredChannel: prefChannel?.value || '',
+        potentialProgram: potProgram?.value || '',
+        firstCallNote: firstCallNote?.value || contactRow?.first_call_note || '',
+        leadSource: leadSource?.value || contact.source || '',
+        // W0
+        w0_date: contactW0.date,
         w0_notes: w0NotesField?.value || '',
-        w0_scheduled: !!(contactW0.scheduled || w0DateField?.value),
-        w0_doctor: contactW0.doctor || null,
-        // Surowe custom fields (dla debugowania)
+        w0_scheduled: contactW0.scheduled,
+        w0_doctor: contactW0.doctor,
+        // Surowe custom fields
         customFields: cf
       },
-      // Ujednolicony Timeline (app + ghl) — z tabeli events
+      // LEJEK / SZANSA — osobna sekcja, NIE dane pacjenta
+      pipeline: firstOpp ? {
+        id: firstOpp.pipelineId,
+        name: pipelineName || 'Navigator',
+        stageId: firstOpp.pipelineStageId,
+        stageName: GHL_STAGES[firstOpp.pipelineStageId] || 'Nieznany',
+        assignedTo: firstOpp.assignedTo || null,
+        status: firstOpp.status
+      } : null,
+      // ZADANIA pacjenta
+      taskHistory: taskHistory.map(t => ({
+        id: t.id, title: t.title, body: t.body, status: t.status,
+        dueDate: t.due_date, assignedTo: t.assigned_to,
+        completedAt: t.completed_at, createdAt: t.created_at
+      })),
+      // AKTYWNOŚĆ GHL + APP (timeline)
       unifiedTimeline: unifiedTimeline.map(e => ({
-        id: e.id,
-        type: e.event_type,
-        source: e.source || 'app',
-        description: e.description,
-        createdAt: e.created_at,
-        userId: e.user_id,
-        metadata: e.metadata
+        id: e.id, type: e.event_type, source: e.source || 'app',
+        description: e.description, createdAt: e.created_at,
+        userId: e.user_id, metadata: e.metadata
       })),
-      // GHL Activities (legacy — zachowane dla kompatybilności)
+      // GHL Activities (legacy)
       timeline: activities.map(a => ({
-        id: a.id,
-        type: a.type,
-        description: a.description,
-        createdAt: a.createdAt,
-        userId: a.userId,
-        userName: a.userName
+        id: a.id, type: a.type, description: a.description,
+        createdAt: a.createdAt, userId: a.userId, userName: a.userName
       })),
-      opportunities: opportunities.map(o => ({
-        id: o.id,
-        title: o.title,
-        status: o.status,
-        stageId: o.pipelineStageId,
-        stageName: GHL_STAGES[o.pipelineStageId],
-        value: o.monetaryValue,
-        updatedAt: o.updatedAt
-      })),
+      // HISTORIA POŁĄCZEŃ pacjenta (z Supabase)
       callHistory: callHistory.map(c => ({
-        id: c.call_id,
-        direction: c.direction,
-        status: c.status,
-        tag: c.call_tag,
-        contactType: c.contact_type,
-        callEffect: c.call_effect,
-        notes: c.notes,
+        id: c.call_id, direction: c.direction, status: c.status,
+        tag: c.call_tag || c.contact_type,
+        contactType: c.contact_type, callEffect: c.call_effect,
+        notes: c.notes, program: c.treatment,
         duration: c.duration_seconds,
-        recordingUrl: c.recording_url,
-        createdAt: c.created_at
+        recordingUrl: c.recording_url || (callsStore.find(x => x.callId === c.call_id)?.recordingUrl) || null,
+        userId: c.user_id, createdAt: c.created_at
       }))
-    });
+    };
+    
+    // Zapisz do cache przed wysłaniem
+    global.patientCardCache.set(cacheKey, { ts: Date.now(), data: responseData });
+    res.json(responseData);
   } catch (err) {
     console.error('[Patient Card] Error:', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Diagnostyka pipeline — sprawdź jaką strukturę zwraca GHL
+app.get('/api/debug/pipelines', async (req, res) => {
+  try {
+    const r = await axios.get(
+      `https://services.leadconnectorhq.com/opportunities/pipelines?locationId=${GHL_LOCATION_ID}`,
+      { headers: ghlHeaders, timeout: 8000 }
+    );
+    res.json({ raw: r.data }); // pokaż surową odpowiedź GHL
+  } catch(e) {
+    res.status(500).json({ error: e.message, status: e.response?.status, data: e.response?.data });
   }
 });
 
@@ -1687,13 +2213,27 @@ app.get('/api/stats', async (req, res) => {
   try {
     const days = parseInt(req.query.days) || 1;
     const { userId, role } = req.query;
+
+    // Cache stats na 30s per użytkownik/dzień (ciężkie zapytanie GHL + Supabase)
+    const statsCacheKey = `stats_${days}_${userId || 'all'}_${role || 'x'}`;
+    const cachedStats = cache.get(statsCacheKey);
+    if (cachedStats) return res.json(cachedStats);
+
+    // Reużyj cache kontaktów jeśli istnieje (nie odpytuj GHL dwukrotnie)
+    const contactsCacheKey = `contacts_new_${GHL_LOCATION_ID}`;
+    const oppsCacheKey = OPPS_CACHE_KEY;
+
     const [contactsResp, oppsResp] = await Promise.allSettled([
-      axios.get(`https://services.leadconnectorhq.com/contacts/?locationId=${GHL_LOCATION_ID}&limit=100`, { headers: ghlHeaders, timeout: 10000 }),
-      axios.get(`https://services.leadconnectorhq.com/opportunities/search?location_id=${GHL_LOCATION_ID}&pipeline_id=${GHL_PIPELINE_ID}&limit=100`, { headers: ghlHeaders, timeout: 10000 })
+      cache.get(contactsCacheKey)
+        ? Promise.resolve({ data: cache.get(contactsCacheKey) })
+        : axios.get(`https://services.leadconnectorhq.com/contacts/?locationId=${GHL_LOCATION_ID}&limit=100`, { headers: ghlHeaders, timeout: 10000 }),
+      cache.get(oppsCacheKey)
+        ? Promise.resolve({ data: cache.get(oppsCacheKey) })
+        : axios.get(`https://services.leadconnectorhq.com/opportunities/search?location_id=${GHL_LOCATION_ID}&pipeline_id=${GHL_PIPELINE_ID}&limit=100`, { headers: ghlHeaders, timeout: 10000 })
     ]);
 
-    const contacts = contactsResp.status === 'fulfilled' ? (contactsResp.value.data.contacts || []) : [];
-    const opps     = oppsResp.status === 'fulfilled'     ? (oppsResp.value.data.opportunities || []) : [];
+    const contacts = contactsResp.status === 'fulfilled' ? (contactsResp.value.data.contacts || contactsResp.value.data?.contacts || []) : [];
+    const opps     = oppsResp.status === 'fulfilled'     ? (oppsResp.value.data.opportunities || oppsResp.value.data?.opportunities || []) : [];
 
     let periodCalls = getRecentCalls(days);
 
@@ -1720,12 +2260,28 @@ app.get('/api/stats', async (req, res) => {
     const answeredPct = totalCalls > 0 ? Math.round((answered / totalCalls) * 100) : 0;
     const callbackDone = periodCalls.filter(c => c.tag === 'missed' && c.callbackDone).length;
 
-    // Rozkład połączeń wg godzin (do wykresu)
-    const callsByHour = Array(24).fill(0);
-    periodCalls.forEach(c => {
-      const h = new Date(c.timestamp).getHours();
-      callsByHour[h]++;
-    });
+    // Rozkład połączeń wg godzin — z Supabase dla pełnej historii (nie tylko RAM)
+    let callsByHour = Array(24).fill(0);
+    if (supabase && days > 1) {
+      try {
+        const since2 = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+        const { data: hourData } = await supabase.from('calls')
+          .select('created_at')
+          .gte('created_at', since2)
+          .neq('status', 'ringing');
+        if (hourData) {
+          hourData.forEach(r => {
+            const h = new Date(r.created_at).getHours();
+            callsByHour[h]++;
+          });
+        }
+      } catch(e) {
+        // Fallback do RAM
+        periodCalls.forEach(c => { callsByHour[new Date(c.timestamp).getHours()]++; });
+      }
+    } else {
+      periodCalls.forEach(c => { callsByHour[new Date(c.timestamp).getHours()]++; });
+    }
 
     // Źródła leadów (z GHL)
     const leadSources = {};
@@ -1807,7 +2363,7 @@ app.get('/api/stats', async (req, res) => {
     // Oblicz firstCallsCount z połączeń (połączenia wychodzące zakończone sukcesem)
     firstCallsCount = periodCalls.filter(c => c.direction === 'outbound' && c.tag === 'connected').length;
 
-        res.json({
+    const statsResult = {
       totalContacts: contacts.length,
       totalOpportunities: opps.length,
       stats: {
@@ -1816,6 +2372,7 @@ app.get('/api/stats', async (req, res) => {
         missed,
         outbound,
         answeredPercent: answeredPct,
+        callbackDone: callbackDone,
         callbackRate: missed > 0 ? Math.round((callbackDone / missed) * 100) : 100,
         uniquePatients: contacts.length,
         newLeads: opps.filter(o => o.status === 'pending').length,
@@ -1875,7 +2432,9 @@ app.get('/api/stats', async (req, res) => {
           agents: Object.values(s.agents)
         }));
       })()
-    });
+    };
+    cache.set(statsCacheKey, statsResult, 30 * 1000); // 30s TTL
+    res.json(statsResult);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -2036,10 +2595,33 @@ app.get('/api/chat/sonia-inbox', (req, res) => {
 // ─── ZAPIS RAPORTU DO SUPABASE ──────────────────────────────────────────────────
 app.patch('/api/calls/:callId/report', async (req, res) => {
   const { callId } = req.params;
-  const {
+  let {
     contactType, callEffect, notes, program, outcome,
-    userId, contactId, contactName, recordingUrl
+    userId, contactId, contactName, recordingUrl,
+    firstName, lastName  // Imię i nazwisko oddzielnie z GHL
   } = req.body;
+
+  // ═══ AUTO-CREATE / LINK: Jeśli nie ma kontaktu w GHL → znajdź lub stwórz go ═══
+  const call = callsStore.find(c => c.callId === callId);
+  const phone = call?.from || call?.to;
+  if ((!contactId || contactId === 'unknown') && phone) {
+    console.log(`[Report] No GHL contact ID for ${phone}. Looking up...`);
+    let ghlContact = await lookupGHLContact(phone);
+    
+    if (!ghlContact && (firstName || lastName)) {
+      console.log(`[Report] Contact not found for ${phone}. Creating new...`);
+      ghlContact = await createGHLContact({ firstName, lastName, phone });
+    }
+    
+    if (ghlContact) {
+      contactId = ghlContact.id;
+      contactName = ghlContact.name || `${firstName || ''} ${lastName || ''}`.trim() || contactName;
+      // Zaktualizuj in-memory i poinformuj frontend
+      storeCall({ callId, contactId: ghlContact.id, contactName });
+      broadcast({ type: 'CALL_ENRICHED', callId, contactId: ghlContact.id, contactName, firstName, lastName });
+      console.log(`[Report] ✅ GHL contact linked: ${ghlContact.id} for ${phone}`);
+    }
+  }
 
   // Aktualizuj in-memory store
   const existing = callsStore.find(c => c.callId === callId);
@@ -2062,7 +2644,12 @@ app.patch('/api/calls/:callId/report', async (req, res) => {
           cancellationReason,
           isFollowUp,
           w0Date,
-          firstCallAt
+          firstCallAt,
+          notatkaZPierwszejRozmowy,
+          zrodloLeada,
+          zrodloKontaktu,
+          isFirstCall,
+          callTypeLabel
         } = req.body;
 
         const updates = {
@@ -2079,6 +2666,9 @@ app.patch('/api/calls/:callId/report', async (req, res) => {
         if (contactId)          updates.ghl_contact_id = contactId;
         if (contactName)        updates.patient_name   = contactName;
         if (recordingUrl)       updates.recording_url  = recordingUrl;
+        // Pierwsze / kolejne połączenie (potrzebne do automatyzacji GHL)
+        if (isFirstCall !== undefined) updates.is_first_call = isFirstCall;
+        if (callTypeLabel) updates.call_type_label = callTypeLabel;
         
         // Nowe pola Reception OS
         if (cancellationReason) updates.cancellation_reason = cancellationReason;
@@ -2091,8 +2681,24 @@ app.patch('/api/calls/:callId/report', async (req, res) => {
         // Ustaw scheduled_w0 = true na calls gdy w0Date jest ustawione
         if (w0Date) updates.scheduled_w0 = true;
 
+        // Próba zapisu z obsługą błędów (np. brakujące kolumny w Supabase)
         const { error } = await supabase.from('calls').update(updates).eq('call_id', callId);
-        if (error) throw error;
+        if (error) {
+          console.error(`[Supabase] Error updating call ${callId}:`, error.message);
+          // Jeśli błąd dotyczy brakującej kolumny, spróbuj zapisać tylko podstawowe pola
+          if (error.message.includes('column') || error.code === '42703') {
+            console.warn('[Supabase] Falling back to basic fields due to missing columns');
+            const basicUpdates = {
+              updated_at: updates.updated_at,
+              contact_type: updates.contact_type,
+              call_effect: updates.call_effect,
+              notes: updates.notes,
+              user_id: updates.user_id
+            };
+            const { error: retryError } = await supabase.from('calls').update(basicUpdates).eq('call_id', callId);
+            if (retryError) console.error('[Supabase] Fallback update failed:', retryError.message);
+          }
+        }
         // Globalne W0 — aktualizuj contacts gdy w0Date jest ustawione
         if (w0Date && contactId) {
           try {
@@ -2114,6 +2720,48 @@ app.patch('/api/calls/:callId/report', async (req, res) => {
               metadata: { callId, w0Date, w0Doctor }
             });
           } catch(e) { console.warn('[ReceptionOS] W0 global update error:', e.message); }
+        }
+
+        // Notatka z pierwszej rozmowy (NOWY_PACJENT) — zapisz na stałe w kontakcie
+        if (contactType === 'NOWY_PACJENT' && contactId && notatkaZPierwszejRozmowy) {
+          try {
+            // Zapisz do contacts w Supabase (z imię i nazwisko oddzielnie)
+            const contactUpsertData = {
+              ghl_contact_id: contactId,
+              first_call_note: notatkaZPierwszejRozmowy,
+              contact_status: 'nowy_pacjent',
+              first_call_at: new Date().toISOString(),
+              first_call_by: userId,
+              updated_at: new Date().toISOString()
+            };
+            if (firstName) contactUpsertData.first_name = firstName;
+            if (lastName)  contactUpsertData.last_name  = lastName;
+            await supabase.from('contacts').upsert(contactUpsertData, { onConflict: 'ghl_contact_id' });
+            // Event
+            await supabase.from('events').insert({
+              event_type: 'first_call',
+              contact_id: contactId,
+              contact_name: contactName,
+              user_id: userId,
+              source: 'app',
+              description: `Pierwsza rozmowa (nowy pacjent): ${notatkaZPierwszejRozmowy.substring(0, 200)}`,
+              metadata: { callId, program, zrodloLeada, zrodloKontaktu }
+            });
+            // Wyślij do GHL jako custom field
+            if (GHL_TOKEN) {
+              try {
+                await axios.patch(
+                  `https://services.leadconnectorhq.com/contacts/${contactId}`,
+                  { customFields: [
+                    { key: 'notatka_z_pierwszej_rozmowy', field_value: notatkaZPierwszejRozmowy },
+                    ...(zrodloLeada ? [{ key: 'rdo_leada', field_value: zrodloLeada }] : []),
+                    ...(zrodloKontaktu ? [{ key: 'rdo_kontaktu', field_value: zrodloKontaktu }] : [])
+                  ]},
+                  { headers: ghlHeaders, timeout: 10000 }
+                );
+              } catch(e) { console.warn('[Report] GHL custom fields update error:', e.message); }
+            }
+          } catch(e) { console.warn('[Report] First call note save error:', e.message); }
         }
 
         // Logika Eventów: Odwołanie wizyty
@@ -2208,12 +2856,16 @@ app.patch('/api/calls/:callId/report', async (req, res) => {
               const responseTimeMs = new Date(firstCallAt) - new Date(leadCreatedAt);
               const responseTimeMins = Math.round(responseTimeMs / 60000);
 
-              await supabase.from('contacts').update({
+              const firstCallUpdate = {
                 first_call_at: firstCallAt,
                 response_time_minutes: responseTimeMins,
                 is_new_patient: true,
                 updated_at: now
-              }).eq('ghl_contact_id', contactId);
+              };
+              // Uzupełnij imię i nazwisko jeśli przesłano z frontendu
+              if (firstName) firstCallUpdate.first_name = firstName;
+              if (lastName)  firstCallUpdate.last_name  = lastName;
+              await supabase.from('contacts').update(firstCallUpdate).eq('ghl_contact_id', contactId);
 
               // Event: Pierwszy kontakt
               await supabase.from('events').insert({
@@ -2229,35 +2881,72 @@ app.patch('/api/calls/:callId/report', async (req, res) => {
           } catch(e) { console.warn('[ReceptionOS] Contact update error:', e.message); }
         }
 
-        // Automatyczny task przy odwołaniu bez nowego terminu
-        if ((callEffect === 'odwolanie' || outcome === 'odwolanie') && !req.body.w0Date) {
-          const dueDate = new Date();
-          dueDate.setDate(dueDate.getDate() + 3);
-          try {
-            await supabase.from('tasks').insert({
-              title: `Oddzwoń po odwołaniu: ${contactName || 'Pacjent'}`,
-              description: `Odwołanie wizyty. Powód: ${req.body.cancellationReason || 'nie podano'}. Umów nowy termin.`,
-              contact_id: contactId,
-              contact_name: contactName,
-              due_date: dueDate.toISOString(),
-              task_type: 'follow_up_call',
-              follow_up_delay: '3d',
-              status: 'open_pool',
-              pool: true,
-              created_by: 'system'
-            });
-          } catch(e) { console.warn('[ReceptionOS] Auto-task error:', e.message); }
-        }
+        // Automatyczny task przy odwołaniu — obsługiwany wyżej (visit_cancelled / odwolanie_wizyty)
+        // Ten blok jest zduplikowany — usunięty, żeby uniknąć podwójnego tworzenia tasków
 
       } catch (err) {
         console.error('[Supabase] report update error:', err.message);
       }
   }
 
+  // Zaktualizuj imię i nazwisko kontaktu w GHL (jeśli podano w raporcie)
+  if (contactId && contactId !== 'unknown' && (firstName || lastName) && GHL_TOKEN) {
+    const fullName = `${firstName || ''} ${lastName || ''}`.trim();
+    try {
+      await axios.put(
+        `https://services.leadconnectorhq.com/contacts/${contactId}`,
+        { firstName: firstName || undefined, lastName: lastName || undefined },
+        { headers: ghlHeaders, timeout: 8000 }
+      );
+      console.log(`[Report] ✅ GHL contact name updated: ${fullName} (${contactId})`);
+      // Broadcast do frontendu — odśwież nazwę w karcie leada i popup
+      broadcast({ type: 'CALL_ENRICHED', callId, contactId, contactName: fullName, firstName, lastName });
+    } catch(e) { console.warn('[Report] GHL name update error:', e.message); }
+  }
+
+  // Invalidacja cache po zapisaniu raportu
+  cache.del(OPPS_CACHE_KEY);
+  cache.del(`contacts_new_${GHL_LOCATION_ID}`);
+
+  // ── TAG STATUSU PACJENTA — ustaw na podstawie wyniku raportu ──────────────
+  if (contactId && contactId !== 'unknown') {
+    const { callEffect, outcome } = req.body;
+    let patientTag = null;
+    // Sprawdź wynik raportu i ustaw odpowiedni tag
+    if (req.body.w0Date || outcome === 'umowil_sie' || req.body.notatkaZPierwszejRozmowy?.includes('W0')) {
+      patientTag = PATIENT_STATUS_TAGS.UMOWIONY_NA_W0.key;
+    } else if (outcome === 'prosi_kontakt' || callEffect === 'prosi_kontakt') {
+      patientTag = PATIENT_STATUS_TAGS.PROSI_O_KONTAKT.key;
+    } else if (outcome === 'niekwalifikowany') {
+      patientTag = PATIENT_STATUS_TAGS.NIEKWALIFIKOWANY.key;
+    } else if (outcome === 'rezygnacja' || callEffect === 'rezygnacja') {
+      patientTag = PATIENT_STATUS_TAGS.REZYGNACJA.key;
+    } else if (callEffect === 'missed' || callEffect === 'ineffective') {
+      // Sprawdź ile było prób i ile dni od pierwszego kontaktu
+      if (supabase) {
+        try {
+          const { data: callsData } = await supabase.from('calls')
+            .select('created_at, call_effect')
+            .eq('ghl_contact_id', contactId)
+            .in('call_effect', ['missed', 'ineffective'])
+            .order('created_at', { ascending: true });
+          if (callsData && callsData.length > 0) {
+            const firstAttempt = new Date(callsData[0].created_at);
+            const daysSinceFirst = (Date.now() - firstAttempt.getTime()) / (1000 * 60 * 60 * 24);
+            if (daysSinceFirst >= 5 && callsData.length >= 2) {
+              patientTag = PATIENT_STATUS_TAGS.NIE_ODBIERA_PRZEGRANA.key;
+            } else {
+              patientTag = PATIENT_STATUS_TAGS.NIE_ODBIERA_W_PROCESIE.key;
+            }
+          }
+        } catch(e) { /* kontynuuj bez tagu */ }
+      }
+    }
+    if (patientTag) setPatientStatusTag(contactId, patientTag).catch(() => {});
+  }
+
   res.json({ success: true });
 });
-
-// Pobierz raport pojedynczego połączenia
 app.get('/api/calls/:callId/report', async (req, res) => {
   const { callId } = req.params;
 
@@ -2453,21 +3142,10 @@ app.get('/api/calls/history', async (req, res) => {
       const agataOIds    = ['agata_o'];
       const anetaOIds    = ['aneta_o'];
 
+      // Recepcja widzi WSZYSTKIE połączenia — opiekunowie tylko swoje
       if (role !== 'admin' && userId) {
         const userObj = USERS[userId];
-        if (userObj?.role === 'reception') {
-          // Recepcja: pokaż połączenia z user_id recepcji LUB stare rekordy bez user_id z numeru 103
-          filteredRows = filteredRows.filter(row => {
-            if (row.user_id && receptionIds.includes(row.user_id)) return true;
-            // Stare rekordy: brak user_id ale numer wewnętrzny 103 w from/to
-            if (!row.user_id) {
-              const from = String(row.caller_phone || '');
-              const to   = String(row.called_phone || '');
-              return from === '103' || to === '103' || from.endsWith('103') || to.endsWith('103');
-            }
-            return false;
-          });
-        } else if (userObj?.role === 'opiekun') {
+        if (userObj?.role === 'opiekun') {
           const ext = userObj.ext;
           filteredRows = filteredRows.filter(row => {
             if (row.user_id === userId) return true;
@@ -2529,16 +3207,20 @@ app.get('/api/calls/history', async (req, res) => {
           direction: row.direction,
           status: row.status,
           duration: row.duration_seconds,
-          recordingUrl: row.recording_url,
+          // Merge recordingUrl: RAM ma priorytet (Supabase update może być opóźniony)
+          recordingUrl: row.recording_url || (callsStore.find(c => c.callId === row.call_id)?.recordingUrl) || null,
           contactName: row.patient_name,
           contactId: row.ghl_contact_id,
           userId: row.user_id,
-          tag: row.contact_type || (row.status === 'ended' && row.duration_seconds > 0 ? 'connected' : row.direction === 'inbound' ? 'missed' : 'ineffective'),
+          agentName: row.user_id && USERS[row.user_id] ? USERS[row.user_id].name : null,
+          outsideWorkingHours: row.created_at ? isOutsideWorkingHours(row.created_at) : false,
+          tag: row.call_tag || row.contact_type || (row.status === 'ended' && row.duration_seconds > 0 ? 'connected' : row.direction === 'inbound' ? 'missed' : 'ineffective'),
           contactType: row.contact_type,
           callEffect: row.call_effect,
           notes: row.notes,
           program: row.treatment,
           outcome: row.call_reason,
+          reportSavedAt: row.report_saved_at,
           timestamp: row.created_at,
           answeredAt: row.answered_at,
           endedAt: row.ended_at
@@ -2712,7 +3394,19 @@ setInterval(checkOverdueFollowUps, 30 * 60 * 1000);
 
 // ─── Health check ───────────────────────────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', uptime: Math.floor(process.uptime()), ts: new Date().toISOString() });
+  const mem = process.memoryUsage();
+  res.json({
+    status: 'ok',
+    uptime: Math.floor(process.uptime()),
+    ts: new Date().toISOString(),
+    memory: {
+      heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
+      heapTotalMB: Math.round(mem.heapTotal / 1024 / 1024),
+      rssMB: Math.round(mem.rss / 1024 / 1024)
+    },
+    ws: { clients: wss.clients.size },
+    calls: { inMemory: callsStore.length, retryQueue: recordingRetryQueue.size }
+  });
 });
 
 // ─── Fallback SPA ───────────────────────────────────────────────────────────────────────────────────
@@ -2722,6 +3416,23 @@ app.get('*', (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, async () => {
-  console.log(`Navigator Call v6 running on port ${PORT}`);
+  console.log(`Navigator Call v6.1 running on port ${PORT}`);
   await loadCallsFromSupabase();
 });
+
+// Sprzątanie przy zamknięciu serwera
+process.on('SIGTERM', () => {
+  clearInterval(wsHeartbeat);
+  server.close(() => process.exit(0));
+});
+
+// Keep-alive dla Render.com free tier (ping siebie co 14 minut, zapobiega uśpieniu)
+// UWAGA: usuń jeśli masz płatny plan Render — niepotrzebne
+if (process.env.RENDER_EXTERNAL_URL) {
+  const keepAliveUrl = `${process.env.RENDER_EXTERNAL_URL}/api/health`;
+  setInterval(async () => {
+    try { await axios.get(keepAliveUrl, { timeout: 5000 }); }
+    catch(e) { /* ignoruj — serwer sam się pinguje */ }
+  }, 14 * 60 * 1000); // co 14 minut
+  console.log(`[Keep-alive] Aktywny: ${keepAliveUrl}`);
+}
